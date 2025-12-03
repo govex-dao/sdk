@@ -260,9 +260,12 @@ async function main() {
   console.log("STEP 0: CREATE TEST COINS");
   console.log("=".repeat(80));
 
+  const currentNetwork = getCurrentNetwork();
   const testCoins = {
-    asset: await createTestCoin("Test Asset", "TASSET"),
-    stable: await createTestCoin("Test Stable", "TSTABLE"),
+    // Asset coin MUST have private TreasuryCap - launchpad takes ownership of it
+    asset: await createTestCoin("Test Asset", "TASSET", "mainnet"), // Force private treasury
+    // Stable coin can have shared TreasuryCap on devnet/testnet for easy minting
+    stable: await createTestCoin("Test Stable", "TSTABLE", currentNetwork),
   };
 
   console.log("\n✅ Test coins created!");
@@ -826,7 +829,6 @@ async function main() {
   console.log(`🔗 View DAO: https://suiscan.xyz/devnet/object/${accountId}`);
 
   // Save DAO info to shared JSON file for proposal test
-  const currentNetwork = getCurrentNetwork();
   const daoInfoPath = path.join(__dirname, "..", "test-dao-info.json");
   const daoInfo = {
     accountId: accountId,
