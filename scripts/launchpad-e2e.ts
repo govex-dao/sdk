@@ -39,7 +39,8 @@ import { LaunchpadWorkflow } from "../src/workflows/launchpad-workflow";
 import { TransactionUtils } from "../src/services/transaction";
 import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
 
-const testCoinSource = (symbol: string, name: string) => `
+// Test coin with private TreasuryCap (for mainnet - only owner can mint)
+const testCoinSourcePrivate = (symbol: string, name: string) => `
 module test_coin::coin {
     use sui::coin::{Self, TreasuryCap};
     use sui::transfer;
@@ -75,16 +76,75 @@ module test_coin::coin {
 }
 `;
 
+// Test coin with shared TreasuryCap (for devnet/testnet - anyone can mint for testing)
+const testCoinSourceShared = (symbol: string, name: string) => `
+module test_coin::coin {
+    use sui::coin::{Self, TreasuryCap};
+    use sui::transfer;
+    use sui::tx_context::TxContext;
+
+    public struct COIN has drop {}
+
+    fun init(witness: COIN, ctx: &mut TxContext) {
+        let (treasury, metadata) = coin::create_currency(
+            witness,
+            9,
+            b"${symbol}",
+            b"${name}",
+            b"Test coin for launchpad E2E testing",
+            option::none(),
+            ctx
+        );
+
+        // Share treasury cap so anyone can mint (for testing on devnet/testnet)
+        transfer::public_share_object(treasury);
+        transfer::public_transfer(metadata, ctx.sender());
+    }
+
+    public entry fun mint(
+        treasury_cap: &mut TreasuryCap<COIN>,
+        amount: u64,
+        recipient: address,
+        ctx: &mut TxContext
+    ) {
+        let coin = coin::mint(treasury_cap, amount, ctx);
+        transfer::public_transfer(coin, recipient)
+    }
+}
+`;
+
+// Determine which coin source to use based on network
+type NetworkType = "devnet" | "testnet" | "mainnet";
+const getTestCoinSource = (symbol: string, name: string, network: NetworkType) => {
+  // On mainnet, use private treasury cap (only owner can mint)
+  // On devnet/testnet, use shared treasury cap (anyone can mint for testing)
+  if (network === "mainnet") {
+    return testCoinSourcePrivate(symbol, name);
+  }
+  return testCoinSourceShared(symbol, name);
+};
+
+// Get the current network from environment or default to devnet
+const getCurrentNetwork = (): NetworkType => {
+  const network = process.env.SUI_NETWORK?.toLowerCase();
+  if (network === "mainnet") return "mainnet";
+  if (network === "testnet") return "testnet";
+  return "devnet";
+};
+
 async function createTestCoin(
   name: string,
   symbol: string,
+  network: NetworkType = getCurrentNetwork(),
 ): Promise<{
   packageId: string;
   type: string;
   treasuryCap: string;
   metadata: string;
+  isSharedTreasuryCap: boolean;
 }> {
-  console.log(`\n📦 Publishing ${name} test coin...`);
+  const isSharedTreasuryCap = network !== "mainnet";
+  console.log(`\n📦 Publishing ${name} test coin (network: ${network}, shared treasury: ${isSharedTreasuryCap})...`);
 
   const tmpDir = `/tmp/test_coin_${symbol.toLowerCase()}`;
   execSync(`rm -rf ${tmpDir} && mkdir -p ${tmpDir}/sources`, {
@@ -106,7 +166,7 @@ test_coin = "0x0"
 `,
   );
 
-  fs.writeFileSync(`${tmpDir}/sources/coin.move`, testCoinSource(symbol, name));
+  fs.writeFileSync(`${tmpDir}/sources/coin.move`, getTestCoinSource(symbol, name, network));
 
   console.log("   Building...");
   execSync(`cd ${tmpDir} && sui move build 2>&1 | grep -v "warning"`, {
@@ -146,12 +206,14 @@ test_coin = "0x0"
   console.log(`      Type: ${coinType}`);
   console.log(`      TreasuryCap: ${treasuryCap.objectId}`);
   console.log(`      Metadata: ${metadata.objectId}`);
+  console.log(`      Shared TreasuryCap: ${isSharedTreasuryCap}`);
 
   return {
     packageId,
     type: coinType,
     treasuryCap: treasuryCap.objectId,
     metadata: metadata.objectId,
+    isSharedTreasuryCap,
   };
 }
 
@@ -764,6 +826,7 @@ async function main() {
   console.log(`🔗 View DAO: https://suiscan.xyz/devnet/object/${accountId}`);
 
   // Save DAO info to shared JSON file for proposal test
+  const currentNetwork = getCurrentNetwork();
   const daoInfoPath = path.join(__dirname, "..", "test-dao-info.json");
   const daoInfo = {
     accountId: accountId,
@@ -773,10 +836,12 @@ async function main() {
     assetMetadata: testCoins.asset.metadata,
     stableTreasuryCap: testCoins.stable.treasuryCap,
     stableMetadata: testCoins.stable.metadata,
+    isStableTreasuryCapShared: testCoins.stable.isSharedTreasuryCap,
+    stablePackageId: testCoins.stable.packageId,
     spotPoolId: poolId || null,
     raiseId: raiseId,
     timestamp: Date.now(),
-    network: "devnet",
+    network: currentNetwork,
     success: shouldRaiseSucceed,
   };
 

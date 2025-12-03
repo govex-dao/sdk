@@ -114,11 +114,14 @@ async function main() {
   const stableType = daoInfo.stableType;
   const spotPoolId = daoInfo.spotPoolId;
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
+  const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
+  const stablePackageId = daoInfo.stablePackageId;
 
   console.log(`   DAO Account: ${daoAccountId}`);
   console.log(`   Asset Type: ${assetType}`);
   console.log(`   Stable Type: ${stableType}`);
   console.log(`   Spot Pool: ${spotPoolId}`);
+  console.log(`   Shared Treasury Cap: ${isStableTreasuryCapShared}`);
   console.log();
 
   // Load conditional coins deployment info
@@ -188,8 +191,9 @@ async function main() {
   // Always mint enough stable coins for the test
   console.log("   Minting stable coins for proposal fee...");
   const mintFeeTx = new Transaction();
+  // Use the custom mint function from the test coin package (works with both shared and private treasury caps)
   mintFeeTx.moveCall({
-    target: `${stableType.split("::")[0]}::coin::mint`,
+    target: `${stablePackageId}::coin::mint`,
     arguments: [
       mintFeeTx.object(stableTreasuryCap),
       mintFeeTx.pure.u64(proposalFeeAmount * 2n), // Mint extra to be safe
@@ -197,7 +201,7 @@ async function main() {
     ],
   });
   await executeTransaction(sdk, mintFeeTx, {
-    network: "devnet",
+    network: daoInfo.network || "devnet",
   });
 
   // Get fee coins after minting
@@ -386,8 +390,9 @@ async function main() {
   const mintAmount = 30_000_000_000n; // 30 stable coins (enough for both swaps)
 
   const mintTx = new Transaction();
+  // Use the custom mint function from the test coin package (works with both shared and private treasury caps)
   mintTx.moveCall({
-    target: `${stableType.split("::")[0]}::coin::mint`,
+    target: `${stablePackageId}::coin::mint`,
     arguments: [
       mintTx.object(stableTreasuryCap),
       mintTx.pure.u64(mintAmount),
@@ -396,7 +401,7 @@ async function main() {
   });
 
   await executeTransaction(sdk, mintTx, {
-    network: "devnet",
+    network: daoInfo.network || "devnet",
   });
 
   console.log(`   Minted ${Number(mintAmount) / 1e9} stable coins`);

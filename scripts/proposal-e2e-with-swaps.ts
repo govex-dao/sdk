@@ -104,11 +104,14 @@ async function main() {
   const stableType = daoInfo.stableType;
   const spotPoolId = daoInfo.spotPoolId;
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
+  const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
+  const stablePackageId = daoInfo.stablePackageId;
 
   console.log(`✅ DAO Account: ${daoAccountId}`);
   console.log(`✅ Asset Type: ${assetType}`);
   console.log(`✅ Stable Type: ${stableType}`);
   console.log(`✅ Spot Pool: ${spotPoolId}`);
+  console.log(`✅ Shared Treasury Cap: ${isStableTreasuryCapShared}`);
   console.log();
 
   // Load conditional coins deployment info
@@ -189,16 +192,16 @@ async function main() {
   if (totalStableBalance < proposalFeeAmount) {
     console.log(`⚠️  Insufficient stable coins (have ${totalStableBalance}, need ${proposalFeeAmount}), minting more...`);
     const mintFeeTx = new Transaction();
-    const mintedCoin = mintFeeTx.moveCall({
-      target: `0x2::coin::mint`,
-      typeArguments: [stableType],
+    // Use the custom mint function from the test coin package (works with both shared and private treasury caps)
+    mintFeeTx.moveCall({
+      target: `${stablePackageId}::coin::mint`,
       arguments: [
         mintFeeTx.object(stableTreasuryCap),
         mintFeeTx.pure.u64(proposalFeeAmount * 2n),
+        mintFeeTx.pure.address(activeAddress),
       ],
     });
-    mintFeeTx.transferObjects([mintedCoin], mintFeeTx.pure.address(activeAddress));
-    await executeTransaction(sdk, mintFeeTx, { network: "devnet" });
+    await executeTransaction(sdk, mintFeeTx, { network: daoInfo.network || "devnet" });
   }
 
   // Get fee coins
@@ -379,8 +382,9 @@ async function main() {
   const mintAmount = 30_000_000_000n; // 30 stable coins
 
   const mintTx = new Transaction();
-  const mintedCoin = mintTx.moveCall({
-    target: `${stableType.split("::")[0]}::coin::mint`,
+  // Use the custom mint function from the test coin package (works with both shared and private treasury caps)
+  mintTx.moveCall({
+    target: `${stablePackageId}::coin::mint`,
     arguments: [
       mintTx.object(stableTreasuryCap),
       mintTx.pure.u64(mintAmount),
@@ -388,7 +392,7 @@ async function main() {
     ],
   });
 
-  await executeTransaction(sdk, mintTx, { network: "devnet" });
+  await executeTransaction(sdk, mintTx, { network: daoInfo.network || "devnet" });
   console.log(`✅ Minted ${Number(mintAmount) / 1e9} stable coins`);
   console.log();
 
