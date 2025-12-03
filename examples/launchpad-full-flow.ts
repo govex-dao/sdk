@@ -3,14 +3,14 @@
  *
  * This example demonstrates the full lifecycle of a token launchpad:
  * 1. Creating a raise
- * 2. Contributing to the raise
- * 3. Settling and completing the raise
- * 4. Claiming tokens
- * 5. Batch operations
- * 6. Querying raise data
+ * 2. Staging init actions (success/failure specs)
+ * 3. Locking intents
+ * 4. Contributing to the raise
+ * 5. Completing the raise (creating DAO)
+ * 6. Claiming tokens
  */
 
-import { FutarchySDK, LaunchpadOperations, TransactionUtils } from '../src';
+import { FutarchySDK, LaunchpadWorkflow, TransactionUtils } from '../src';
 
 async function main() {
     // Load deployment configuration
@@ -29,47 +29,39 @@ async function main() {
 
     console.log('\n📝 Creating a token launchpad raise...');
 
-    const raiseConfig = {
-        // Token configuration
-        raiseTokenType: '0xYOUR_PACKAGE::your_coin::YOUR_COIN',
-        stableCoinType: '0x2::sui::SUI',
-        treasuryCap: '0xYOUR_TREASURY_CAP_ID',
-        coinMetadata: '0xYOUR_COIN_METADATA_ID',
+    // Example types and IDs (replace with your actual values)
+    const RAISE_TOKEN_TYPE = '0xYOUR_PACKAGE::your_coin::YOUR_COIN';
+    const STABLE_COIN_TYPE = '0x2::sui::SUI';
+    const TREASURY_CAP_ID = '0xYOUR_TREASURY_CAP_ID';
+    const COIN_METADATA_ID = '0xYOUR_COIN_METADATA_ID';
 
-        // Raise parameters
-        tokensForSale: 1000000n, // 1M tokens
-        minRaiseAmount: TransactionUtils.suiToMist(100), // Min 100 SUI
-        maxRaiseAmount: TransactionUtils.suiToMist(1000), // Max 1000 SUI (optional)
-
-        // Contribution caps (sorted ascending, must end with UNLIMITED_CAP)
-        allowedCaps: [
-            TransactionUtils.suiToMist(50), // Cap 1: 50 SUI
-            TransactionUtils.suiToMist(100), // Cap 2: 100 SUI
-            TransactionUtils.suiToMist(200), // Cap 3: 200 SUI
-            LaunchpadOperations.UNLIMITED_CAP, // No cap
-        ],
-
-        allowEarlyCompletion: false,
-
-        // Metadata
-        description:
-            'Revolutionary token with real utility! Join our community and be part of the future.',
-        affiliateId: '', // Optional partner ID
-        metadataKeys: ['website', 'twitter', 'discord'],
-        metadataValues: [
-            'https://example.com',
-            '@example',
-            'https://discord.gg/example',
-        ],
-
-        // Creation fee
-        launchpadFee: TransactionUtils.suiToMist(1), // 1 SUI
-    };
-
-    // Deadline: 7 days from now
+    // Calculate deadline: 7 days from now
     const deadlineMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    // Start time: 5 seconds from now
+    const startTimeMs = Date.now() + 5000;
 
-    const createTx = sdk.launchpad.createRaise(raiseConfig, deadlineMs);
+    const createTx = sdk.workflows.launchpad.createRaise({
+        raiseTokenType: RAISE_TOKEN_TYPE,
+        stableCoinType: STABLE_COIN_TYPE,
+        treasuryCap: TREASURY_CAP_ID,
+        coinMetadata: COIN_METADATA_ID,
+        tokensForSale: BigInt(1000000),
+        minRaiseAmount: TransactionUtils.suiToMist(100),
+        allowedCaps: [
+            TransactionUtils.suiToMist(50),
+            TransactionUtils.suiToMist(100),
+            TransactionUtils.suiToMist(200),
+            LaunchpadWorkflow.UNLIMITED_CAP,
+        ],
+        allowEarlyCompletion: false,
+        description: 'Example token launchpad raise',
+        affiliateId: '',
+        metadataKeys: ['website', 'twitter'],
+        metadataValues: ['https://example.com', '@example'],
+        launchpadFee: TransactionUtils.suiToMist(1),
+        deadlineMs,
+        startTimeMs,
+    });
 
     console.log('Transaction created. Sign and execute to create raise.');
 
@@ -85,44 +77,104 @@ async function main() {
         },
     });
 
-    // Extract Raise object ID
-    const raiseObject = result.objectChanges?.find(
-        (change) => change.type === 'created' && change.objectType.includes('::launchpad::Raise')
-    );
-
-    const raiseId = raiseObject && 'objectId' in raiseObject ? raiseObject.objectId : null;
-
-    // Extract CreatorCap object ID
-    const creatorCap = result.objectChanges?.find(
-        (change) => change.type === 'created' && change.objectType.includes('::launchpad::CreatorCap')
-    );
-
-    const creatorCapId = creatorCap && 'objectId' in creatorCap ? creatorCap.objectId : null;
-
-    console.log('\n✅ Raise created!');
-    console.log('Raise ID:', raiseId);
-    console.log('Creator Cap ID:', creatorCapId);
+    // Extract Raise and CreatorCap from result.objectChanges
+    const raiseId = ...;
+    const creatorCapId = ...;
     */
 
-    // ===== STEP 2: Contribute to the Raise =====
+    // ===== STEP 2: Stage Success/Failure Init Actions =====
+
+    console.log('\n📋 Staging success init actions...');
+
+    const EXAMPLE_RAISE_ID = '0xRAISE_ID';
+    const EXAMPLE_CREATOR_CAP_ID = '0xCREATOR_CAP_ID';
+    const BENEFICIARY_ADDRESS = '0xBENEFICIARY';
+
+    // Stage a stream and AMM pool for success case
+    const stageSuccessTx = sdk.workflows.launchpad.stageSuccessInitActions({
+        raiseId: EXAMPLE_RAISE_ID,
+        creatorCapId: EXAMPLE_CREATOR_CAP_ID,
+        raiseTokenType: RAISE_TOKEN_TYPE,
+        stableCoinType: STABLE_COIN_TYPE,
+        vaultName: 'treasury',
+        streamBeneficiary: BENEFICIARY_ADDRESS,
+        streamAmount: TransactionUtils.suiToMist(100),
+        streamDurationMs: BigInt(365 * 24 * 60 * 60 * 1000), // 1 year
+        poolAssetAmount: BigInt(1000),
+        poolStableAmount: BigInt(1000),
+        poolFeeBps: 30,
+    });
+
+    console.log('Success actions staged.');
+
+    console.log('\n📋 Staging failure init actions...');
+
+    // Stage failure actions (return TreasuryCap to creator)
+    const stageFailureTx = sdk.workflows.launchpad.stageFailureInitActions({
+        raiseId: EXAMPLE_RAISE_ID,
+        creatorCapId: EXAMPLE_CREATOR_CAP_ID,
+        raiseTokenType: RAISE_TOKEN_TYPE,
+        stableCoinType: STABLE_COIN_TYPE,
+        recipient: BENEFICIARY_ADDRESS,
+    });
+
+    console.log('Failure actions staged.');
+
+    // ===== STEP 3: Lock Intents =====
+
+    console.log('\n🔒 Locking intents...');
+
+    const lockTx = sdk.workflows.launchpad.lockIntents({
+        raiseId: EXAMPLE_RAISE_ID,
+        creatorCapId: EXAMPLE_CREATOR_CAP_ID,
+        raiseTokenType: RAISE_TOKEN_TYPE,
+        stableCoinType: STABLE_COIN_TYPE,
+    });
+
+    console.log('Intents locked. Investors can now contribute safely.');
+
+    // ===== STEP 4: Contribute to the Raise =====
 
     console.log('\n💰 Contributing to raise...');
 
-    const EXAMPLE_RAISE_ID = '0xRAISE_ID';
-
-    const contributeTx = sdk.launchpad.contribute({
+    const contributeTx = sdk.workflows.launchpad.contribute({
         raiseId: EXAMPLE_RAISE_ID,
-        paymentAmount: TransactionUtils.suiToMist(10), // Contribute 10 SUI
-        maxTotalCap: TransactionUtils.suiToMist(200), // Accept raise up to 200 SUI
-        crankFee: TransactionUtils.suiToMist(0.1), // 0.1 SUI fee for batch claims
+        raiseTokenType: RAISE_TOKEN_TYPE,
+        stableCoinType: STABLE_COIN_TYPE,
+        stablePaymentCoin: '0xYOUR_STABLE_COIN_ID',
+        maxTotalCap: LaunchpadWorkflow.UNLIMITED_CAP,
     });
 
     console.log('Contribution transaction created.');
 
-    // Multiple contributions allowed - just call contribute() again
-    // Can change maxTotalCap before deadline - 24 hours
+    // ===== STEP 5: Complete Raise (After Deadline) =====
 
-    // ===== STEP 3: Query Raise Data =====
+    console.log('\n🎉 Completing successful raise...');
+
+    // After deadline passes and minimum is met, complete the raise
+    const completeTx = sdk.workflows.launchpad.completeRaise({
+        raiseId: EXAMPLE_RAISE_ID,
+        creatorCapId: EXAMPLE_CREATOR_CAP_ID,
+        raiseTokenType: RAISE_TOKEN_TYPE,
+        stableCoinType: STABLE_COIN_TYPE,
+        daoCreationFee: TransactionUtils.suiToMist(1),
+    });
+
+    console.log('Complete raise transaction created (requires CreatorCap).');
+
+    // ===== STEP 6: Claim Tokens =====
+
+    console.log('\n🎁 Claiming tokens (for contributors)...');
+
+    const claimTx = sdk.workflows.launchpad.claimTokens({
+        raiseId: EXAMPLE_RAISE_ID,
+        raiseTokenType: RAISE_TOKEN_TYPE,
+        stableCoinType: STABLE_COIN_TYPE,
+    });
+
+    console.log('Claim transaction created. Each contributor calls this once.');
+
+    // ===== Query Raise Data =====
 
     console.log('\n🔍 Querying raise data...');
 
@@ -138,167 +190,10 @@ async function main() {
         console.log('  Raise ID:', recentRaise.raise_id);
         console.log('  Creator:', recentRaise.creator);
         console.log('  Min Raise:', recentRaise.min_raise_amount);
-        console.log('  Max Raise:', recentRaise.max_raise_amount || 'Unlimited');
-        console.log('  Tokens for Sale:', recentRaise.tokens_for_sale_amount);
         console.log('  Description:', recentRaise.description);
-        console.log('  Deadline:', new Date(Number(recentRaise.deadline_ms)).toLocaleString());
-
-        // Get contributions for this raise
-        const contributions = await sdk.query.getContributions(
-            factoryPackageId,
-            recentRaise.raise_id
-        );
-        console.log(`\n  Total contributors: ${contributions.length}`);
-
-        if (contributions.length > 0) {
-            console.log('\n  Recent contributions:');
-            contributions.slice(-5).forEach((contrib, idx) => {
-                console.log(`    ${idx + 1}. ${contrib.contributor}`);
-                console.log(`       Amount: ${TransactionUtils.mistToSui(contrib.amount)} SUI`);
-                console.log(`       Max Cap: ${TransactionUtils.mistToSui(contrib.max_total_cap)} SUI`);
-            });
-        }
-
-        // Get raise state
-        const state = await sdk.query.getRaiseState(recentRaise.raise_id);
-        const stateNames = ['FUNDING', 'SUCCESSFUL', 'FAILED'];
-        console.log(`\n  State: ${stateNames[state]}`);
-
-        // Get total raised
-        const totalRaised = await sdk.query.getTotalRaised(recentRaise.raise_id);
-        console.log(`  Total Raised: ${TransactionUtils.mistToSui(totalRaised)} SUI`);
     }
-
-    // ===== STEP 4: Settle Raise (After Deadline) =====
-
-    console.log('\n\n⚖️ Settling raise (after deadline)...');
-
-    const settleTx = sdk.launchpad.settleRaise(EXAMPLE_RAISE_ID);
-
-    console.log('Settle transaction created. Anyone can call this after deadline.');
-
-    // ===== STEP 5: Complete Raise (Create DAO) =====
-
-    console.log('\n🎉 Completing successful raise...');
-
-    const EXAMPLE_CREATOR_CAP_ID = '0xCREATOR_CAP_ID';
-
-    const completeTx = sdk.launchpad.completeRaise(
-        EXAMPLE_RAISE_ID,
-        EXAMPLE_CREATOR_CAP_ID,
-        TransactionUtils.suiToMist(1), // DAO creation fee
-    );
-
-    console.log('Complete raise transaction created (requires CreatorCap).');
-
-    // Alternative: Permissionless completion after 24h delay
-    const completePermissionlessTx = sdk.launchpad.completeRaisePermissionless(
-        EXAMPLE_RAISE_ID,
-        TransactionUtils.suiToMist(1),
-    );
-
-    console.log('Or use permissionless completion after deadline + 24 hours.');
-
-    // ===== STEP 6: Claim Tokens =====
-
-    console.log('\n🎁 Claiming tokens (for contributors)...');
-
-    const claimTx = sdk.launchpad.claimTokens(EXAMPLE_RAISE_ID);
-
-    console.log('Claim transaction created. Each contributor calls this once.');
-
-    // Check if tokens were claimed
-    const tokenClaims = await sdk.query.getTokenClaims(factoryPackageId, EXAMPLE_RAISE_ID);
-    console.log(`\nTotal token claims: ${tokenClaims.length}`);
-
-    // ===== STEP 7: Batch Claim Tokens =====
-
-    console.log('\n⚡ Batch claiming tokens (for crankers to earn rewards)...');
-
-    const contributorAddresses = [
-        '0xCONTRIBUTOR_1',
-        '0xCONTRIBUTOR_2',
-        '0xCONTRIBUTOR_3',
-        // ... up to 100 addresses
-    ];
-
-    const batchClaimTx = sdk.launchpad.batchClaimTokensFor(
-        EXAMPLE_RAISE_ID,
-        contributorAddresses
-    );
-
-    console.log('Batch claim transaction created. Cranker earns rewards per successful claim.');
-
-    // ===== STEP 8: Failed Raise - Claim Refunds =====
-
-    console.log('\n💸 Claiming refunds (if raise failed)...');
-
-    const refundTx = sdk.launchpad.claimRefund(EXAMPLE_RAISE_ID);
-
-    console.log('Refund claim transaction created.');
-
-    // Batch refund claiming
-    const batchRefundTx = sdk.launchpad.batchClaimRefundFor(
-        EXAMPLE_RAISE_ID,
-        contributorAddresses
-    );
-
-    console.log('Batch refund transaction created.');
-
-    // ===== STEP 9: Query User Contributions =====
-
-    console.log('\n\n👤 Querying user-specific data...');
-
-    const userAddress = '0xUSER_ADDRESS';
-
-    // Get all raises created by user
-    const myRaises = await sdk.query.getRaisesByCreator(factoryPackageId, userAddress);
-    console.log(`\nRaises created by user: ${myRaises.length}`);
-
-    // Get all contributions by user
-    const myContributions = await sdk.query.getContributionsByAddress(
-        factoryPackageId,
-        userAddress
-    );
-    console.log(`Contributions by user: ${myContributions.length}`);
-
-    // Get specific contribution in a raise
-    const userContribution = await sdk.query.getUserContribution(
-        EXAMPLE_RAISE_ID,
-        userAddress
-    );
-    if (userContribution) {
-        console.log('\nUser contribution in this raise:');
-        console.log(JSON.stringify(userContribution, null, 2));
-    } else {
-        console.log('\nUser has not contributed to this raise.');
-    }
-
-    // ===== STEP 10: Additional Operations =====
-
-    console.log('\n\n🛠️ Additional operations...');
-
-    // End raise early (if allowed and min met)
-    const endEarlyTx = sdk.launchpad.endRaiseEarly(
-        EXAMPLE_RAISE_ID,
-        EXAMPLE_CREATOR_CAP_ID
-    );
-    console.log('End raise early transaction created (requires allowEarlyCompletion=true).');
-
-    // Cleanup failed raise
-    const cleanupTx = sdk.launchpad.cleanupFailedRaise(
-        EXAMPLE_RAISE_ID,
-        EXAMPLE_CREATOR_CAP_ID
-    );
-    console.log('Cleanup transaction created (returns TreasuryCap to creator).');
 
     console.log('\n✅ All launchpad operations demonstrated!');
-    console.log('\n📚 Remember to:');
-    console.log('   1. Create coin with TreasuryCap (0 supply)');
-    console.log('   2. Get launchpad/DAO creation fees from Factory config');
-    console.log('   3. Wait for deadline before settling');
-    console.log('   4. Settlement must complete before DAO creation');
-    console.log('   5. Contributors can claim once raise completes');
 }
 
 main().catch((error) => {
