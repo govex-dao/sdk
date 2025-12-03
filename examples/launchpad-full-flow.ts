@@ -11,10 +11,13 @@
  */
 
 import { FutarchySDK, LaunchpadWorkflow, TransactionUtils } from '../src';
+import * as fs from 'fs';
+import * as path from 'path';
 
 async function main() {
     // Load deployment configuration
-    const deployments = require('../../packages/deployments-processed/_all-packages.json');
+    const deploymentsPath = path.join(__dirname, '../../packages/deployments-processed/_all-packages.json');
+    const deployments = JSON.parse(fs.readFileSync(deploymentsPath, 'utf8'));
 
     // Initialize SDK
     const sdk = await FutarchySDK.init({
