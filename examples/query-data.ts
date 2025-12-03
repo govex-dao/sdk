@@ -12,7 +12,7 @@ import { FutarchySDK } from '../src';
 
 async function main() {
     // Load deployment configuration
-    const deployments = require('../../deployments-processed/_all-packages.json');
+    const deployments = require('../../packages/deployments-processed/_all-packages.json');
 
     // Initialize SDK
     const sdk = await FutarchySDK.init({

@@ -16,10 +16,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
 
-const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
+const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const CONDITIONAL_COINS_PATH = path.join(REPO_ROOT, "packages", "conditional_coins");
 const DEPLOYMENTS_DIR = path.join(REPO_ROOT, "packages", "deployments");
-const SDK_DIR = path.join(REPO_ROOT, "packages", "sdk");
+const SDK_DIR = path.join(REPO_ROOT, "sdk");
 
 interface ConditionalCoinInfo {
   treasuryCapId: string;

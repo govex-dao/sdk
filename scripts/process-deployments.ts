@@ -106,8 +106,8 @@ function processDeployment(packageName: string, deploymentPath: string): Process
 }
 
 function main() {
-  const deploymentsDir = path.join(__dirname, '../../deployments');
-  const processedDir = path.join(__dirname, '../../deployments-processed');
+  const deploymentsDir = path.join(__dirname, '../../packages/deployments');
+  const processedDir = path.join(__dirname, '../../packages/deployments-processed');
 
   // Ensure output directory exists
   if (!fs.existsSync(processedDir)) {

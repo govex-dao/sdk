@@ -181,7 +181,7 @@ async function main() {
   console.log("=".repeat(80));
   try {
     execSync("npx tsx scripts/register-new-packages.ts", {
-      cwd: "/Users/admin/govex/packages/sdk",
+      cwd: "/Users/admin/govex/sdk",
       encoding: "utf8",
       stdio: "inherit",
     });

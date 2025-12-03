@@ -22,7 +22,7 @@ echo "STEP 1: LAUNCHPAD E2E TEST"
 echo "================================================================================"
 echo ""
 
-cd /Users/admin/govex/packages/sdk
+cd /Users/admin/govex/sdk
 npm run launchpad-e2e-two-outcome
 
 if [ $? -ne 0 ]; then

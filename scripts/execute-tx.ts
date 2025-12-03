@@ -48,7 +48,7 @@ export function getActiveEnv(): Network {
  * Load deployments config
  */
 export function loadDeployments(): any {
-    const deploymentsPath = path.join(__dirname, '../../deployments-processed/_all-packages.json');
+    const deploymentsPath = path.join(__dirname, '../../packages/deployments-processed/_all-packages.json');
     const data = fs.readFileSync(deploymentsPath, 'utf8');
     return JSON.parse(data);
 }

@@ -11,7 +11,7 @@ async function main() {
     console.log('Registering new packages in PackageRegistry...\n');
 
     // Load PackageRegistry and AccountProtocol addresses from deployment files
-    const accountProtocolPath = path.join(__dirname, '../../deployments-processed/AccountProtocol.json');
+    const accountProtocolPath = path.join(__dirname, '../../packages/deployments-processed/AccountProtocol.json');
     const accountProtocolDeployment = JSON.parse(fs.readFileSync(accountProtocolPath, 'utf8'));
 
     const REGISTRY = accountProtocolDeployment.sharedObjects.find((obj: any) => obj.name === 'PackageRegistry')?.objectId;
@@ -25,7 +25,7 @@ async function main() {
     console.log(`Using AccountProtocol: ${ACCOUNT_PROTOCOL_PKG}\n`);
 
     // Load all packages from latest deployment JSON
-    const deploymentLogsDir = path.join(__dirname, '../../deployment-logs');
+    const deploymentLogsDir = path.join(__dirname, '../../packages/deployment-logs');
     const logFiles = fs.readdirSync(deploymentLogsDir)
         .filter(f => f.startsWith('deployment_verified_') && f.endsWith('.json'))
         .sort()
