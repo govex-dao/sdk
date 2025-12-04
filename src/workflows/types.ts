@@ -484,32 +484,12 @@ export interface CreatePoolWithMintActionConfig {
   stableAmount: bigint;
   /** Fee in basis points (e.g., 30 = 0.3%) */
   feeBps: number;
-}
-
-/**
- * Create pool action (without minting)
- */
-export interface CreatePoolActionConfig {
-  type: 'create_pool';
-  /** Asset vault name */
-  assetVaultName: string;
-  /** Stable vault name */
-  stableVaultName: string;
-  /** Asset amount */
-  assetAmount: bigint;
-  /** Stable amount */
-  stableAmount: bigint;
-  /** Fee in basis points */
-  feeBps: number;
-}
-
-/**
- * Update pool parameters
- */
-export interface UpdatePoolParamsActionConfig {
-  type: 'update_pool_params';
-  /** New fee in basis points */
-  feeBps?: number;
+  /** LP coin type (e.g., "0x123::lp_coin::LP_COIN") */
+  lpType: string;
+  /** LP TreasuryCap object ID */
+  lpTreasuryCapId: string;
+  /** LP CoinMetadata object ID */
+  lpMetadataId: string;
 }
 
 /**
@@ -527,17 +507,6 @@ export interface AddLiquidityActionConfig {
   stableAmount: bigint;
   /** Minimum LP tokens */
   minLpTokens: bigint;
-}
-
-/**
- * Withdraw LP token from pool
- */
-export interface WithdrawLpTokenActionConfig {
-  type: 'withdraw_lp_token';
-  /** LP token amount */
-  lpAmount: bigint;
-  /** Recipient address */
-  recipient: string;
 }
 
 /**
@@ -572,30 +541,6 @@ export interface SwapActionConfig {
   inputVaultName: string;
   /** Output vault name */
   outputVaultName: string;
-}
-
-/**
- * Collect fees from pool
- */
-export interface CollectFeesActionConfig {
-  type: 'collect_fees';
-  /** Asset vault name */
-  assetVaultName: string;
-  /** Stable vault name */
-  stableVaultName: string;
-}
-
-/**
- * Withdraw collected fees
- */
-export interface WithdrawFeesActionConfig {
-  type: 'withdraw_fees';
-  /** Asset amount */
-  assetAmount: bigint;
-  /** Stable amount */
-  stableAmount: bigint;
-  /** Recipient address */
-  recipient: string;
 }
 
 // ============================================================================
@@ -914,14 +859,9 @@ export type ActionConfig =
   | SetQuotasActionConfig
   // Futarchy Liquidity
   | CreatePoolWithMintActionConfig
-  | CreatePoolActionConfig
-  | UpdatePoolParamsActionConfig
   | AddLiquidityActionConfig
-  | WithdrawLpTokenActionConfig
   | RemoveLiquidityActionConfig
   | SwapActionConfig
-  | CollectFeesActionConfig
-  | WithdrawFeesActionConfig
   // Futarchy Dissolution
   | CreateDissolutionCapabilityActionConfig
   // Governance - Package Registry
@@ -1066,7 +1006,7 @@ export interface ExecuteLaunchpadActionsConfig extends WorkflowBaseConfig {
  */
 export type LaunchpadActionType =
   | { type: 'create_stream'; coinType: string }
-  | { type: 'create_pool_with_mint'; assetType: string; stableType: string }
+  | { type: 'create_pool_with_mint'; assetType: string; stableType: string; lpType: string; lpTreasuryCapId: string; lpMetadataId: string }
   | { type: 'update_trading_params' }
   | { type: 'update_twap_config' }
   | { type: 'return_treasury_cap'; coinType: string }
@@ -1138,6 +1078,8 @@ export interface AdvanceToReviewConfig extends WorkflowBaseConfig {
   assetType: string;
   /** Stable type */
   stableType: string;
+  /** LP coin type for the spot pool (third type parameter of UnifiedSpotPool) */
+  lpType: string;
   /** Spot pool object ID */
   spotPoolId: string;
   /** Sender address (for receiving unused fees back) */
@@ -1188,6 +1130,8 @@ export interface AdvanceToTradingConfig extends WorkflowBaseConfig {
   assetType: string;
   /** Stable type */
   stableType: string;
+  /** LP coin type for the spot pool (third type parameter of UnifiedSpotPool) */
+  lpType: string;
 }
 
 /**
@@ -1206,6 +1150,8 @@ export interface FinalizeProposalConfig extends WorkflowBaseConfig {
   assetType: string;
   /** Stable type */
   stableType: string;
+  /** LP coin type for the spot pool (third type parameter of UnifiedSpotPool) */
+  lpType: string;
 }
 
 /**
@@ -1256,6 +1202,8 @@ export interface SpotSwapConfig extends WorkflowBaseConfig {
   assetType: string;
   /** Stable type */
   stableType: string;
+  /** LP coin type for the spot pool */
+  lpType: string;
   /** Direction of swap */
   direction: 'stable_to_asset' | 'asset_to_stable';
   /** Amount to swap (in input token) */
@@ -1282,6 +1230,8 @@ export interface ConditionalSwapConfig extends WorkflowBaseConfig {
   assetType: string;
   /** Stable type */
   stableType: string;
+  /** LP coin type for the spot pool */
+  lpType: string;
   /** Outcome index to swap in (this is where the swap will occur) */
   outcomeIndex: number;
   /** Direction of swap */
@@ -1379,15 +1329,10 @@ export type IntentActionConfig =
   // Futarchy Quota Actions
   | { action: 'set_quotas' }
   // Futarchy Liquidity Actions
-  | { action: 'create_pool_with_mint'; assetType: string; stableType: string }
-  | { action: 'create_pool'; assetType: string; stableType: string }
-  | { action: 'update_pool_params' }
+  | { action: 'create_pool_with_mint'; assetType: string; stableType: string; lpType: string; lpTreasuryCapId: string; lpMetadataId: string }
   | { action: 'add_liquidity'; assetType: string; stableType: string }
-  | { action: 'withdraw_lp_token'; assetType: string; stableType: string }
   | { action: 'remove_liquidity'; assetType: string; stableType: string }
   | { action: 'swap'; assetType: string; stableType: string }
-  | { action: 'collect_fees'; assetType: string; stableType: string }
-  | { action: 'withdraw_fees'; assetType: string; stableType: string }
   // Futarchy Dissolution Actions
   | { action: 'create_dissolution_capability'; assetType: string }
   // Governance - Package Registry Actions

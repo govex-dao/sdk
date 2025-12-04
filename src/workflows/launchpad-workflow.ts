@@ -569,6 +569,9 @@ export class LaunchpadWorkflow {
               action: 'create_pool_with_mint' as const,
               assetType: at.assetType,
               stableType: at.stableType,
+              lpType: at.lpType,
+              lpTreasuryCapId: at.lpTreasuryCapId,
+              lpMetadataId: at.lpMetadataId,
             };
           case 'update_trading_params':
             return { action: 'update_trading_params' as const };

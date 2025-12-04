@@ -102,6 +102,7 @@ async function main() {
   const daoAccountId = daoInfo.accountId;
   const assetType = daoInfo.assetType;
   const stableType = daoInfo.stableType;
+  const lpType = daoInfo.lpType;
   const spotPoolId = daoInfo.spotPoolId;
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
@@ -110,6 +111,7 @@ async function main() {
   console.log(`✅ DAO Account: ${daoAccountId}`);
   console.log(`✅ Asset Type: ${assetType}`);
   console.log(`✅ Stable Type: ${stableType}`);
+  console.log(`✅ LP Type: ${lpType}`);
   console.log(`✅ Spot Pool: ${spotPoolId}`);
   console.log(`✅ Shared Treasury Cap: ${isStableTreasuryCapShared}`);
   console.log();
@@ -307,6 +309,7 @@ async function main() {
     daoAccountId,
     assetType,
     stableType,
+    lpType,
     spotPoolId,
     senderAddress: activeAddress,
     conditionalCoinsRegistry,
@@ -354,6 +357,7 @@ async function main() {
     spotPoolId,
     assetType,
     stableType,
+    lpType,
   });
 
   await executeTransaction(sdk, toTradingTx.transaction, { network: "devnet" });
@@ -411,6 +415,7 @@ async function main() {
     escrowId,
     assetType,
     stableType,
+    lpType,
     inputCoins: coins1.data.map((c) => c.coinObjectId),
     amountIn: swapAmount1,
     minAmountOut: 0n,
@@ -448,6 +453,7 @@ async function main() {
         spotPoolId,
         assetType,
         stableType,
+        lpType,
         stableCoins: coins2.data.map((c) => c.coinObjectId),
         amountIn: swapAmount2,
         minAmountOut: 0n,
@@ -509,6 +515,7 @@ async function main() {
     spotPoolId,
     assetType,
     stableType,
+    lpType,
   });
 
   await executeTransaction(sdk, finalizeTx.transaction, { network: "devnet" });

@@ -266,9 +266,11 @@ async function main() {
     asset: await createTestCoin("Test Asset", "TASSET", "mainnet"), // Force private treasury
     // Stable coin can have shared TreasuryCap on devnet/testnet for easy minting
     stable: await createTestCoin("Test Stable", "TSTABLE", currentNetwork),
+    // LP coin MUST have private TreasuryCap - pool takes ownership of it for minting
+    lp: await createTestCoin("GOVEX_LP_TOKEN", "GOVEX_LP_TOKEN", "mainnet"), // Force private treasury
   };
 
-  console.log("\n✅ Test coins created!");
+  console.log("\n✅ Test coins created (asset, stable, lp)!");
 
   // Step 1: Register test stable coin for fee payments
   console.log("\n" + "=".repeat(80));
@@ -388,6 +390,9 @@ async function main() {
       assetAmount: poolAssetAmount,
       stableAmount: poolStableAmount,
       feeBps: poolFeeBps,
+      lpType: testCoins.lp.type,
+      lpTreasuryCapId: testCoins.lp.treasuryCap,
+      lpMetadataId: testCoins.lp.metadata,
     },
     {
       type: 'update_trading_params' as const,
@@ -703,6 +708,9 @@ async function main() {
           type: 'create_pool_with_mint' as const,
           assetType: testCoins.asset.type,
           stableType: testCoins.stable.type,
+          lpType: testCoins.lp.type,
+          lpTreasuryCapId: testCoins.lp.treasuryCap,
+          lpMetadataId: testCoins.lp.metadata,
         },
         { type: 'update_trading_params' as const },
         { type: 'update_twap_config' as const },
@@ -834,10 +842,13 @@ async function main() {
     accountId: accountId,
     assetType: testCoins.asset.type,
     stableType: testCoins.stable.type,
+    lpType: testCoins.lp.type,
     assetTreasuryCap: testCoins.asset.treasuryCap,
     assetMetadata: testCoins.asset.metadata,
     stableTreasuryCap: testCoins.stable.treasuryCap,
     stableMetadata: testCoins.stable.metadata,
+    lpTreasuryCap: testCoins.lp.treasuryCap,
+    lpMetadata: testCoins.lp.metadata,
     isStableTreasuryCapShared: testCoins.stable.isSharedTreasuryCap,
     stablePackageId: testCoins.stable.packageId,
     spotPoolId: poolId || null,

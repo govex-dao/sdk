@@ -815,12 +815,15 @@ export class IntentExecutor {
             outcomeType,
             action.assetType,
             action.stableType,
+            action.lpType,
             witnessType,
           ],
           arguments: [
             executable,
             tx.object(config.accountId),
             tx.object(packageRegistryId),
+            tx.object(action.lpTreasuryCapId),
+            tx.object(action.lpMetadataId),
             tx.object(clockId),
             versionWitness,
             intentWitness,
@@ -830,55 +833,9 @@ export class IntentExecutor {
 
       // NOTE: The following actions use ResourceRequest pattern and are NOT supported
       // in launchpad/proposal execution. They require separate PTB flows with fulfill_*:
-      // - create_pool (use create_pool_with_mint instead)
       // - add_liquidity
-      // - withdraw_lp_token
       // - remove_liquidity
       // - swap
-
-      case 'update_pool_params':
-        // This action is deterministic (no ResourceRequest)
-        tx.moveCall({
-          target: `${futarchyActionsPackageId}::liquidity_actions::do_update_pool_params`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            tx.object(config.accountId),
-            versionWitness,
-            intentWitness,
-          ],
-        });
-        break;
-
-      case 'collect_fees':
-        tx.moveCall({
-          target: `${futarchyActionsPackageId}::liquidity_actions::do_collect_fees`,
-          typeArguments: [action.assetType, action.stableType, outcomeType, witnessType],
-          arguments: [
-            executable,
-            tx.object(config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
-        });
-        break;
-
-      case 'withdraw_fees':
-        tx.moveCall({
-          target: `${futarchyActionsPackageId}::liquidity_actions::do_withdraw_fees`,
-          typeArguments: [action.assetType, action.stableType, outcomeType, witnessType],
-          arguments: [
-            executable,
-            tx.object(config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
-        });
-        break;
 
       // =========================================================================
       // FUTARCHY DISSOLUTION ACTIONS

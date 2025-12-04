@@ -488,7 +488,7 @@ export class ProposalWorkflow {
     // 4. Create conditional AMM pools
     tx.moveCall({
       target: `${futarchyMarketsCorePackageId}::proposal::create_conditional_amm_pools`,
-      typeArguments: [config.assetType, config.stableType],
+      typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
         tx.object(config.proposalId),
         escrow,
@@ -572,7 +572,7 @@ export class ProposalWorkflow {
 
     tx.moveCall({
       target: `${futarchyGovernancePackageId}::proposal_lifecycle::advance_proposal_state`,
-      typeArguments: [config.assetType, config.stableType],
+      typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
         tx.object(config.daoAccountId),
         tx.object(config.proposalId),
@@ -634,7 +634,7 @@ export class ProposalWorkflow {
 
     const [outputOpt, balanceOpt] = tx.moveCall({
       target: swapTarget,
-      typeArguments: [config.assetType, config.stableType],
+      typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
         tx.object(config.spotPoolId),
         tx.object(config.proposalId || '0x0'), // Empty if no active proposal
@@ -797,7 +797,7 @@ export class ProposalWorkflow {
     // Finalize conditional swaps
     tx.moveCall({
       target: `${futarchyMarketsOperationsPackageId}::swap_entry::finalize_conditional_swaps`,
-      typeArguments: [config.assetType, config.stableType],
+      typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
         updatedBatch,
         tx.object(config.spotPoolId),
@@ -853,7 +853,7 @@ export class ProposalWorkflow {
 
     tx.moveCall({
       target: `${futarchyGovernancePackageId}::proposal_lifecycle::finalize_proposal_with_spot_pool`,
-      typeArguments: [config.assetType, config.stableType],
+      typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
         tx.object(config.daoAccountId),
         tx.object(packageRegistryId),

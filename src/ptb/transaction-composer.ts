@@ -137,6 +137,9 @@ export class TransactionBuilder {
     assetAmount: bigint;
     stableAmount: bigint;
     feeBps: number;
+    lpType: string;
+    lpTreasuryCapId: string;
+    lpMetadataId: string;
   }): this {
     this.actions.push({
       type: 'create_pool_with_mint',
