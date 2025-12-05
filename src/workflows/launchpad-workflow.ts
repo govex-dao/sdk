@@ -374,19 +374,20 @@ export class LaunchpadWorkflow {
             builder,
             tx.pure.string(action.vaultName),
             tx.pure.u64(action.amount),
+            tx.pure.string(action.resourceName),
           ],
         });
         break;
 
-      case 'withdraw':
-        // Use transfer_init_actions for withdraw+transfer combo
+      case 'spend':
         tx.moveCall({
-          target: `${accountActionsPackageId}::transfer_init_actions::add_withdraw_and_transfer_spec`,
+          target: `${accountActionsPackageId}::vault_init_actions::add_spend_spec`,
           arguments: [
             builder,
             tx.pure.string(action.vaultName),
             tx.pure.u64(action.amount),
-            tx.pure.address(action.recipient),
+            tx.pure.bool(action.spendAll),
+            tx.pure.string(action.resourceName),
           ],
         });
         break;
@@ -397,7 +398,15 @@ export class LaunchpadWorkflow {
           arguments: [
             builder,
             tx.pure.address(action.recipient),
+            tx.pure.string(action.resourceName),
           ],
+        });
+        break;
+
+      case 'transfer_to_sender':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_to_sender_spec`,
+          arguments: [builder, tx.pure.string(action.resourceName)],
         });
         break;
 

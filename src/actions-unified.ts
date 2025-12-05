@@ -175,38 +175,58 @@ export class VaultActions {
 
   /**
    * Add a deposit action spec
+   * @param resourceName - The name of the resource to take from executable_resources
    */
   addDeposit(
     tx: Transaction,
     builder: ReturnType<Transaction['moveCall']>,
     vaultName: string,
-    amount: bigint
+    amount: bigint,
+    resourceName: string
   ): void {
     tx.moveCall({
       target: `${this.packages.accountActionsPackageId}::vault_init_actions::add_deposit_spec`,
-      arguments: [builder, tx.pure.string(vaultName), tx.pure.u64(amount)],
+      arguments: [builder, tx.pure.string(vaultName), tx.pure.u64(amount), tx.pure.string(resourceName)],
     });
   }
 
   /**
-   * Add a withdraw action spec (withdraw from vault + transfer to recipient)
+   * Add a spend action spec
+   * @param resourceName - The name to store the coin in executable_resources
    */
-  addWithdraw(
+  addSpend(
     tx: Transaction,
     builder: ReturnType<Transaction['moveCall']>,
     vaultName: string,
     amount: bigint,
-    recipient: string
+    spendAll: boolean,
+    resourceName: string
   ): void {
-    // Use transfer_init_actions for withdraw+transfer combo
     tx.moveCall({
-      target: `${this.packages.accountActionsPackageId}::transfer_init_actions::add_withdraw_and_transfer_spec`,
+      target: `${this.packages.accountActionsPackageId}::vault_init_actions::add_spend_spec`,
       arguments: [
         builder,
         tx.pure.string(vaultName),
         tx.pure.u64(amount),
-        tx.pure.address(recipient),
+        tx.pure.bool(spendAll),
+        tx.pure.string(resourceName),
       ],
+    });
+  }
+
+  /**
+   * Add a transfer object action spec
+   * @param resourceName - The name of the resource to take from executable_resources
+   */
+  addTransfer(
+    tx: Transaction,
+    builder: ReturnType<Transaction['moveCall']>,
+    recipient: string,
+    resourceName: string
+  ): void {
+    tx.moveCall({
+      target: `${this.packages.accountActionsPackageId}::transfer_init_actions::add_transfer_object_spec`,
+      arguments: [builder, tx.pure.address(recipient), tx.pure.string(resourceName)],
     });
   }
 }

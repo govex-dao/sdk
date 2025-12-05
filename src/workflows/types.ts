@@ -90,6 +90,7 @@ export interface CancelStreamActionConfig {
 
 /**
  * Deposit to vault action configuration
+ * The coin is taken from executable_resources using the given resourceName
  */
 export interface DepositActionConfig {
   type: 'deposit';
@@ -97,10 +98,14 @@ export interface DepositActionConfig {
   vaultName: string;
   /** Amount to deposit */
   amount: bigint;
+  /** Resource name to take the coin from executable_resources */
+  resourceName: string;
 }
 
 /**
- * Spend from vault action configuration (internal use, returns coin to PTB)
+ * Spend from vault action configuration
+ * The coin is placed in executable_resources under the given resourceName
+ * for consumption by subsequent actions (e.g., TransferObject, Deposit)
  */
 export interface SpendActionConfig {
   type: 'spend';
@@ -110,19 +115,8 @@ export interface SpendActionConfig {
   amount: bigint;
   /** Whether to spend entire balance */
   spendAll: boolean;
-}
-
-/**
- * Withdraw from vault and transfer action configuration
- */
-export interface WithdrawActionConfig {
-  type: 'withdraw';
-  /** Vault name */
-  vaultName: string;
-  /** Amount to withdraw */
-  amount: bigint;
-  /** Recipient address */
-  recipient: string;
+  /** Resource name to store the coin in executable_resources */
+  resourceName: string;
 }
 
 /**
@@ -225,19 +219,24 @@ export interface UpdateCurrencyActionConfig {
 
 /**
  * Transfer object action configuration
- * Note: The object is passed at execution time via PTB
+ * The object is taken from executable_resources using the given resourceName
  */
 export interface TransferActionConfig {
   type: 'transfer';
   /** Recipient address */
   recipient: string;
+  /** Resource name to take the object from executable_resources */
+  resourceName: string;
 }
 
 /**
  * Transfer object to transaction sender (cranker)
+ * The object is taken from executable_resources using the given resourceName
  */
 export interface TransferToSenderActionConfig {
   type: 'transfer_to_sender';
+  /** Resource name to take the object from executable_resources */
+  resourceName: string;
 }
 
 // ============================================================================
@@ -824,7 +823,6 @@ export type ActionConfig =
   // Vault
   | DepositActionConfig
   | SpendActionConfig
-  | WithdrawActionConfig
   | ApproveCoinTypeActionConfig
   | RemoveApprovedCoinTypeActionConfig
   // Currency
@@ -1180,8 +1178,9 @@ export type ProposalActionType =
   | { type: 'mint'; coinType: string }
   | { type: 'burn'; coinType: string }
   | { type: 'deposit'; coinType: string }
-  | { type: 'withdraw'; coinType: string }
+  | { type: 'spend'; coinType: string }
   | { type: 'transfer'; objectType: string }
+  | { type: 'transfer_to_sender'; objectType: string }
   | { type: 'memo' };
 
 // ============================================================================
@@ -1292,7 +1291,6 @@ export type IntentActionConfig =
   // Account Actions - Vault
   | { action: 'deposit'; coinType: string }
   | { action: 'spend'; coinType: string }
-  | { action: 'withdraw'; coinType: string }
   | { action: 'approve_coin_type'; coinType: string }
   | { action: 'remove_approved_coin_type'; coinType: string }
   // Account Actions - Currency

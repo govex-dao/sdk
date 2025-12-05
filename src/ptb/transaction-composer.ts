@@ -229,37 +229,54 @@ export class TransactionBuilder {
 
   /**
    * Add a deposit action
+   * @param resourceName - The name of the resource to take from executable_resources
    */
-  addDeposit(vaultName: string, amount: bigint): this {
+  addDeposit(vaultName: string, amount: bigint, resourceName: string): this {
     this.actions.push({
       type: 'deposit',
       vaultName,
       amount,
+      resourceName,
     });
     return this;
   }
 
   /**
-   * Add a withdraw action
+   * Add a spend action
+   * @param resourceName - The name to store the coin in executable_resources
    */
-  addWithdraw(vaultName: string, amount: bigint, recipient: string): this {
+  addSpend(vaultName: string, amount: bigint, spendAll: boolean, resourceName: string): this {
     this.actions.push({
-      type: 'withdraw',
+      type: 'spend',
       vaultName,
       amount,
-      recipient,
+      spendAll,
+      resourceName,
     });
     return this;
   }
 
   /**
    * Add a transfer action
-   * Note: The object to transfer is provided at execution time
+   * @param resourceName - The name of the resource to take from executable_resources
    */
-  addTransfer(recipient: string): this {
+  addTransfer(recipient: string, resourceName: string): this {
     this.actions.push({
       type: 'transfer',
       recipient,
+      resourceName,
+    });
+    return this;
+  }
+
+  /**
+   * Add a transfer to sender action
+   * @param resourceName - The name of the resource to take from executable_resources
+   */
+  addTransferToSender(resourceName: string): this {
+    this.actions.push({
+      type: 'transfer_to_sender',
+      resourceName,
     });
     return this;
   }
@@ -518,19 +535,20 @@ export class TransactionBuilder {
             this.builder!,
             this.tx.pure.string(action.vaultName),
             this.tx.pure.u64(action.amount),
+            this.tx.pure.string(action.resourceName),
           ],
         });
         break;
 
-      case 'withdraw':
-        // Use transfer_init_actions for withdraw+transfer combo
+      case 'spend':
         this.tx.moveCall({
-          target: `${accountActionsPackageId}::transfer_init_actions::add_withdraw_and_transfer_spec`,
+          target: `${accountActionsPackageId}::vault_init_actions::add_spend_spec`,
           arguments: [
             this.builder!,
             this.tx.pure.string(action.vaultName),
             this.tx.pure.u64(action.amount),
-            this.tx.pure.address(action.recipient),
+            this.tx.pure.bool(action.spendAll),
+            this.tx.pure.string(action.resourceName),
           ],
         });
         break;
@@ -541,6 +559,17 @@ export class TransactionBuilder {
           arguments: [
             this.builder!,
             this.tx.pure.address(action.recipient),
+            this.tx.pure.string(action.resourceName),
+          ],
+        });
+        break;
+
+      case 'transfer_to_sender':
+        this.tx.moveCall({
+          target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_to_sender_spec`,
+          arguments: [
+            this.builder!,
+            this.tx.pure.string(action.resourceName),
           ],
         });
         break;

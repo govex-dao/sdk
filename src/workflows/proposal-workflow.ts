@@ -288,19 +288,20 @@ export class ProposalWorkflow {
             builder,
             tx.pure.string(action.vaultName),
             tx.pure.u64(action.amount),
+            tx.pure.string(action.resourceName),
           ],
         });
         break;
 
-      case 'withdraw':
-        // Use transfer_init_actions for withdraw+transfer combo
+      case 'spend':
         tx.moveCall({
-          target: `${accountActionsPackageId}::transfer_init_actions::add_withdraw_and_transfer_spec`,
+          target: `${accountActionsPackageId}::vault_init_actions::add_spend_spec`,
           arguments: [
             builder,
             tx.pure.string(action.vaultName),
             tx.pure.u64(action.amount),
-            tx.pure.address(action.recipient),
+            tx.pure.bool(action.spendAll),
+            tx.pure.string(action.resourceName),
           ],
         });
         break;
@@ -311,7 +312,15 @@ export class ProposalWorkflow {
           arguments: [
             builder,
             tx.pure.address(action.recipient),
+            tx.pure.string(action.resourceName),
           ],
+        });
+        break;
+
+      case 'transfer_to_sender':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_to_sender_spec`,
+          arguments: [builder, tx.pure.string(action.resourceName)],
         });
         break;
 
@@ -900,10 +909,12 @@ export class ProposalWorkflow {
             return { action: 'burn' as const, coinType: at.coinType };
           case 'deposit':
             return { action: 'deposit' as const, coinType: at.coinType };
-          case 'withdraw':
-            return { action: 'withdraw' as const, coinType: at.coinType };
+          case 'spend':
+            return { action: 'spend' as const, coinType: at.coinType };
           case 'transfer':
             return { action: 'transfer' as const, objectType: at.objectType };
+          case 'transfer_to_sender':
+            return { action: 'transfer_to_sender' as const, objectType: at.objectType };
           case 'memo':
             return { action: 'memo' as const };
           default:

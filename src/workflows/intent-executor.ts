@@ -340,22 +340,6 @@ export class IntentExecutor {
         });
         break;
 
-      case 'withdraw':
-        // For init contexts (launchpad/proposal), use do_init_withdraw_and_transfer
-        // which withdraws from vault AND transfers to recipient in one action
-        tx.moveCall({
-          target: `${accountActionsPackageId}::vault::do_init_withdraw_and_transfer`,
-          typeArguments: [configType, outcomeType, action.coinType, witnessType],
-          arguments: [
-            executable,
-            tx.object(config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-          ],
-        });
-        break;
-
       case 'approve_coin_type':
         tx.moveCall({
           target: `${accountActionsPackageId}::vault::do_approve_coin_type`,
