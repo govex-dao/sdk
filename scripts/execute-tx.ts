@@ -8,20 +8,22 @@
  * - Handle results and errors
  */
 
-import { FutarchySDK } from '../src/sdk/FutarchySDK';
-import { TransactionUtils } from '../src/services/transaction';
+import { FutarchySDK, parseTransactionError } from '@govex/futarchy-sdk';
 import { Transaction } from '@mysten/sui/transactions';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { NetworkType } from '@govex/futarchy-sdk';
+
+type SDK = InstanceType<typeof FutarchySDK>;
+
 
 // ===== Configuration =====
 
-export type Network = 'mainnet' | 'testnet' | 'devnet' | 'localnet';
 
 export interface ExecuteConfig {
-    network: Network;
+    network: NetworkType;
     showEffects?: boolean;
     showObjectChanges?: boolean;
     showEvents?: boolean;
@@ -40,17 +42,8 @@ export function getActiveAddress(): string {
 /**
  * Get active environment from Sui CLI
  */
-export function getActiveEnv(): Network {
-    return execSync('sui client active-env', { encoding: 'utf8' }).trim() as Network;
-}
-
-/**
- * Load deployments config
- */
-export function loadDeployments(): any {
-    const deploymentsPath = path.join(__dirname, '../../packages/deployments-processed/_all-packages.json');
-    const data = fs.readFileSync(deploymentsPath, 'utf8');
-    return JSON.parse(data);
+export function getActiveEnv(): NetworkType {
+    return execSync('sui client active-env', { encoding: 'utf8' }).trim() as NetworkType;
 }
 
 /**
@@ -124,15 +117,13 @@ export function loadTestCoins(): {
 /**
  * Initialize SDK with current network
  */
-export async function initSDK(network?: Network): Promise<FutarchySDK> {
-    const deployments = loadDeployments();
+export function initSDK(network?: NetworkType): SDK {
     const actualNetwork = network || getActiveEnv();
 
     console.log(`🚀 Initializing SDK on ${actualNetwork}...`);
 
-    const sdk = await FutarchySDK.init({
+    const sdk = new FutarchySDK({
         network: actualNetwork,
-        deployments,
     });
 
     console.log(`✅ SDK initialized`);
@@ -147,7 +138,7 @@ export async function initSDK(network?: Network): Promise<FutarchySDK> {
  * This method doesn't require managing keypairs - uses whatever is active in sui CLI
  */
 export async function executeTransaction(
-    sdk: FutarchySDK,
+    sdk: SDK,
     tx: Transaction,
     config: ExecuteConfig = { network: 'devnet', showEffects: true, showObjectChanges: true, showEvents: true, dryRun: false }
 ): Promise<any> {
@@ -285,14 +276,26 @@ export async function executeTransaction(
             }
         }
     } catch (error) {
-        console.error('\n❌ Transaction failed:', error);
+        console.error('\n❌ Transaction failed!');
 
-        // Try to print more details if available
-        if ((error as any).cause?.effects?.status) {
-            console.error('\nStatus:', JSON.stringify((error as any).cause.effects.status, null, 2));
+        // Use SDK error parsing utilities
+        const parsedError = parseTransactionError(error);
+        if (parsedError) {
+            console.error(parsedError.toFormattedString());
+        } else {
+            // Fallback for unparseable errors
+            const err = error as any;
+            const cause = err?.cause;
+            if (cause?.executionErrorSource) {
+                console.error('\n📍 Error:', cause.executionErrorSource);
+            } else if (err?.message) {
+                console.error('\n📍 Error:', err.message);
+            }
         }
 
-        throw error;
+        const err = error as any;
+        const cleanMessage = err?.cause?.effects?.status?.error || err?.message || 'Unknown error';
+        throw new Error(`Transaction failed: ${cleanMessage}`);
     }
 }
 
@@ -301,7 +304,7 @@ export async function executeTransaction(
  * WARNING: Only use with test keypairs, never production keys!
  */
 export async function executeTransactionWithKeypair(
-    sdk: FutarchySDK,
+    sdk: SDK,
     tx: Transaction,
     keypair: Ed25519Keypair,
     config: ExecuteConfig = { network: 'devnet', showEffects: true, showObjectChanges: true, showEvents: true }
@@ -364,7 +367,7 @@ export function printTransaction(tx: Transaction): void {
 /**
  * Helper to wait for transaction confirmation
  */
-export async function waitForTransaction(sdk: FutarchySDK, digest: string): Promise<any> {
+export async function waitForTransaction(sdk: SDK, digest: string): Promise<any> {
     console.log(`\n⏳ Waiting for transaction ${digest}...`);
     const result = await sdk.client.waitForTransaction({
         digest,
@@ -382,7 +385,6 @@ export async function waitForTransaction(sdk: FutarchySDK, digest: string): Prom
 export default {
     getActiveAddress,
     getActiveEnv,
-    loadDeployments,
     loadTestCoins,
     initSDK,
     executeTransaction,

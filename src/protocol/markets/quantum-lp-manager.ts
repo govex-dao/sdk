@@ -17,7 +17,7 @@
  */
 
 import { Transaction } from '@mysten/sui/transactions';
-import { TransactionUtils } from '../../services/transaction';
+import { TransactionUtils } from '../../services/utils';
 
 /**
  * Quantum LP Manager Static Functions

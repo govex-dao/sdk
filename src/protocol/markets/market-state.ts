@@ -13,7 +13,7 @@
  */
 
 import { Transaction } from '@mysten/sui/transactions';
-import { TransactionUtils } from '../../services/transaction';
+import { TransactionUtils } from '../../services/utils';
 
 /**
  * Market State Static Functions

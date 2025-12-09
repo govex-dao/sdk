@@ -10,7 +10,8 @@ NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SDK_DIR="$(dirname "$SCRIPT_DIR")"
-PACKAGES_DIR="$(dirname "$(dirname "$SDK_DIR")")"
+APP_DIR="$(dirname "$SDK_DIR")"
+PACKAGES_DIR="$APP_DIR/packages"
 DEPLOYMENTS_DIR="$SDK_DIR/deployments"
 TMP_DIR="$SDK_DIR/tmp"
 
@@ -143,10 +144,27 @@ echo ""
 STABLE_TYPE=$(deploy_test_coin "test_stable" "STABLE" "Test stable coin for payments" | tail -1)
 echo ""
 
+# Share the stable TreasuryCap so launchpad can use it
+echo -e "${BLUE}=== Sharing Test Stable TreasuryCap ===${NC}"
+STABLE_JSON="$DEPLOYMENTS_DIR/test_stable.json"
+if [ -f "$STABLE_JSON" ]; then
+    STABLE_TREASURY_CAP=$(jq -r '.objectChanges[]? | select(.objectType? and (.objectType | contains("::coin::TreasuryCap"))) | .objectId' "$STABLE_JSON" 2>/dev/null | head -1)
+    if [ -n "$STABLE_TREASURY_CAP" ]; then
+        echo "Sharing TreasuryCap: $STABLE_TREASURY_CAP"
+        sui client transfer --to shared --object-id "$STABLE_TREASURY_CAP" --gas-budget 10000000 2>&1 || \
+        echo -e "${YELLOW}⚠ Could not share TreasuryCap (may need manual sharing)${NC}"
+    else
+        echo -e "${YELLOW}⚠ Could not find TreasuryCap in deployment JSON${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ test_stable.json not found${NC}"
+fi
+echo ""
+
 # Add stable coin to factory allowed types
 echo -e "${BLUE}=== Adding Test Stable to Factory Allowed Types ===${NC}"
 
-FACTORY_JSON="$PACKAGES_DIR/packages/deployments/futarchy_factory.json"
+FACTORY_JSON="$PACKAGES_DIR/deployments/futarchy_factory.json"
 
 if [ -f "$FACTORY_JSON" ]; then
     FACTORY_PKG=$(jq -r '.objectChanges[]? | select(.type == "published") | .packageId' "$FACTORY_JSON" 2>/dev/null | head -1)

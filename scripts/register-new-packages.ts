@@ -1,8 +1,9 @@
 import { Transaction } from '@mysten/sui/transactions';
 import { bcs } from '@mysten/sui/bcs';
 import { initSDK, executeTransaction, getActiveAddress } from './execute-tx';
-import * as path from 'path';
-import * as fs from 'fs';
+
+import accountProtocolDeployment from '../deployments/accountProtocol.json';
+import deployments from '../deployments/_all-packages.json';
 
 async function main() {
     const sdk = await initSDK();
@@ -11,9 +12,6 @@ async function main() {
     console.log('Registering new packages in PackageRegistry...\n');
 
     // Load PackageRegistry and AccountProtocol addresses from deployment files
-    const accountProtocolPath = path.join(__dirname, '../../packages/deployments-processed/AccountProtocol.json');
-    const accountProtocolDeployment = JSON.parse(fs.readFileSync(accountProtocolPath, 'utf8'));
-
     const REGISTRY = accountProtocolDeployment.sharedObjects.find((obj: any) => obj.name === 'PackageRegistry')?.objectId;
     const ACCOUNT_PROTOCOL_PKG = accountProtocolDeployment.packageId;
 
@@ -24,21 +22,16 @@ async function main() {
     console.log(`Using PackageRegistry: ${REGISTRY}`);
     console.log(`Using AccountProtocol: ${ACCOUNT_PROTOCOL_PKG}\n`);
 
-    // Load all packages from latest deployment JSON
-    const deploymentLogsDir = path.join(__dirname, '../../packages/deployment-logs');
-    const logFiles = fs.readdirSync(deploymentLogsDir)
-        .filter(f => f.startsWith('deployment_verified_') && f.endsWith('.json'))
-        .sort()
-        .reverse();
-
-    if (logFiles.length === 0) {
-        throw new Error('No deployment log files found');
+    // Use packages from deployments JSON (imported from _all-packages.json)
+    // Extract packageId from each deployment entry
+    const allPackages: Record<string, string> = {};
+    for (const [name, data] of Object.entries(deployments)) {
+        const pkgData = data as { packageId?: string };
+        if (pkgData.packageId) {
+            allPackages[name] = pkgData.packageId;
+        }
     }
-
-    const latestDeploymentPath = path.join(deploymentLogsDir, logFiles[0]);
-    console.log(`Loading packages from: ${logFiles[0]}\n`);
-    const deploymentData = JSON.parse(fs.readFileSync(latestDeploymentPath, 'utf8'));
-    const allPackages = deploymentData.packages;
+    console.log(`Loading ${Object.keys(allPackages).length} packages from deployments/_all-packages.json\n`);
 
     // Map package names to lowercase for registry (factory expects lowercase names)
     const nameMapping: Record<string, string> = {

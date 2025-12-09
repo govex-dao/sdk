@@ -2,26 +2,28 @@
  * Basic usage example for Futarchy SDK
  *
  * This example shows how to:
- * 1. Initialize the SDK with deployment config
+ * 1. Initialize the SDK (with bundled or custom deployments)
  * 2. Access package IDs
  * 3. Access shared objects (Factory, PackageRegistry)
  * 4. Query on-chain data using the SuiClient
  */
 
-import { FutarchySDK } from '../src';
-import * as fs from 'fs';
-import * as path from 'path';
+import { FutarchySDK } from '@govex/futarchy-sdk';
+// Optional: import custom deployments if you need to override bundled ones
+// import customDeployments from './my-custom-deployments.json';
 
 async function main() {
-    // Load deployment configuration
-    const deploymentsPath = path.join(__dirname, '../../packages/deployments-processed/_all-packages.json');
-    const deployments = JSON.parse(fs.readFileSync(deploymentsPath, 'utf8'));
-
-    // Initialize SDK
-    const sdk = await FutarchySDK.init({
+    // Option 1: Use bundled deployments (recommended for standard networks)
+    // The SDK includes official deployments for devnet, testnet, and mainnet
+    const sdk = new FutarchySDK({
         network: 'devnet',
-        deployments,
     });
+
+    // Option 2: Use custom deployments (for local/custom deployments)
+    // const sdk = await FutarchySDK.init({
+    //     network: 'devnet',
+    //     deployments: customDeployments,
+    // });
 
     console.log('✅ SDK initialized');
     console.log('Network:', sdk.network.network);

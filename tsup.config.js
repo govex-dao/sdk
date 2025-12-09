@@ -7,11 +7,12 @@ export default defineConfig([
         outDir: 'dist/esm',
         sourcemap: true,
         clean: true,
-        dts: true,
-        outExtension: () => ({ js: '.js' }),
+        dts: { resolve: true },
+        outExtension: () => ({ js: '.js', dts: '.d.ts' }),
         esbuildOptions(options) {
             options.outbase = 'src';
-        }
+            options.alias = { '@': './src' };
+        },
     },
     {
         entry: ['src/**/*.ts'],
@@ -23,6 +24,7 @@ export default defineConfig([
         outExtension: () => ({ js: '.js' }),
         esbuildOptions(options) {
             options.outbase = 'src';
-        }
+            options.alias = { '@': './src' };
+        },
     }
 ]);

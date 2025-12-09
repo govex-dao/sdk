@@ -11,7 +11,17 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@govex/futarchy-sdk": ["src/index.ts"],
+      "@/*": ["src/*"],
+      "@/services/*": ["src/services/*"],
+      "@/config/*": ["src/config/*"],
+      "@/protocol/*": ["src/protocol/*"],
+      "@/utils/*": ["src/utils/*"],
+      "@/types/*": ["src/types/*"]
+    },
     "removeComments": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -30,6 +40,6 @@
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "examples/**/*", "deployments/**/*", "scripts/**/*"],
   "exclude": ["node_modules", "dist"]
 }

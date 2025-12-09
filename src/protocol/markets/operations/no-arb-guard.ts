@@ -15,7 +15,7 @@
  */
 
 import { Transaction } from '@mysten/sui/transactions';
-import { TransactionUtils } from '../../../services/transaction';
+import { TransactionUtils } from '../../../services/utils';
 
 /**
  * No-Arbitrage Guard Static Functions

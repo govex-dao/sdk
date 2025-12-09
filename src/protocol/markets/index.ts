@@ -26,3 +26,6 @@ export * from './proposal';
 export * from './quantum-lp-manager';
 export * from './swap-core';
 export * from './unified-spot-pool';
+
+// Market operations
+export * from './operations';

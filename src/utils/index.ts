@@ -2,12 +2,19 @@
  * Utility Functions
  *
  * Shared utility functions for the SDK.
- * Note: Core validation functions are exported from ./core/validation.
- * This module only exports additional low-level utilities.
  *
  * @module utils
  */
 
 export * from './hex';
-// Validation utilities that don't conflict with core validators
-export { validateMoveTypes, validateAddress, validateU64 } from './validation';
+export * from './version';
+export * from './validators';
+export * from './errors';
+export * from './bcs';
+export * from '../services/utils/currency';
+export * from './objects';
+
+// Coin registry utilities (pure functions)
+export * as coinRegistry from './coin-registry';
+export type { CoinRegistryConfig, DepositCoinSetConfig, TakeCoinSetConfig } from './coin-registry';
+

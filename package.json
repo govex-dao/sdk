@@ -4,36 +4,36 @@
   "description": "TypeScript SDK for Govex Futarchy Protocol on Sui",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
-  "types": "./dist/esm/index.d.ts",
+  "types": "./dist/esm/index.d.mts",
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./dist/esm/index.d.ts",
+      "types": "./dist/esm/index.d.mts",
       "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.js"
     },
     "./sdk": {
-      "types": "./dist/esm/sdk/index.d.ts",
+      "types": "./dist/esm/sdk/index.d.mts",
       "import": "./dist/esm/sdk/index.js",
       "require": "./dist/cjs/sdk/index.js"
     },
     "./workflows": {
-      "types": "./dist/esm/workflows/index.d.ts",
+      "types": "./dist/esm/workflows/index.d.mts",
       "import": "./dist/esm/workflows/index.js",
       "require": "./dist/cjs/workflows/index.js"
     },
     "./protocol": {
-      "types": "./dist/esm/protocol/index.d.ts",
+      "types": "./dist/esm/protocol/index.d.mts",
       "import": "./dist/esm/protocol/index.js",
       "require": "./dist/cjs/protocol/index.js"
     },
     "./config": {
-      "types": "./dist/esm/config/index.d.ts",
+      "types": "./dist/esm/config/index.d.mts",
       "import": "./dist/esm/config/index.js",
       "require": "./dist/cjs/config/index.js"
     },
     "./types": {
-      "types": "./dist/esm/types/index.d.ts",
+      "types": "./dist/esm/types/index.d.mts",
       "import": "./dist/esm/types/index.js",
       "require": "./dist/cjs/types/index.js"
     }
@@ -58,8 +58,8 @@
     "test:launchpad": "tsx scripts/launchpad-e2e.ts",
     "test:proposal-with-swaps": "tsx scripts/proposal-e2e-with-swaps.ts",
     "test:proposal-balance-swaps": "tsx scripts/proposal-e2e-balance-swaps.ts",
-    "test:arbitrage-challenge": "tsx scripts/proposal-e2e-arbitrage-challenge.ts",
-    "launchpad-e2e-two-outcome": "tsx scripts/launchpad-e2e.ts"
+    "test:full": "npm run deploy-conditional-coins && npm run test:launchpad && npm run test:proposal-with-swaps",
+    "generate-docs": "tsx scripts/generate-sdk-docs.ts"
   },
   "keywords": [
     "sui",

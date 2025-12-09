@@ -2,7 +2,7 @@
  * COMPREHENSIVE Proposal E2E Test with Swaps and Withdrawals
  *
  * This test demonstrates the full lifecycle of a proposal with actual trading:
- * 1. Create proposal with actions (using sdk.workflows.proposal)
+ * 1. Create proposal with actions (using sdk.proposal.create + addActions)
  * 2. Advance PREMARKET → REVIEW → TRADING (with 100% quantum split from spot pool)
  * 3. Users perform swaps during TRADING:
  *    a. Spot swap (allowed - only LP add/remove operations blocked during proposals)
@@ -12,23 +12,22 @@
  * 6. Execute actions if Accept wins
  * 7. Users withdraw their winning conditional tokens
  *
- * This test demonstrates proper SDK usage with the ProposalWorkflow class.
+ * This test demonstrates proper SDK usage with the ProposalService class.
  *
  * Prerequisites:
  * - Run launchpad-e2e.ts first to create DAO with spot pool
- * - test-dao-info.json must exist
+ * - deployments/test-data/test-dao-info.json must exist
  */
 
 import { Transaction } from "@mysten/sui/transactions";
 import * as fs from "fs";
 import * as path from "path";
-import { TransactionUtils } from "../src/services/transaction";
-import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
-
+import { TransactionUtils } from "../src/services/utils";
+import { initSDK, executeTransaction, getActiveAddress, getActiveEnv } from "./execute-tx";
 const ACCEPT_OUTCOME_INDEX = 1;
 
 type RegistryCoinInfo = {
-  treasuryCapId: string;
+  treasuryCapId: string;  // Used as key to look up coin set in registry
   metadataId: string;
   coinType: string;
 };
@@ -89,7 +88,7 @@ async function main() {
   // ============================================================================
   console.log("📂 Loading DAO info from previous launchpad test...");
 
-  const daoInfoPath = path.join(__dirname, "..", "test-dao-info.json");
+  const daoInfoPath = path.join(__dirname, "..", "deployments", "test-data", "test-dao-info.json");
 
   if (!fs.existsSync(daoInfoPath)) {
     console.error("❌ No DAO info file found.");
@@ -117,12 +116,16 @@ async function main() {
   console.log();
 
   // Load conditional coins deployment info
-  const conditionalCoinsPath = path.join(__dirname, "..", "conditional-coins-info.json");
+  const conditionalCoinsPath = path.join(__dirname, "..", "deployments", "test-data", "conditional-coins-info.json");
   let conditionalCoinsInfo: any = null;
   if (fs.existsSync(conditionalCoinsPath)) {
-    conditionalCoinsInfo = JSON.parse(fs.readFileSync(conditionalCoinsPath, "utf-8"));
-    console.log(`📦 Conditional Coins Package: ${conditionalCoinsInfo.packageId}`);
-    console.log(`📦 CoinRegistry: ${conditionalCoinsInfo.registryId}`);
+    const loadedInfo = JSON.parse(fs.readFileSync(conditionalCoinsPath, "utf-8"));
+    console.log(`📦 Conditional Coins Package: ${loadedInfo.packageId}`);
+    console.log(`📦 CoinRegistry: ${loadedInfo.registryId}`);
+
+    // Validate that the registry still exists on-chain before using
+    // This handles the case where devnet was reset or deployments are stale
+    conditionalCoinsInfo = loadedInfo;
     console.log();
   } else {
     console.log("⚠️  Conditional coins not deployed - SWAP 2 will be skipped");
@@ -151,19 +154,90 @@ async function main() {
   // STEP 1: Initialize SDK
   // ============================================================================
   console.log("🔧 Initializing SDK...");
-  const sdk = await initSDK();
+  const currentNetwork = getActiveEnv();
+  const sdk = initSDK(currentNetwork);
   const activeAddress = getActiveAddress();
   console.log(`✅ Active address: ${activeAddress}`);
+  console.log(`✅ SDK oneShotUtils package: ${sdk.packages.oneShotUtils || 'NOT CONFIGURED'}`);
   console.log();
 
-  // Access workflows from SDK
-  const proposalWorkflow = sdk.workflows.proposal;
+  // Validate conditional coins registry still exists on-chain AND matches SDK package
+  if (conditionalCoinsInfo) {
+    console.log("🔍 Validating CoinRegistry and conditional coins...");
+    try {
+      const registryObj = await sdk.client.getObject({
+        id: conditionalCoinsInfo.registryId,
+        options: { showType: true },
+      });
+      if (!registryObj.data || registryObj.error) {
+        console.log("⚠️  CoinRegistry no longer exists on-chain (devnet may have been reset)");
+        console.log("   Disabling conditional coins. Run: npm run deploy-conditional-coins");
+        conditionalCoinsInfo = null;
+        conditionalOutcomes = [];
+      } else {
+        console.log(`✅ CoinRegistry verified: ${registryObj.data.type}`);
+
+        // Check if registry package matches SDK's oneShotUtils package
+        const registryPackageId = registryObj.data.type?.split("::")[0];
+        const sdkOneShotUtils = sdk.packages.oneShotUtils;
+
+        console.log(`   Registry package: ${registryPackageId}`);
+        console.log(`   SDK oneShotUtils: ${sdkOneShotUtils || 'NOT CONFIGURED'}`);
+
+        if (!sdkOneShotUtils) {
+          console.log(`⚠️  SDK oneShotUtils package not configured!`);
+          console.log("   Conditional coins will not work without oneShotUtils package.");
+          console.log("   Check that futarchy_one_shot_utils is in deployments/_all-packages.json");
+          conditionalCoinsInfo = null;
+          conditionalOutcomes = [];
+        } else if (registryPackageId && registryPackageId !== sdkOneShotUtils) {
+          console.log(`⚠️  CoinRegistry package mismatch!`);
+          console.log(`   Registry uses: ${registryPackageId}`);
+          console.log(`   SDK expects:   ${sdkOneShotUtils}`);
+          console.log("   Disabling conditional coins. Run: npm run deploy-conditional-coins");
+          conditionalCoinsInfo = null;
+          conditionalOutcomes = [];
+        } else {
+          // Registry exists and package matches - caps are deposited inside the registry
+          // (they no longer exist as standalone objects after deposit_coin_set_entry)
+          console.log(`✅ Conditional coins registry verified`);
+
+          // Also verify that the conditional coin package exists on-chain
+          // This handles the case where devnet reset and the package was deleted
+          const condCoinPackageId = conditionalCoinsInfo.packageIds?.[0];
+          try {
+            const packageObj = await sdk.client.getObject({
+              id: condCoinPackageId,
+              options: { showType: true },
+            });
+            if (!packageObj.data || packageObj.error) {
+              console.log(`⚠️  Conditional coin package ${condCoinPackageId} no longer exists on-chain`);
+              console.log("   Devnet may have been reset. Run: npm run deploy-conditional-coins");
+              conditionalCoinsInfo = null;
+              conditionalOutcomes = [];
+            } else {
+              console.log(`✅ Conditional coin package verified: ${condCoinPackageId}`);
+            }
+          } catch (packageError) {
+            console.log(`⚠️  Failed to verify conditional coin package: ${packageError}`);
+            conditionalCoinsInfo = null;
+            conditionalOutcomes = [];
+          }
+        }
+      }
+    } catch (error) {
+      console.log("⚠️  Failed to verify conditional coins:", error);
+      conditionalCoinsInfo = null;
+      conditionalOutcomes = [];
+    }
+    console.log();
+  }
 
   // ============================================================================
   // STEP 2: Create proposal with actions using SDK workflow
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 2: CREATE PROPOSAL WITH ACTIONS (using sdk.workflows.proposal)");
+  console.log("STEP 2: CREATE PROPOSAL WITH ACTIONS (using sdk.proposal)");
   console.log("=".repeat(80));
   console.log();
 
@@ -214,7 +288,7 @@ async function main() {
   const feeCoinIds = feeCoins.data.map((c) => c.coinObjectId);
 
   // Create proposal using SDK workflow
-  const createTx = proposalWorkflow.createProposal({
+  const createTx = sdk.proposal.create({
     daoAccountId,
     assetType,
     stableType,
@@ -234,7 +308,7 @@ async function main() {
   });
 
   console.log("📤 Creating proposal...");
-  const createResult = await executeTransaction(sdk, createTx.transaction, {
+  const createResult = await executeTransaction(sdk, createTx, {
     network: "devnet",
     showObjectChanges: true,
   });
@@ -253,11 +327,11 @@ async function main() {
   console.log();
 
   // ============================================================================
-  // STEP 3: Add actions to Accept outcome using SDK workflow
+  // STEP 3: Add actions to Accept outcome using SDK
   // ============================================================================
-  console.log("📝 Adding stream action to Accept outcome (using sdk.workflows.proposal)...");
+  console.log("📝 Adding stream action to Accept outcome (using sdk.proposal.addActions)...");
 
-  const addActionsTx = proposalWorkflow.addActionsToOutcome({
+  const addActionsTx = sdk.proposal.addActions({
     proposalId,
     assetType,
     stableType,
@@ -266,6 +340,7 @@ async function main() {
       {
         type: 'create_stream',
         vaultName: 'treasury',
+        coinType: stableType,
         beneficiary: activeAddress,
         amountPerIteration: BigInt(streamAmountPerIteration),
         startTime: streamStart,
@@ -278,7 +353,7 @@ async function main() {
     ],
   });
 
-  await executeTransaction(sdk, addActionsTx.transaction, { network: "devnet" });
+  await executeTransaction(sdk, addActionsTx, { network: "devnet" });
   console.log(`✅ Actions added to Accept outcome!`);
   console.log();
 
@@ -286,7 +361,7 @@ async function main() {
   // STEP 4: Advance to REVIEW state
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 4: ADVANCE TO REVIEW STATE (using sdk.workflows.proposal)");
+  console.log("STEP 4: ADVANCE TO REVIEW STATE (using sdk.proposal)");
   console.log("=".repeat(80));
   console.log();
 
@@ -304,7 +379,20 @@ async function main() {
       }
     : undefined;
 
-  const advanceTx = proposalWorkflow.advanceToReview({
+  if (conditionalCoinsRegistry) {
+    console.log(`📦 Using conditional coins registry: ${conditionalCoinsRegistry.registryId}`);
+    console.log(`   Coin sets: ${conditionalCoinsRegistry.coinSets.length}`);
+    for (const coinSet of conditionalCoinsRegistry.coinSets) {
+      console.log(`   Outcome ${coinSet.outcomeIndex}:`);
+      console.log(`     Asset: ${coinSet.assetCoinType}`);
+      console.log(`     Stable: ${coinSet.stableCoinType}`);
+    }
+  } else {
+    console.log("⚠️  No conditional coins registry - escrow will use generic wrapped balances");
+  }
+  console.log();
+
+  const advanceTx = sdk.proposal.advanceToReview({
     proposalId,
     daoAccountId,
     assetType,
@@ -316,7 +404,7 @@ async function main() {
   });
 
   console.log("📤 Creating escrow and advancing to REVIEW...");
-  const advanceResult = await executeTransaction(sdk, advanceTx.transaction, {
+  const advanceResult = await executeTransaction(sdk, advanceTx, {
     network: "devnet",
     showObjectChanges: true,
   });
@@ -339,7 +427,7 @@ async function main() {
   // STEP 5: Advance to TRADING state
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 5: ADVANCE TO TRADING STATE (using sdk.workflows.proposal)");
+  console.log("STEP 5: ADVANCE TO TRADING STATE (using sdk.proposal)");
   console.log("=".repeat(80));
   console.log();
 
@@ -350,7 +438,7 @@ async function main() {
 
   console.log("📤 Advancing to TRADING state (100% quantum split)...");
 
-  const toTradingTx = proposalWorkflow.advanceToTrading({
+  const toTradingTx = sdk.proposal.advanceToTrading({
     daoAccountId,
     proposalId,
     escrowId,
@@ -360,7 +448,7 @@ async function main() {
     lpType,
   });
 
-  await executeTransaction(sdk, toTradingTx.transaction, { network: "devnet" });
+  await executeTransaction(sdk, toTradingTx, { network: "devnet" });
 
   console.log("✅ Proposal state: TRADING");
   console.log("   - 100% quantum split complete: all spot liquidity → conditional AMMs");
@@ -377,7 +465,7 @@ async function main() {
   // STEP 6: PERFORM SWAPS
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 6: PERFORM SWAPS TO INFLUENCE OUTCOME (using sdk.workflows.proposal)");
+  console.log("STEP 6: PERFORM SWAPS TO INFLUENCE OUTCOME");
   console.log("=".repeat(80));
   console.log();
 
@@ -400,8 +488,8 @@ async function main() {
   console.log(`✅ Minted ${Number(mintAmount) / 1e9} stable coins`);
   console.log();
 
-  // SWAP 1: Spot swap using SDK workflow
-  console.log("📊 SWAP 1: Spot swap (stable → asset) using sdk.workflows.proposal.spotSwap...");
+  // SWAP 1: Spot swap using sdk.proposal.spotSwap
+  console.log("📊 SWAP 1: Spot swap (stable → asset) using sdk.proposal.spotSwap...");
 
   const swapAmount1 = 1_000_000_000n;
   const coins1 = await sdk.client.getCoins({
@@ -409,21 +497,21 @@ async function main() {
     coinType: stableType,
   });
 
-  const swap1Tx = proposalWorkflow.spotSwap({
+  const swap1Tx = sdk.proposal.spotSwap({
     spotPoolId,
     proposalId,
     escrowId,
     assetType,
     stableType,
     lpType,
-    inputCoins: coins1.data.map((c) => c.coinObjectId),
+    direction: 'stable_to_asset',
     amountIn: swapAmount1,
     minAmountOut: 0n,
-    direction: 'stable_to_asset',
     recipient: activeAddress,
+    inputCoins: coins1.data.map((c) => c.coinObjectId),
   });
 
-  await executeTransaction(sdk, swap1Tx.transaction, {
+  await executeTransaction(sdk, swap1Tx, {
     network: "devnet",
     showObjectChanges: true,
   });
@@ -436,7 +524,7 @@ async function main() {
   const swapAmount2 = 20_000_000_000n;
 
   if (conditionalCoinsInfo && conditionalOutcomes.length > 0) {
-    console.log("📊 SWAP 2: Conditional coin swap using sdk.workflows.proposal.conditionalSwap...");
+    console.log("📊 SWAP 2: Conditional coin swap using sdk.proposal.trade.stableForAsset...");
 
     const acceptOutcome = conditionalOutcomes.find((o) => o.index === ACCEPT_OUTCOME_INDEX);
     if (!acceptOutcome) {
@@ -447,7 +535,7 @@ async function main() {
         coinType: stableType,
       });
 
-      const swap2Tx = proposalWorkflow.conditionalSwap({
+      const swap2Tx = sdk.proposal.trade.stableForAsset({
         proposalId,
         escrowId,
         spotPoolId,
@@ -457,7 +545,6 @@ async function main() {
         stableCoins: coins2.data.map((c) => c.coinObjectId),
         amountIn: swapAmount2,
         minAmountOut: 0n,
-        direction: 'stable_to_asset',
         outcomeIndex: ACCEPT_OUTCOME_INDEX,
         allOutcomeCoins: conditionalOutcomes.map((o) => ({
           outcomeIndex: o.index,
@@ -467,7 +554,7 @@ async function main() {
         recipient: activeAddress,
       });
 
-      const swap2Result = await executeTransaction(sdk, swap2Tx.transaction, {
+      const swap2Result = await executeTransaction(sdk, swap2Tx, {
         network: "devnet",
         showObjectChanges: true,
       });
@@ -497,7 +584,7 @@ async function main() {
   // STEP 7: Wait for trading period and finalize
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 7: FINALIZE PROPOSAL (using sdk.workflows.proposal)");
+  console.log("STEP 7: FINALIZE PROPOSAL (using sdk.proposal.finalizeAndExecute)");
   console.log("=".repeat(80));
   console.log();
 
@@ -506,9 +593,10 @@ async function main() {
   console.log("✅ Trading period ended!");
   console.log();
 
-  console.log("📤 Finalizing proposal...");
+  console.log("📤 Finalizing proposal and executing actions...");
 
-  const finalizeTx = proposalWorkflow.finalizeProposal({
+  // Use finalizeAndExecute which combines finalize + execute in one PTB
+  const finalizeTx = sdk.proposal.finalizeAndExecute({
     daoAccountId,
     proposalId,
     escrowId,
@@ -516,9 +604,15 @@ async function main() {
     assetType,
     stableType,
     lpType,
+    actionTypes: [
+      { action: 'create_stream', coinType: stableType },
+    ],
   });
 
-  await executeTransaction(sdk, finalizeTx.transaction, { network: "devnet" });
+  const finalizeResult = await executeTransaction(sdk, finalizeTx, {
+    network: "devnet",
+    showObjectChanges: true,
+  });
 
   console.log("✅ Proposal finalized!");
   console.log("   - Winning conditional liquidity auto-recombined back to spot pool");
@@ -540,33 +634,15 @@ async function main() {
   const acceptWon = winningOutcome === 1 || winningOutcome === "1";
 
   // ============================================================================
-  // STEP 8: Execute actions (if Accept won)
+  // STEP 8: Check if actions were executed (if Accept won)
   // ============================================================================
   if (acceptWon) {
     console.log("=".repeat(80));
-    console.log("STEP 8: EXECUTE ACTIONS (using sdk.workflows.proposal)");
+    console.log("STEP 8: ACTIONS EXECUTED (via sdk.proposal.finalizeAndExecute)");
     console.log("=".repeat(80));
     console.log();
 
-    console.log("📤 Executing stream action...");
-
-    const executeTx = proposalWorkflow.executeActions({
-      daoAccountId,
-      proposalId,
-      escrowId,
-      assetType,
-      stableType,
-      actionTypes: [
-        { type: 'create_stream', coinType: stableType },
-      ],
-    });
-
-    const executeResult = await executeTransaction(sdk, executeTx.transaction, {
-      network: "devnet",
-      showObjectChanges: true,
-    });
-
-    const streamObjects = executeResult.objectChanges?.filter(
+    const streamObjects = finalizeResult.objectChanges?.filter(
       (obj: any) => obj.type === "created" && obj.objectType?.includes("::vault::Stream")
     );
 
@@ -588,7 +664,7 @@ async function main() {
   // STEP 9: Redeem winning conditional tokens
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 9: REDEEM WINNING CONDITIONAL TOKENS (using sdk.workflows.proposal)");
+  console.log("STEP 9: REDEEM WINNING CONDITIONAL TOKENS (using sdk.proposal.redeemTokens)");
   console.log("=".repeat(80));
   console.log();
 
@@ -599,7 +675,7 @@ async function main() {
     if (acceptOutcomeInfo) {
       console.log(`🪙 Redeeming conditional asset coin...`);
 
-      const redeemTx = proposalWorkflow.redeemConditionalTokens(
+      const redeemTx = sdk.proposal.redeemTokens(
         proposalId,
         escrowId,
         assetType,
@@ -611,7 +687,7 @@ async function main() {
         activeAddress
       );
 
-      await executeTransaction(sdk, redeemTx.transaction, {
+      await executeTransaction(sdk, redeemTx, {
         network: "devnet",
         showObjectChanges: true,
       });
@@ -638,23 +714,22 @@ async function main() {
   console.log();
 
   console.log("📋 Summary:");
-  console.log("  ✅ Created proposal with actions (using sdk.workflows.proposal.createProposal)");
-  console.log("  ✅ Added actions to outcome (using sdk.workflows.proposal.addActionsToOutcome)");
-  console.log("  ✅ Advanced to REVIEW (using sdk.workflows.proposal.advanceToReview)");
-  console.log("  ✅ Advanced to TRADING (using sdk.workflows.proposal.advanceToTrading)");
+  console.log("  ✅ Created proposal (using sdk.proposal.create)");
+  console.log("  ✅ Added actions to outcome (using sdk.proposal.addActions)");
+  console.log("  ✅ Advanced to REVIEW (using sdk.proposal.advanceToReview)");
+  console.log("  ✅ Advanced to TRADING (using sdk.proposal.advanceToTrading)");
   console.log("  ✅ 100% quantum split: spot pool → conditional AMMs");
-  console.log("  ✅ Performed spot swap (using sdk.workflows.proposal.spotSwap)");
+  console.log("  ✅ Performed spot swap (using sdk.proposal.spotSwap)");
   if (conditionalCoinsInfo) {
-    console.log("  ✅ Performed conditional swap (using sdk.workflows.proposal.conditionalSwap)");
+    console.log("  ✅ Performed conditional swap (using sdk.proposal.trade.stableForAsset)");
   } else {
     console.log("  ⚠️  Conditional swap skipped (no conditional coins available)");
   }
-  console.log(`  ✅ Finalized proposal (using sdk.workflows.proposal.finalizeProposal) - winner: ${acceptWon ? "ACCEPT" : "REJECT"}`);
+  console.log(`  ✅ Finalized + executed (using sdk.proposal.finalizeAndExecute) - winner: ${acceptWon ? "ACCEPT" : "REJECT"}`);
   console.log("  ✅ Auto-recombination: winning conditional liquidity → spot pool");
   if (acceptWon) {
-    console.log("  ✅ Executed actions (using sdk.workflows.proposal.executeActions)");
     if (conditionalCoinsInfo && cond1AssetCoinId) {
-      console.log("  ✅ Redeemed tokens (using sdk.workflows.proposal.redeemConditionalTokens)");
+      console.log("  ✅ Redeemed tokens (using sdk.proposal.redeemTokens)");
     }
   } else {
     console.log("  ℹ️  No actions executed (Reject won)");

@@ -8,19 +8,12 @@
  * 4. Checking balances
  */
 
-import { FutarchySDK } from '../src';
-import * as fs from 'fs';
-import * as path from 'path';
+import { FutarchySDK } from '@govex/futarchy-sdk';
 
 async function main() {
-    // Load deployment configuration
-    const deploymentsPath = path.join(__dirname, '../../packages/deployments-processed/_all-packages.json');
-    const deployments = JSON.parse(fs.readFileSync(deploymentsPath, 'utf8'));
-
-    // Initialize SDK
-    const sdk = await FutarchySDK.init({
+    // Initialize SDK with bundled deployments
+    const sdk = new FutarchySDK({
         network: 'devnet',
-        deployments,
     });
 
     console.log('✅ SDK initialized');
@@ -33,7 +26,7 @@ async function main() {
         console.log('\n🏭 Factory Object:');
         console.log('Object ID:', factory.objectId);
 
-        const factoryData = await sdk.query.getObject(factory.objectId);
+        const factoryData = await sdk.utils.queryHelper.getObject(factory.objectId);
         console.log('\nFactory Data:');
         console.log(JSON.stringify(factoryData.data, null, 2));
     }
@@ -51,7 +44,7 @@ async function main() {
     const factoryPackageId = sdk.getPackageId('futarchy_factory')!;
 
     console.log('\n📊 Querying all DAOs...');
-    const allDAOs = await sdk.query.getAllDAOs(factoryPackageId);
+    const allDAOs = await sdk.getDaos();
 
     console.log(`\nFound ${allDAOs.length} DAOs total`);
 
@@ -76,23 +69,17 @@ async function main() {
         console.log(`\nQuerying DAO: ${firstDAO.dao_name}`);
         console.log(`Account ID: ${firstDAO.account_id}`);
 
-        const daoObject = await sdk.query.getDAO(firstDAO.account_id);
+        const daoConfig = await sdk.dao.getConfig(firstDAO.account_id);
 
-        if (daoObject.data) {
-            console.log('\nDAO Object Type:', daoObject.data.type);
-            console.log('Owner:', JSON.stringify(daoObject.data.owner, null, 2));
-
-            // Extract specific fields if available
-            if (daoObject.data.content?.dataType === 'moveObject') {
-                const fields = daoObject.data.content.fields as any;
-                console.log('\nDAO Fields:');
-                console.log('ID:', fields.id?.id);
-
-                // Show some fields if they exist
-                if (fields.name) console.log('Name:', fields.name);
-                if (fields.version) console.log('Version:', fields.version);
-            }
-        }
+        console.log('\nDAO Config:');
+        console.log('Name:', daoConfig.name);
+        console.log('Description:', daoConfig.description);
+        console.log('Asset Type:', daoConfig.assetType);
+        console.log('Stable Type:', daoConfig.stableType);
+        console.log('Spot Pool ID:', daoConfig.spotPoolId);
+        console.log('Trading Period (ms):', daoConfig.tradingPeriodMs);
+        console.log('Review Period (ms):', daoConfig.reviewPeriodMs);
+        console.log('Proposals Enabled:', daoConfig.proposalsEnabled);
     }
 
     // ===== Query user balances (example) =====
@@ -103,11 +90,11 @@ async function main() {
     const exampleAddress = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
     try {
-        const suiBalance = await sdk.query.getBalance(exampleAddress, '0x2::sui::SUI');
+        const suiBalance = await sdk.utils.queryHelper.getBalance(exampleAddress, '0x2::sui::SUI');
         console.log('SUI Balance:', suiBalance.totalBalance, 'MIST');
         console.log('SUI Balance:', Number(suiBalance.totalBalance) / 1_000_000_000, 'SUI');
 
-        const allBalances = await sdk.query.getAllBalances(exampleAddress);
+        const allBalances = await sdk.utils.queryHelper.getAllBalances(exampleAddress);
         console.log('\nAll Coin Types:');
         allBalances.forEach((bal) => {
             console.log(`  ${bal.coinType}: ${bal.totalBalance}`);
@@ -120,7 +107,7 @@ async function main() {
 
     console.log('\n\n=== Event Query ===');
 
-    const daoCreatedEvents = await sdk.query.queryEvents({
+    const daoCreatedEvents = await sdk.utils.queryHelper.queryEvents({
         MoveEventType: `${factoryPackageId}::factory::DAOCreated`,
     });
 
@@ -134,7 +121,7 @@ async function main() {
     // const myAddress = 'YOUR_ADDRESS';
     // const accountType = sdk.getPackageId('AccountProtocol') + '::account::Account';
 
-    // const myAccounts = await sdk.query.getOwnedObjects(myAddress, {
+    // const myAccounts = await sdk.utils.queryHelper.getOwnedObjects(myAddress, {
     //     StructType: accountType
     // });
 

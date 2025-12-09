@@ -14,7 +14,7 @@
  */
 
 import { Transaction } from '@mysten/sui/transactions';
-import { TransactionUtils } from '../../services/transaction';
+import { TransactionUtils } from '../../services/utils';
 
 /**
  * Resource Requests Static Functions

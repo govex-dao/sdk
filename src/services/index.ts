@@ -1,23 +1,29 @@
 /**
- * Services
+ * Services - Usable classes that need a SuiClient
  *
- * Service classes that provide protocol interactions.
- * For high-level orchestration, use sdk.workflows instead.
+ * High-level operations and workflows for interacting with the Futarchy protocol.
  *
  * @module services
  */
 
-export * from './factory';
-export * from './factory-admin';
-export * from './factory-validator';
-export * from './launchpad-intent-executor';
-export * from './governance-ptb-executor';
-export * from './proposal-escrow';
-export * from './proposal-sponsorship';
-export * from './fee-manager';
-export * from './package-registry-admin';
-export * from './oracle-actions';
-export * from './coin-registry';
-export * from './markets';
-export * from './queries';
-export * from './transaction';
+// ============================================================================
+// HIGH-LEVEL OPERATIONS
+// ============================================================================
+
+export { AdminService } from './admin';
+export { DAOService, DAOInfoHelper } from './dao';
+export { IntentService } from './intents';
+export { MarketService } from './market';
+export { ProposalService } from './proposal';
+export { LaunchpadService } from './launchpad';
+
+// ============================================================================
+// TRANSACTION UTILITIES
+// ============================================================================
+
+export {
+    BaseTransactionBuilder, 
+    TransactionUtils,
+    CurrencyUtils,
+    QueryHelper
+} from './utils';

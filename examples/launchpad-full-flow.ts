@@ -3,26 +3,19 @@
  *
  * This example demonstrates the full lifecycle of a token launchpad:
  * 1. Creating a raise
- * 2. Staging init actions (success/failure specs)
- * 3. Locking intents
- * 4. Contributing to the raise
- * 5. Completing the raise (creating DAO)
+ * 2. Starting the raise (staging success/failure actions + locking intents)
+ * 3. Contributing to the raise
+ * 4. Completing the raise (creating DAO)
+ * 5. Executing init actions
  * 6. Claiming tokens
  */
 
-import { FutarchySDK, LaunchpadWorkflow, TransactionUtils } from '../src';
-import * as fs from 'fs';
-import * as path from 'path';
+import { FutarchySDK, TransactionUtils, LaunchpadService } from '@govex/futarchy-sdk';
 
 async function main() {
-    // Load deployment configuration
-    const deploymentsPath = path.join(__dirname, '../../packages/deployments-processed/_all-packages.json');
-    const deployments = JSON.parse(fs.readFileSync(deploymentsPath, 'utf8'));
-
-    // Initialize SDK
-    const sdk = await FutarchySDK.init({
+    // Initialize SDK with bundled deployments
+    const sdk = new FutarchySDK({
         network: 'devnet',
-        deployments,
     });
 
     console.log('✅ SDK initialized');
@@ -38,14 +31,10 @@ async function main() {
     const TREASURY_CAP_ID = '0xYOUR_TREASURY_CAP_ID';
     const COIN_METADATA_ID = '0xYOUR_COIN_METADATA_ID';
 
-    // Calculate deadline: 7 days from now
-    const deadlineMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
-    // Start time: 5 seconds from now
-    const startTimeMs = Date.now() + 5000;
-
-    const createTx = sdk.workflows.launchpad.createRaise({
-        raiseTokenType: RAISE_TOKEN_TYPE,
-        stableCoinType: STABLE_COIN_TYPE,
+    // Create raise transaction
+    const _createTx = sdk.launchpad.createRaise({
+        assetType: RAISE_TOKEN_TYPE,
+        stableType: STABLE_COIN_TYPE,
         treasuryCap: TREASURY_CAP_ID,
         coinMetadata: COIN_METADATA_ID,
         tokensForSale: BigInt(1000000),
@@ -54,7 +43,7 @@ async function main() {
             TransactionUtils.suiToMist(50),
             TransactionUtils.suiToMist(100),
             TransactionUtils.suiToMist(200),
-            LaunchpadWorkflow.UNLIMITED_CAP,
+            LaunchpadService.UNLIMITED_CAP,
         ],
         allowEarlyCompletion: false,
         description: 'Example token launchpad raise',
@@ -62,8 +51,7 @@ async function main() {
         metadataKeys: ['website', 'twitter'],
         metadataValues: ['https://example.com', '@example'],
         launchpadFee: TransactionUtils.suiToMist(1),
-        deadlineMs,
-        startTimeMs,
+        startDelayMs: 5000, // 5 seconds delay
     });
 
     console.log('Transaction created. Sign and execute to create raise.');
@@ -71,7 +59,7 @@ async function main() {
     // NOTE: In real usage, sign and execute:
     /*
     const result = await sdk.client.signAndExecuteTransaction({
-        transaction: createTx,
+        transaction: _createTx,
         signer: keypair,
         options: {
             showEffects: true,
@@ -85,95 +73,123 @@ async function main() {
     const creatorCapId = ...;
     */
 
-    // ===== STEP 2: Stage Success/Failure Init Actions =====
+    // ===== STEP 2: Start Raise (Stage Actions + Lock Intents) =====
 
-    console.log('\n📋 Staging success init actions...');
+    console.log('\n📋 Starting raise with success/failure actions...');
 
     const EXAMPLE_RAISE_ID = '0xRAISE_ID';
     const EXAMPLE_CREATOR_CAP_ID = '0xCREATOR_CAP_ID';
     const BENEFICIARY_ADDRESS = '0xBENEFICIARY';
 
-    // Stage a stream and AMM pool for success case
-    const stageSuccessTx = sdk.workflows.launchpad.stageSuccessInitActions({
+    // Start raise - stages success and failure actions, then locks intents
+    const _startTx = sdk.launchpad.startRaise({
         raiseId: EXAMPLE_RAISE_ID,
         creatorCapId: EXAMPLE_CREATOR_CAP_ID,
-        raiseTokenType: RAISE_TOKEN_TYPE,
-        stableCoinType: STABLE_COIN_TYPE,
-        vaultName: 'treasury',
-        streamBeneficiary: BENEFICIARY_ADDRESS,
-        streamAmount: TransactionUtils.suiToMist(100),
-        streamDurationMs: BigInt(365 * 24 * 60 * 60 * 1000), // 1 year
-        poolAssetAmount: BigInt(1000),
-        poolStableAmount: BigInt(1000),
-        poolFeeBps: 30,
+        assetType: RAISE_TOKEN_TYPE,
+        stableType: STABLE_COIN_TYPE,
+        successActions: [
+            {
+                type: 'create_stream',
+                vaultName: 'treasury',
+                coinType: RAISE_TOKEN_TYPE, // Coin type for the stream
+                beneficiary: BENEFICIARY_ADDRESS,
+                amountPerIteration: TransactionUtils.suiToMist(10),
+                startTime: Date.now() + 300_000, // 5 minutes from now
+                iterationsTotal: 12n, // 12 monthly unlocks
+                iterationPeriodMs: 2_592_000_000n, // 30 days in ms
+                maxPerWithdrawal: TransactionUtils.suiToMist(10),
+                isTransferable: true,
+                isCancellable: true,
+            },
+            {
+                type: 'create_pool_with_mint',
+                vaultName: 'treasury',
+                assetAmount: BigInt(1000),
+                stableAmount: BigInt(1000),
+                feeBps: 30,
+                lpType: '0xYOUR_LP_TOKEN_TYPE',
+                lpTreasuryCapId: '0xYOUR_LP_TREASURY_CAP_ID',
+                lpMetadataId: '0xYOUR_LP_METADATA_ID',
+            },
+        ],
+        failureActions: [
+            {
+                type: 'return_treasury_cap',
+                recipient: BENEFICIARY_ADDRESS,
+            },
+            {
+                type: 'return_metadata',
+                recipient: BENEFICIARY_ADDRESS,
+            },
+        ],
     });
 
-    console.log('Success actions staged.');
+    console.log('Raise started. Intents locked. Investors can now contribute safely.');
 
-    console.log('\n📋 Staging failure init actions...');
-
-    // Stage failure actions (return TreasuryCap to creator)
-    const stageFailureTx = sdk.workflows.launchpad.stageFailureInitActions({
-        raiseId: EXAMPLE_RAISE_ID,
-        creatorCapId: EXAMPLE_CREATOR_CAP_ID,
-        raiseTokenType: RAISE_TOKEN_TYPE,
-        stableCoinType: STABLE_COIN_TYPE,
-        recipient: BENEFICIARY_ADDRESS,
-    });
-
-    console.log('Failure actions staged.');
-
-    // ===== STEP 3: Lock Intents =====
-
-    console.log('\n🔒 Locking intents...');
-
-    const lockTx = sdk.workflows.launchpad.lockIntents({
-        raiseId: EXAMPLE_RAISE_ID,
-        creatorCapId: EXAMPLE_CREATOR_CAP_ID,
-        raiseTokenType: RAISE_TOKEN_TYPE,
-        stableCoinType: STABLE_COIN_TYPE,
-    });
-
-    console.log('Intents locked. Investors can now contribute safely.');
-
-    // ===== STEP 4: Contribute to the Raise =====
+    // ===== STEP 3: Contribute to the Raise =====
 
     console.log('\n💰 Contributing to raise...');
 
-    const contributeTx = sdk.workflows.launchpad.contribute({
+    const _contributeTx = sdk.launchpad.contribute({
         raiseId: EXAMPLE_RAISE_ID,
-        raiseTokenType: RAISE_TOKEN_TYPE,
-        stableCoinType: STABLE_COIN_TYPE,
-        stablePaymentCoin: '0xYOUR_STABLE_COIN_ID',
-        maxTotalCap: LaunchpadWorkflow.UNLIMITED_CAP,
+        assetType: RAISE_TOKEN_TYPE,
+        stableType: STABLE_COIN_TYPE,
+        stableCoins: ['0xYOUR_STABLE_COIN_ID'],
+        amount: TransactionUtils.suiToMist(50),
+        capTier: LaunchpadService.UNLIMITED_CAP,
+        crankFee: TransactionUtils.suiToMist(0.1),
     });
 
     console.log('Contribution transaction created.');
 
-    // ===== STEP 5: Complete Raise (After Deadline) =====
+    // ===== STEP 4: Complete Raise (After Deadline) =====
 
     console.log('\n🎉 Completing successful raise...');
 
     // After deadline passes and minimum is met, complete the raise
-    const completeTx = sdk.workflows.launchpad.completeRaise({
+    const _completeTx = sdk.launchpad.complete({
         raiseId: EXAMPLE_RAISE_ID,
-        creatorCapId: EXAMPLE_CREATOR_CAP_ID,
-        raiseTokenType: RAISE_TOKEN_TYPE,
-        stableCoinType: STABLE_COIN_TYPE,
-        daoCreationFee: TransactionUtils.suiToMist(1),
+        assetType: RAISE_TOKEN_TYPE,
+        stableType: STABLE_COIN_TYPE,
     });
 
-    console.log('Complete raise transaction created (requires CreatorCap).');
+    console.log('Complete raise transaction created.');
+
+    // ===== STEP 5: Execute Init Actions =====
+
+    console.log('\n⚡ Executing init actions on new DAO...');
+
+    const EXAMPLE_ACCOUNT_ID = '0xDAO_ACCOUNT_ID'; // From complete result
+
+    const _executeTx = sdk.launchpad.executeActions({
+        accountId: EXAMPLE_ACCOUNT_ID,
+        raiseId: EXAMPLE_RAISE_ID,
+        assetType: RAISE_TOKEN_TYPE,
+        stableType: STABLE_COIN_TYPE,
+        actionTypes: [
+            { type: 'create_stream', coinType: RAISE_TOKEN_TYPE },
+            {
+                type: 'create_pool_with_mint',
+                assetType: RAISE_TOKEN_TYPE,
+                stableType: STABLE_COIN_TYPE,
+                lpType: '0xYOUR_LP_TOKEN_TYPE',
+                lpTreasuryCapId: '0xYOUR_LP_TREASURY_CAP_ID',
+                lpMetadataId: '0xYOUR_LP_METADATA_ID',
+            },
+        ],
+    });
+
+    console.log('Execute actions transaction created.');
 
     // ===== STEP 6: Claim Tokens =====
 
     console.log('\n🎁 Claiming tokens (for contributors)...');
 
-    const claimTx = sdk.workflows.launchpad.claimTokens({
-        raiseId: EXAMPLE_RAISE_ID,
-        raiseTokenType: RAISE_TOKEN_TYPE,
-        stableCoinType: STABLE_COIN_TYPE,
-    });
+    const _claimTx = sdk.launchpad.claim(
+        EXAMPLE_RAISE_ID,
+        RAISE_TOKEN_TYPE,
+        STABLE_COIN_TYPE,
+    );
 
     console.log('Claim transaction created. Each contributor calls this once.');
 
@@ -181,10 +197,8 @@ async function main() {
 
     console.log('\n🔍 Querying raise data...');
 
-    const factoryPackageId = sdk.getPackageId('futarchy_factory')!;
-
     // Get all raises
-    const allRaises = await sdk.query.getAllRaises(factoryPackageId);
+    const allRaises = await sdk.getRaises();
     console.log(`\nTotal raises: ${allRaises.length}`);
 
     if (allRaises.length > 0) {

@@ -1,0 +1,36 @@
+{
+  "packageName": "AccountProtocol",
+  "transactionDigest": "J1rMXrxvHFFNBh8G8pobmSuH8RtZnAFirqMTmKFhxHMa",
+  "packageId": "0xfe36d1f32c495986baabd2b5e119879af96ba2fd1b003e098acada2ed5c17853",
+  "adminCaps": [
+    {
+      "name": "PackageAdminCap",
+      "objectId": "0xb36e987ddc8600277bb99bc55b54a15d14e1e9f2c1e83b9d9a8301dcd6470737",
+      "objectType": "0xfe36d1f32c495986baabd2b5e119879af96ba2fd1b003e098acada2ed5c17853::package_registry::PackageAdminCap",
+      "owner": {
+        "AddressOwner": "0xa6d60d2abec2895704f993e41863ec54c28ae84ae35cb8d407c86347c07ecbb4"
+      }
+    }
+  ],
+  "sharedObjects": [
+    {
+      "name": "PackageRegistry",
+      "objectId": "0x3178d35150f8b418437407d0a3c66037e7b8ead8a136ecd2447e93f267300859",
+      "objectType": "0xfe36d1f32c495986baabd2b5e119879af96ba2fd1b003e098acada2ed5c17853::package_registry::PackageRegistry",
+      "owner": {
+        "Shared": {
+          "initial_shared_version": 890544
+        }
+      },
+      "initialSharedVersion": 890544
+    }
+  ],
+  "ownedObjects": [],
+  "upgradeCap": {
+    "objectId": "0xa924656628462d50298c9c2cf56567fca3c3aca2adea09e1b343bd5f0a07af9b",
+    "objectType": "0x2::package::UpgradeCap",
+    "owner": {
+      "AddressOwner": "0xa6d60d2abec2895704f993e41863ec54c28ae84ae35cb8d407c86347c07ecbb4"
+    }
+  }
+}

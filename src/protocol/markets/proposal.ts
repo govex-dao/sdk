@@ -20,7 +20,7 @@
  */
 
 import { Transaction } from '@mysten/sui/transactions';
-import { TransactionUtils } from '../../services/transaction';
+import { TransactionUtils } from '../../services/utils';
 
 /**
  * Proposal Static Functions
@@ -165,25 +165,31 @@ export class Proposal {
     });
   }
 
+  /**
+   * Create conditional AMM pools for a proposal
+   *
+   * Creates bootstrap liquidity pools for each outcome, matching the spot pool price.
+   */
   static createConditionalAmmPools(
     tx: Transaction,
     config: {
       marketsCorePackageId: string;
       assetType: string;
       stableType: string;
-      proposal: ReturnType<Transaction['moveCall']>;
-      initialAsset: ReturnType<Transaction['moveCall']>;
-      initialStable: ReturnType<Transaction['moveCall']>;
+      lpType: string;
+      proposalId: string;
+      escrow: ReturnType<Transaction['moveCall']>;
+      spotPoolId: string;
       clock?: string;
     }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
+  ): void {
+    tx.moveCall({
       target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'create_conditional_amm_pools'),
-      typeArguments: [config.assetType, config.stableType],
+      typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
-        config.proposal,
-        config.initialAsset,
-        config.initialStable,
+        tx.object(config.proposalId),
+        config.escrow,
+        tx.object(config.spotPoolId),
         tx.object(config.clock || '0x6'),
       ],
     });
@@ -1488,6 +1494,77 @@ export class Proposal {
       target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'get_effective_twap_threshold'),
       typeArguments: [config.assetType, config.stableType],
       arguments: [config.proposal],
+    });
+  }
+
+  // ============================================================================
+  // LIFECYCLE FUNCTIONS (from futarchy_governance::proposal_lifecycle)
+  // ============================================================================
+
+  /**
+   * Advance proposal state (REVIEW -> TRADING or TRADING -> FINALIZED)
+   *
+   * Called by cranker or anyone to advance the proposal through its lifecycle.
+   * Returns true if state was changed.
+   */
+  static advanceProposalState(
+    tx: Transaction,
+    config: {
+      governancePackageId: string;
+      assetType: string;
+      stableType: string;
+      lpType: string;
+      daoAccountId: string;
+      proposalId: string;
+      escrowId: string;
+      spotPoolId: string;
+      clock?: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(config.governancePackageId, 'proposal_lifecycle', 'advance_proposal_state'),
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [
+        tx.object(config.daoAccountId),
+        tx.object(config.proposalId),
+        tx.object(config.escrowId),
+        tx.object(config.spotPoolId),
+        tx.object(config.clock || '0x6'),
+      ],
+    });
+  }
+
+  /**
+   * Finalize proposal with spot pool recombination
+   *
+   * Determines winner via TWAP, recombines liquidity back to spot pool.
+   */
+  static finalizeProposalWithSpotPool(
+    tx: Transaction,
+    config: {
+      governancePackageId: string;
+      assetType: string;
+      stableType: string;
+      lpType: string;
+      daoAccountId: string;
+      packageRegistryId: string;
+      proposalId: string;
+      escrowId: string;
+      spotPoolId: string;
+      clock?: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(config.governancePackageId, 'proposal_lifecycle', 'finalize_proposal_with_spot_pool'),
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [
+        tx.object(config.daoAccountId),
+        tx.object(config.packageRegistryId),
+        tx.object(config.proposalId),
+        tx.object(config.escrowId),
+        tx.object(config.spotPoolId),
+        tx.object(config.clock || '0x6'),
+      ],
     });
   }
 }

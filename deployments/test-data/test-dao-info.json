@@ -1,0 +1,19 @@
+{
+  "accountId": "0x4b817e0cab03de9b6da5d224d4faf61772b96411e0e7eac3c8c37edb6ed41d03",
+  "assetType": "0x278630ad3c576ee4ad89078b9ffb1cd3a421ed2737016044366c224001f82f58::coin::COIN",
+  "stableType": "0x0a75d5271340d8ff0829ac3a1f5f15381f9dcbb7a497962ff55c687c4de93a45::coin::COIN",
+  "lpType": "0xa2620cbde874e70e90e406f5665c2f6d411ffb31de4cefc33821336281fcb239::coin::COIN",
+  "assetTreasuryCap": "0xdcba645b07686613f267f0b9866eccda0f7ace263504fb8e166f63a327dff5bb",
+  "assetMetadata": "0x4ce4febf5f3151112b20b071fc44aab20c6f356d18ab52f179a5552b200114b1",
+  "stableTreasuryCap": "0xa639ea795111720d09c13ec1af5aedf0810b750e8de0acbc297c6c94ea00633c",
+  "stableMetadata": "0x5f6e3d5dd52808699562b387fd882864f0c463935a87149838e629424d4a6429",
+  "lpTreasuryCap": "0xdafee6fbc7f7b32e682bcb870f4d0c7238f785d598c041d959e17fd62f436921",
+  "lpMetadata": "0x6c2b3a9e662f721a2a42ae9d03b2ebbba9fc389d8058061c39fffa5bc3a92584",
+  "isStableTreasuryCapShared": false,
+  "stablePackageId": "0x0a75d5271340d8ff0829ac3a1f5f15381f9dcbb7a497962ff55c687c4de93a45",
+  "spotPoolId": "0x6ff459e298a07b15646830c7491cdc6ed2859c880e265afbe1cd3a327c663847",
+  "raiseId": "0xcb48a60c31e087d72ada2aed288468a6d1bc432a5203a6ba51b115b49ec86064",
+  "timestamp": 1765285970213,
+  "network": "devnet",
+  "success": true
+}
