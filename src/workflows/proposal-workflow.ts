@@ -229,6 +229,7 @@ export class ProposalWorkflow {
 
     switch (action.type) {
       case 'create_stream':
+        // Note: All streams are always cancellable by DAO governance
         tx.moveCall({
           target: `${accountActionsPackageId}::stream_init_actions::add_create_stream_spec`,
           arguments: [
@@ -242,7 +243,6 @@ export class ProposalWorkflow {
             tx.pure.option('u64', action.cliffTime ?? null),
             tx.pure.option('u64', action.claimWindowMs ? Number(action.claimWindowMs) : null),
             tx.pure.u64(action.maxPerWithdrawal),
-            tx.pure.bool(action.isTransferable),
           ],
         });
         break;

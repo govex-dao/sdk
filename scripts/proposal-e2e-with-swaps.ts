@@ -272,7 +272,6 @@ async function main() {
         iterationsTotal: streamIterations,
         iterationPeriodMs: streamIterationPeriod,
         maxPerWithdrawal: BigInt(streamAmountPerIteration),
-        isTransferable: true,
         // Note: All streams are always cancellable by DAO governance
       },
     ],
