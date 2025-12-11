@@ -67,8 +67,6 @@ export interface CreateStreamActionConfig {
   claimWindowMs?: bigint;
   /** Max withdrawal per claim */
   maxPerWithdrawal: bigint;
-  /** Whether stream is transferable */
-  isTransferable: boolean;
   // Note: All streams are always cancellable by DAO governance
 }
 
@@ -908,8 +906,6 @@ export interface CreateRaiseConfig extends WorkflowBaseConfig {
   tokensForSale: bigint;
   /** Minimum raise amount (in stable) */
   minRaiseAmount: bigint;
-  /** Maximum raise amount (in stable) */
-  maxRaiseAmount?: bigint;
 
   /** Allowed contribution caps (array of amounts) */
   allowedCaps: bigint[];

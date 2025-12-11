@@ -86,7 +86,6 @@ export interface LaunchpadWorkflowSharedObjects {
  *       iterationsTotal: 12n,
  *       iterationPeriodMs: 2_592_000_000n,
  *       maxPerWithdrawal: 50_000_000n,
- *       isTransferable: true,
  *       // Note: All streams are always cancellable by DAO governance
  *     },
  *     {
@@ -162,25 +161,23 @@ export class LaunchpadWorkflow {
         tx.pure.u64(config.tokensForSale),
         // 7. min_raise_amount
         tx.pure.u64(config.minRaiseAmount),
-        // 8. max_raise_amount (Option)
-        tx.pure.option('u64', config.maxRaiseAmount ?? null),
-        // 9. allowed_caps (vector)
+        // 8. allowed_caps (vector)
         tx.pure.vector('u64', config.allowedCaps.map(c => c)),
-        // 10. start_delay_ms (Option)
+        // 9. start_delay_ms (Option)
         tx.pure.option('u64', config.startDelayMs ?? null),
-        // 11. allow_early_completion
+        // 10. allow_early_completion
         tx.pure.bool(config.allowEarlyCompletion),
-        // 12. description
+        // 11. description
         tx.pure.string(config.description),
-        // 13. metadata_keys (vector)
+        // 12. metadata_keys (vector)
         tx.pure.vector('string', config.metadataKeys || []),
-        // 14. metadata_values (vector)
+        // 13. metadata_values (vector)
         tx.pure.vector('string', config.metadataValues || []),
-        // 15. launchpad_fee (Coin<SUI>)
+        // 14. launchpad_fee (Coin<SUI>)
         launchpadFeeCoin,
-        // 16. extra_mint_to_caller
+        // 15. extra_mint_to_caller
         tx.pure.u64(config.extraMintToCaller ?? 0),
-        // 17. clock
+        // 16. clock
         tx.object(clockId),
       ],
     });
@@ -254,6 +251,7 @@ export class LaunchpadWorkflow {
 
     switch (action.type) {
       case 'create_stream':
+        // Note: All streams are always cancellable by DAO governance
         tx.moveCall({
           target: `${accountActionsPackageId}::stream_init_actions::add_create_stream_spec`,
           arguments: [
@@ -267,7 +265,6 @@ export class LaunchpadWorkflow {
             tx.pure.option('u64', action.cliffTime ?? null),
             tx.pure.option('u64', action.claimWindowMs ? Number(action.claimWindowMs) : null),
             tx.pure.u64(action.maxPerWithdrawal),
-            tx.pure.bool(action.isTransferable),
           ],
         });
         break;

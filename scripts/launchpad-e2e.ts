@@ -381,7 +381,6 @@ async function main() {
       iterationsTotal: iterationsTotal,
       iterationPeriodMs: iterationPeriodMs,
       maxPerWithdrawal: amountPerIteration,
-      isTransferable: true,
       // Note: All streams are always cancellable by DAO governance
     },
     {
@@ -427,13 +426,12 @@ async function main() {
       coinMetadata: testCoins.asset.metadata,
       tokensForSale: 1_000_000n,
       minRaiseAmount: TransactionUtils.suiToMist(1),
-      maxRaiseAmount: TransactionUtils.suiToMist(1500),
       allowedCaps: [
         TransactionUtils.suiToMist(1),
         TransactionUtils.suiToMist(50),
         LaunchpadWorkflow.UNLIMITED_CAP,
       ],
-      startDelayMs: 5_000n,
+      startDelayMs: 5_000,
       allowEarlyCompletion: true,
       description: "E2E test - two-outcome system with stream",
       affiliateId: "",
