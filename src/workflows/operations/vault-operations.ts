@@ -36,12 +36,13 @@ export interface CreateStreamConfig {
   claimWindowMs?: number;
   maxPerWithdrawal?: bigint;
   isTransferable?: boolean;
-  isCancellable?: boolean;
+  // Note: All streams are always cancellable by DAO governance
   coinType: string;
 }
 
 /**
  * Stream info
+ * Note: All streams are always cancellable by DAO governance
  */
 export interface StreamInfo {
   id: string;
@@ -54,7 +55,6 @@ export interface StreamInfo {
   iterationsClaimed: number;
   iterationPeriodMs: number;
   isTransferable: boolean;
-  isCancellable: boolean;
 }
 
 /**
@@ -394,7 +394,7 @@ export class VaultOperations {
       iterationsClaimed: Number(fields.iterations_claimed || 0),
       iterationPeriodMs: Number(fields.iteration_period_ms || 0),
       isTransferable: fields.is_transferable === true,
-      isCancellable: fields.is_cancellable === true,
+      // Note: All streams are always cancellable by DAO governance
     };
   }
 

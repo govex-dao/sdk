@@ -31,8 +31,7 @@ export interface CreateStreamConfig {
   maxPerWithdrawal: bigint | number;
   /** Whether stream can be transferred to another address */
   isTransferable: boolean;
-  /** Whether stream can be cancelled by DAO */
-  isCancellable: boolean;
+  // Note: All streams are always cancellable by DAO governance
 }
 
 /**
@@ -43,7 +42,7 @@ export interface CreateStreamConfig {
  * const tx = new Transaction();
  * const builder = ActionSpecBuilder.new(tx, actionsPackageId);
  *
- * // Add vesting stream
+ * // Add vesting stream (all streams are cancellable by DAO governance)
  * StreamInitActions.addCreateStream(tx, builder, actionsPackageId, {
  *   vaultName: "treasury",
  *   beneficiary: "0xBENEFICIARY",
@@ -53,7 +52,6 @@ export interface CreateStreamConfig {
  *   iterationPeriodMs: 2_592_000_000n, // 30 days
  *   maxPerWithdrawal: 1_000_000_000n,
  *   isTransferable: true,
- *   isCancellable: true,
  * });
  *
  * // Stage in launchpad
@@ -81,7 +79,7 @@ export class StreamInitActions {
    *
    * @example
    * ```typescript
-   * // 12-month linear vesting starting in 1 hour
+   * // 12-month linear vesting starting in 1 hour (all streams cancellable by DAO)
    * StreamInitActions.addCreateStream(tx, builder, actionsPackageId, {
    *   vaultName: "treasury",
    *   beneficiary: teamAddress,
@@ -92,7 +90,6 @@ export class StreamInitActions {
    *   cliffTime: Date.now() + 31_536_000_000, // 1 year cliff
    *   maxPerWithdrawal: totalAmount / 12n,
    *   isTransferable: false, // Non-transferable
-   *   isCancellable: true, // DAO can cancel
    * });
    * ```
    */
@@ -116,7 +113,6 @@ export class StreamInitActions {
         tx.pure.option('u64', config.claimWindowMs ?? null),
         tx.pure.u64(config.maxPerWithdrawal),
         tx.pure.bool(config.isTransferable),
-        tx.pure.bool(config.isCancellable),
       ],
     });
   }

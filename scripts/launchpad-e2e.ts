@@ -382,7 +382,7 @@ async function main() {
       iterationPeriodMs: iterationPeriodMs,
       maxPerWithdrawal: amountPerIteration,
       isTransferable: true,
-      isCancellable: true,
+      // Note: All streams are always cancellable by DAO governance
     },
     {
       type: 'create_pool_with_mint' as const,

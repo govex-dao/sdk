@@ -87,7 +87,7 @@ export interface LaunchpadWorkflowSharedObjects {
  *       iterationPeriodMs: 2_592_000_000n,
  *       maxPerWithdrawal: 50_000_000n,
  *       isTransferable: true,
- *       isCancellable: true,
+ *       // Note: All streams are always cancellable by DAO governance
  *     },
  *     {
  *       type: 'create_pool_with_mint',
@@ -268,7 +268,6 @@ export class LaunchpadWorkflow {
             tx.pure.option('u64', action.claimWindowMs ? Number(action.claimWindowMs) : null),
             tx.pure.u64(action.maxPerWithdrawal),
             tx.pure.bool(action.isTransferable),
-            tx.pure.bool(action.isCancellable),
           ],
         });
         break;

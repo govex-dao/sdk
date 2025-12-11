@@ -55,7 +55,7 @@ export class StreamActions {
       claimWindowMs?: bigint;
       maxPerWithdrawal: bigint;
       isTransferable: boolean;
-      isCancellable: boolean;
+      // Note: All streams are always cancellable by DAO governance
     }
   ): void {
     tx.moveCall({
@@ -72,7 +72,6 @@ export class StreamActions {
         tx.pure.option('u64', config.claimWindowMs ? Number(config.claimWindowMs) : null),
         tx.pure.u64(config.maxPerWithdrawal),
         tx.pure.bool(config.isTransferable),
-        tx.pure.bool(config.isCancellable),
       ],
     });
   }

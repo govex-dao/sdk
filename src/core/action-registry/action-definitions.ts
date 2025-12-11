@@ -398,9 +398,9 @@ export const STREAM_ACTIONS: ActionDefinition[] = [
       { name: 'claimWindowMs', type: 'option<u64>', description: 'Claim window duration (ms)', optional: true },
       { name: 'maxPerWithdrawal', type: 'u64', description: 'Maximum amount per withdrawal' },
       { name: 'isTransferable', type: 'bool', description: 'Whether stream is transferable' },
-      { name: 'isCancellable', type: 'bool', description: 'Whether stream is cancellable' },
+      // Note: All streams are always cancellable by DAO governance
     ],
-    description: 'Create a vesting stream',
+    description: 'Create a vesting stream (always cancellable by DAO)',
     launchpadSupported: true,
     proposalSupported: true,
   },

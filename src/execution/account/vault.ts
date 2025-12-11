@@ -419,7 +419,7 @@ export class Vault {
    * @param claimWindowMs - Optional claim window in milliseconds (Option)
    * @param maxPerWithdrawal - Maximum amount per withdrawal (0 = unlimited)
    * @param isTransferable - Whether the stream can be transferred
-   * @param isCancellable - Whether the stream can be cancelled
+   * Note: All streams are always cancellable by DAO governance
    * @param clock - The clock object
    * @returns The created stream ID
    */
@@ -443,7 +443,7 @@ export class Vault {
     claimWindowMs: ReturnType<Transaction['moveCall']>,
     maxPerWithdrawal: string | number,
     isTransferable: boolean,
-    isCancellable: boolean,
+    // Note: All streams are always cancellable by DAO governance
     clock: string
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -463,7 +463,6 @@ export class Vault {
         claimWindowMs,
         tx.pure.u64(maxPerWithdrawal),
         tx.pure.bool(isTransferable),
-        tx.pure.bool(isCancellable),
         tx.object(clock),
       ],
     });
@@ -773,7 +772,8 @@ export class Vault {
 
   /**
    * Get stream information
-   * Returns: (beneficiary, amount_per_iteration, claimed_amount, start_time, iterations_total, iteration_period_ms, is_cancellable)
+   * Returns: (beneficiary, amount_per_iteration, claimed_amount, start_time, iterations_total, iteration_period_ms)
+   * Note: All streams are always cancellable by DAO governance
    * @param tx - Transaction instance
    * @param config - Configuration object
    * @param config.accountActionsPackageId - The account actions package ID

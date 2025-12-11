@@ -69,8 +69,7 @@ export interface CreateStreamActionConfig {
   maxPerWithdrawal: bigint;
   /** Whether stream is transferable */
   isTransferable: boolean;
-  /** Whether stream is cancellable by DAO */
-  isCancellable: boolean;
+  // Note: All streams are always cancellable by DAO governance
 }
 
 /**

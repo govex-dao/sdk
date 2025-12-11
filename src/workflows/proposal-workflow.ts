@@ -243,7 +243,6 @@ export class ProposalWorkflow {
             tx.pure.option('u64', action.claimWindowMs ? Number(action.claimWindowMs) : null),
             tx.pure.u64(action.maxPerWithdrawal),
             tx.pure.bool(action.isTransferable),
-            tx.pure.bool(action.isCancellable),
           ],
         });
         break;

@@ -48,7 +48,6 @@ export interface TransactionComposerSharedObjects {
  *     iterationPeriodMs: 2_592_000_000n,
  *     maxPerWithdrawal: 50_000_000n,
  *     isTransferable: true,
- *     isCancellable: true,
  *   })
  *   .addPoolWithMint({
  *     vaultName: 'treasury',
@@ -120,7 +119,7 @@ export class TransactionBuilder {
     claimWindowMs?: bigint;
     maxPerWithdrawal: bigint;
     isTransferable: boolean;
-    isCancellable: boolean;
+    // Note: All streams are always cancellable by DAO governance
   }): this {
     this.actions.push({
       type: 'create_stream',
@@ -430,7 +429,6 @@ export class TransactionBuilder {
             this.tx.pure.option('u64', action.claimWindowMs ? Number(action.claimWindowMs) : null),
             this.tx.pure.u64(action.maxPerWithdrawal),
             this.tx.pure.bool(action.isTransferable),
-            this.tx.pure.bool(action.isCancellable),
           ],
         });
         break;
