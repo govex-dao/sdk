@@ -2,11 +2,21 @@
  * Transfer Init Actions
  *
  * Builders for transfer operations during initialization/intent staging.
- * Handles object transfers via executable_resources pattern.
+ * Handles object and coin transfers via executable_resources pattern.
  *
- * NOTE: For vault withdrawals + transfers, use the composable pattern:
- * 1. VaultSpend action (puts coin in executable_resources with resourceName)
- * 2. TransferObject action (takes from executable_resources using same resourceName)
+ * NOTE: There are TWO sets of transfer actions for different key formats:
+ *
+ * 1. TransferObject/TransferToSender - For objects placed via `provide_object`
+ *    - Key format: "name::object::Type"
+ *    - Use when previous action used provide_object<T>()
+ *
+ * 2. TransferCoin/TransferCoinToSender - For coins placed via `provide_coin`
+ *    - Key format: "name::coin::CoinType"
+ *    - Use when previous action used provide_coin<CoinType>() (e.g., VaultSpend, CurrencyMint)
+ *
+ * For vault withdrawals + transfers (common pattern):
+ * 1. VaultSpend action (puts coin in executable_resources via provide_coin)
+ * 2. TransferCoin action (takes from executable_resources via take_coin)
  *
  * @module transfer-init-actions
  */
@@ -21,7 +31,8 @@ import { Transaction } from '@mysten/sui/transactions';
  * const tx = new Transaction();
  * const builder = ActionSpecBuilder.new(tx, actionsPackageId);
  *
- * // Spend from vault and transfer to recipient (composable pattern)
+ * // Spend from vault and transfer to recipient using TransferCoin (composable pattern)
+ * // VaultSpend uses provide_coin, so use TransferCoin (not TransferObject)
  * VaultInitActions.addSpend(tx, builder, actionsPackageId, {
  *   vaultName: 'treasury',
  *   amount: 1_000_000_000n,
@@ -29,10 +40,9 @@ import { Transaction } from '@mysten/sui/transactions';
  *   resourceName: 'my_coin',
  *   coinType: '0x2::sui::SUI',
  * });
- * TransferInitActions.addTransferObject(tx, builder, actionsPackageId, {
+ * TransferInitActions.addTransferCoin(tx, builder, actionsPackageId, {
  *   recipient: '0xRECIPIENT',
  *   resourceName: 'my_coin',
- *   objectType: '0x2::coin::Coin<0x2::sui::SUI>',
  * });
  * ```
  */
@@ -88,6 +98,64 @@ export class TransferInitActions {
     tx.moveCall({
       target: `${actionsPackageId}::transfer_init_actions::add_transfer_to_sender_spec`,
       typeArguments: [config.objectType],
+      arguments: [builder, tx.pure.string(config.resourceName)],
+    });
+  }
+
+  /**
+   * Add action to transfer a coin to recipient
+   *
+   * Takes a coin from executable_resources (placed there by a previous action
+   * like VaultSpend or CurrencyMint via provide_coin) and transfers it to a recipient.
+   *
+   * Use this instead of addTransferObject when the coin was placed via provide_coin,
+   * because the key formats differ:
+   * - provide_coin uses: "name::coin::CoinType"
+   * - provide_object uses: "name::object::Coin<CoinType>"
+   *
+   * @param tx - Transaction
+   * @param builder - ActionSpec builder
+   * @param actionsPackageId - Package ID for account_actions
+   * @param config - Transfer configuration
+   */
+  static addTransferCoin(
+    tx: Transaction,
+    builder: ReturnType<Transaction['moveCall']>,
+    actionsPackageId: string,
+    config: {
+      recipient: string;
+      resourceName: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: `${actionsPackageId}::transfer_init_actions::add_transfer_coin_spec`,
+      arguments: [builder, tx.pure.address(config.recipient), tx.pure.string(config.resourceName)],
+    });
+  }
+
+  /**
+   * Add action to transfer a coin to transaction sender (cranker)
+   *
+   * Takes a coin from executable_resources (placed there via provide_coin)
+   * and transfers it to whoever executes the intent.
+   *
+   * Use this for crank fees when the coin was placed via provide_coin.
+   *
+   * @param tx - Transaction
+   * @param builder - ActionSpec builder
+   * @param actionsPackageId - Package ID for account_actions
+   * @param config - Transfer configuration
+   */
+  static addTransferCoinToSender(
+    tx: Transaction,
+    builder: ReturnType<Transaction['moveCall']>,
+    actionsPackageId: string,
+    config: {
+      resourceName: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: `${actionsPackageId}::transfer_init_actions::add_transfer_coin_to_sender_spec`,
       arguments: [builder, tx.pure.string(config.resourceName)],
     });
   }

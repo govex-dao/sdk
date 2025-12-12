@@ -158,22 +158,27 @@ export interface ReturnMetadataActionConfig {
 
 /**
  * Mint tokens action configuration
- * Note: The recipient is determined at execution time for launchpad init actions
+ * Mints tokens and stores them in executable_resources for subsequent actions.
+ * For example: mint → create_vesting (vesting takes from executable_resources)
  */
 export interface MintActionConfig {
   type: 'mint';
   /** Amount to mint */
   amount: bigint;
+  /** Resource name to store the minted coin in executable_resources */
+  resourceName: string;
 }
 
 /**
  * Burn tokens action configuration
- * Note: Vault is determined at execution time
+ * Burns tokens taken from executable_resources
  */
 export interface BurnActionConfig {
   type: 'burn';
   /** Amount to burn */
   amount: bigint;
+  /** Resource name to take the coin from executable_resources */
+  resourceName: string;
 }
 
 /**
@@ -215,8 +220,9 @@ export interface UpdateCurrencyActionConfig {
 // ============================================================================
 
 /**
- * Transfer object action configuration
+ * Transfer object action configuration (for objects via provide_object)
  * The object is taken from executable_resources using the given resourceName
+ * Key format: "name::object::Type"
  */
 export interface TransferActionConfig {
   type: 'transfer';
@@ -227,12 +233,42 @@ export interface TransferActionConfig {
 }
 
 /**
- * Transfer object to transaction sender (cranker)
+ * Transfer object to transaction sender (for objects via provide_object)
  * The object is taken from executable_resources using the given resourceName
+ * Key format: "name::object::Type"
  */
 export interface TransferToSenderActionConfig {
   type: 'transfer_to_sender';
   /** Resource name to take the object from executable_resources */
+  resourceName: string;
+}
+
+/**
+ * Transfer coin action configuration (for coins via provide_coin)
+ * The coin is taken from executable_resources using the given resourceName
+ * Key format: "name::coin::CoinType"
+ *
+ * Use this instead of TransferActionConfig when the coin was placed via provide_coin
+ * (e.g., from VaultSpend, CurrencyMint)
+ */
+export interface TransferCoinActionConfig {
+  type: 'transfer_coin';
+  /** Recipient address */
+  recipient: string;
+  /** Resource name to take the coin from executable_resources */
+  resourceName: string;
+}
+
+/**
+ * Transfer coin to transaction sender (for coins via provide_coin)
+ * The coin is taken from executable_resources using the given resourceName
+ * Key format: "name::coin::CoinType"
+ *
+ * Use this for crank fees when the coin was placed via provide_coin
+ */
+export interface TransferCoinToSenderActionConfig {
+  type: 'transfer_coin_to_sender';
+  /** Resource name to take the coin from executable_resources */
   resourceName: string;
 }
 
@@ -829,9 +865,12 @@ export type ActionConfig =
   | BurnActionConfig
   | DisableCurrencyActionConfig
   | UpdateCurrencyActionConfig
-  // Transfer
+  // Transfer (objects via provide_object)
   | TransferActionConfig
   | TransferToSenderActionConfig
+  // Transfer (coins via provide_coin)
+  | TransferCoinActionConfig
+  | TransferCoinToSenderActionConfig
   // Package Upgrade
   | UpgradePackageActionConfig
   | CommitUpgradeActionConfig
@@ -924,8 +963,6 @@ export interface CreateRaiseConfig extends WorkflowBaseConfig {
   metadataValues?: string[];
   /** Launchpad fee amount (in SUI MIST) */
   launchpadFee: bigint;
-  /** Extra tokens to mint and return to caller (for creator allocation) */
-  extraMintToCaller?: bigint;
 }
 
 /**
@@ -1003,7 +1040,10 @@ export type LaunchpadActionType =
   | { type: 'update_trading_params' }
   | { type: 'update_twap_config' }
   | { type: 'return_treasury_cap'; coinType: string }
-  | { type: 'return_metadata'; coinType: string };
+  | { type: 'return_metadata'; coinType: string }
+  | { type: 'mint'; coinType: string }
+  | { type: 'transfer_coin'; coinType: string }
+  | { type: 'deposit'; coinType: string };
 
 // ============================================================================
 // PROPOSAL WORKFLOW TYPES
@@ -1176,6 +1216,8 @@ export type ProposalActionType =
   | { type: 'spend'; coinType: string }
   | { type: 'transfer'; objectType: string }
   | { type: 'transfer_to_sender'; objectType: string }
+  | { type: 'transfer_coin'; coinType: string }
+  | { type: 'transfer_coin_to_sender'; coinType: string }
   | { type: 'memo' };
 
 // ============================================================================
@@ -1295,9 +1337,12 @@ export type IntentActionConfig =
   | { action: 'burn'; coinType: string }
   | { action: 'disable_currency'; coinType: string }
   | { action: 'update_currency'; coinType: string }
-  // Account Actions - Transfer
+  // Account Actions - Transfer (objects via provide_object)
   | { action: 'transfer'; objectType: string }
   | { action: 'transfer_to_sender'; objectType: string }
+  // Account Actions - Transfer (coins via provide_coin)
+  | { action: 'transfer_coin'; coinType: string }
+  | { action: 'transfer_coin_to_sender'; coinType: string }
   // Account Actions - Package Upgrade
   | { action: 'upgrade_package' }
   | { action: 'commit_upgrade' }

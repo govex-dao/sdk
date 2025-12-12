@@ -65,14 +65,14 @@ import { TransactionUtils } from '../../services/transaction';
  *   coinType,
  * }, auth, account, registry, vaultName);
  *
- * // Create a vesting stream
- * const streamId = Vault.createStream(tx, {
+ * // Create a vesting stream (vault streams are always DAO-controlled)
+ * const streamId = Vault.createStreamAuth(tx, {
  *   accountActionsPackageId,
  *   configType,
  *   coinType,
  * }, auth, account, registry, vaultName, beneficiary, amountPerIteration,
  *   startTime, iterationsTotal, iterationPeriodMs, cliffTime, claimWindowMs,
- *   maxPerWithdrawal, isTransferable, isCancellable, clock);
+ *   maxPerWithdrawal, clock);
  *
  * // Execute actions from intent
  * Vault.doDeposit(tx, {
@@ -418,10 +418,11 @@ export class Vault {
    * @param cliffTime - Optional cliff timestamp (Option)
    * @param claimWindowMs - Optional claim window in milliseconds (Option)
    * @param maxPerWithdrawal - Maximum amount per withdrawal (0 = unlimited)
-   * @param isTransferable - Whether the stream can be transferred
-   * Note: All streams are always cancellable by DAO governance
    * @param clock - The clock object
    * @returns The created stream ID
+   *
+   * Note: Vault streams are always DAO-controlled (cancellable, non-transferable).
+   * For transferable vestings with beneficiary control, use the standalone vesting module.
    */
   static createStreamAuth(
     tx: Transaction,
@@ -442,8 +443,6 @@ export class Vault {
     cliffTime: ReturnType<Transaction['moveCall']>,
     claimWindowMs: ReturnType<Transaction['moveCall']>,
     maxPerWithdrawal: string | number,
-    isTransferable: boolean,
-    // Note: All streams are always cancellable by DAO governance
     clock: string
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -462,7 +461,6 @@ export class Vault {
         cliffTime,
         claimWindowMs,
         tx.pure.u64(maxPerWithdrawal),
-        tx.pure.bool(isTransferable),
         tx.object(clock),
       ],
     });

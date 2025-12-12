@@ -35,26 +35,28 @@ export interface CreateStreamConfig {
   cliffMs?: number;
   claimWindowMs?: number;
   maxPerWithdrawal?: bigint;
-  isTransferable?: boolean;
-  // Note: All streams are always cancellable by DAO governance
   coinType: string;
+  // Note: Vault streams are always DAO-controlled (cancellable, non-transferable).
+  // For transferable vestings with beneficiary control, use the standalone vesting module.
 }
 
 /**
  * Stream info
- * Note: All streams are always cancellable by DAO governance
+ * Note: Vault streams are always DAO-controlled (cancellable, non-transferable).
+ * For transferable vestings with beneficiary control, use the standalone vesting module.
  */
 export interface StreamInfo {
   id: string;
   beneficiary: string;
-  totalAmount: bigint;
+  amountPerIteration: bigint;
   claimedAmount: bigint;
   startTime: number;
   cliffTime?: number;
   iterationsTotal: number;
-  iterationsClaimed: number;
   iterationPeriodMs: number;
-  isTransferable: boolean;
+  maxPerWithdrawal: bigint;
+  /** Computed: amountPerIteration * iterationsTotal */
+  totalAmount: bigint;
 }
 
 /**
@@ -383,18 +385,20 @@ export class VaultOperations {
 
     const fields = obj.data.content.fields as any;
 
+    const amountPerIteration = BigInt(fields.amount_per_iteration || 0);
+    const iterationsTotal = Number(fields.iterations_total || 0);
+
     return {
       id: streamId,
       beneficiary: fields.beneficiary || '',
-      totalAmount: BigInt(fields.total_amount || 0),
+      amountPerIteration,
       claimedAmount: BigInt(fields.claimed_amount || 0),
       startTime: Number(fields.start_time || 0),
       cliffTime: fields.cliff_time ? Number(fields.cliff_time) : undefined,
-      iterationsTotal: Number(fields.iterations_total || 0),
-      iterationsClaimed: Number(fields.iterations_claimed || 0),
+      iterationsTotal,
       iterationPeriodMs: Number(fields.iteration_period_ms || 0),
-      isTransferable: fields.is_transferable === true,
-      // Note: All streams are always cancellable by DAO governance
+      maxPerWithdrawal: BigInt(fields.max_per_withdrawal || 0),
+      totalAmount: amountPerIteration * BigInt(iterationsTotal),
     };
   }
 
@@ -418,17 +422,12 @@ export class VaultOperations {
 
     const elapsed = now - stream.startTime;
     const iterationsElapsed = Math.floor(elapsed / stream.iterationPeriodMs);
-    const claimableIterations = Math.min(
-      iterationsElapsed,
-      stream.iterationsTotal
-    ) - stream.iterationsClaimed;
+    const vestedIterations = Math.min(iterationsElapsed, stream.iterationsTotal);
+    const vestedAmount = stream.amountPerIteration * BigInt(vestedIterations);
 
-    if (claimableIterations <= 0) {
-      return 0n;
-    }
-
-    const amountPerIteration = stream.totalAmount / BigInt(stream.iterationsTotal);
-    return amountPerIteration * BigInt(claimableIterations);
+    // Claimable = vested - already claimed
+    const claimable = vestedAmount - stream.claimedAmount;
+    return claimable > 0n ? claimable : 0n;
   }
 
   /**

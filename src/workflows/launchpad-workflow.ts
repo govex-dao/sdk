@@ -175,9 +175,7 @@ export class LaunchpadWorkflow {
         tx.pure.vector('string', config.metadataValues || []),
         // 14. launchpad_fee (Coin<SUI>)
         launchpadFeeCoin,
-        // 15. extra_mint_to_caller
-        tx.pure.u64(config.extraMintToCaller ?? 0),
-        // 16. clock
+        // 15. clock
         tx.object(clockId),
       ],
     });
@@ -344,21 +342,25 @@ export class LaunchpadWorkflow {
         break;
 
       case 'mint':
+        // Mint tokens and store in executable_resources for subsequent actions
         tx.moveCall({
           target: `${accountActionsPackageId}::currency_init_actions::add_mint_spec`,
           arguments: [
             builder,
             tx.pure.u64(action.amount),
+            tx.pure.string(action.resourceName),
           ],
         });
         break;
 
       case 'burn':
+        // Burn tokens from executable_resources
         tx.moveCall({
           target: `${accountActionsPackageId}::currency_init_actions::add_burn_spec`,
           arguments: [
             builder,
             tx.pure.u64(action.amount),
+            tx.pure.string(action.resourceName),
           ],
         });
         break;
@@ -402,6 +404,26 @@ export class LaunchpadWorkflow {
       case 'transfer_to_sender':
         tx.moveCall({
           target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_to_sender_spec`,
+          arguments: [builder, tx.pure.string(action.resourceName)],
+        });
+        break;
+
+      case 'transfer_coin':
+        // Use this when the coin was placed via provide_coin (e.g., from VaultSpend)
+        tx.moveCall({
+          target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_coin_spec`,
+          arguments: [
+            builder,
+            tx.pure.address(action.recipient),
+            tx.pure.string(action.resourceName),
+          ],
+        });
+        break;
+
+      case 'transfer_coin_to_sender':
+        // Use this for crank fees when the coin was placed via provide_coin
+        tx.moveCall({
+          target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_coin_to_sender_spec`,
           arguments: [builder, tx.pure.string(action.resourceName)],
         });
         break;
@@ -590,6 +612,12 @@ export class LaunchpadWorkflow {
               coinType: at.coinType,
               keyType: `${this.packages.accountActionsPackageId}::currency::CoinMetadataKey<${at.coinType}>`,
             };
+          case 'mint':
+            return { action: 'mint' as const, coinType: at.coinType };
+          case 'transfer_coin':
+            return { action: 'transfer_coin' as const, coinType: at.coinType };
+          case 'deposit':
+            return { action: 'deposit' as const, coinType: at.coinType };
           default:
             throw new Error(`Unknown action type: ${(at as any).type}`);
         }

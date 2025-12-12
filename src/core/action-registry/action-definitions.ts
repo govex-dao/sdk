@@ -397,10 +397,9 @@ export const STREAM_ACTIONS: ActionDefinition[] = [
       { name: 'cliffTime', type: 'option<u64>', description: 'Cliff timestamp (ms)', optional: true },
       { name: 'claimWindowMs', type: 'option<u64>', description: 'Claim window duration (ms)', optional: true },
       { name: 'maxPerWithdrawal', type: 'u64', description: 'Maximum amount per withdrawal' },
-      { name: 'isTransferable', type: 'bool', description: 'Whether stream is transferable' },
-      // Note: All streams are always cancellable by DAO governance
+      // Note: Vault streams are always DAO-controlled (cancellable, non-transferable)
     ],
-    description: 'Create a vesting stream (always cancellable by DAO)',
+    description: 'Create a vesting stream (DAO-controlled: cancellable, non-transferable)',
     launchpadSupported: true,
     proposalSupported: true,
   },

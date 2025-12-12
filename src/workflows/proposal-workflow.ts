@@ -323,6 +323,26 @@ export class ProposalWorkflow {
         });
         break;
 
+      case 'transfer_coin':
+        // Use this when the coin was placed via provide_coin (e.g., from VaultSpend)
+        tx.moveCall({
+          target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_coin_spec`,
+          arguments: [
+            builder,
+            tx.pure.address(action.recipient),
+            tx.pure.string(action.resourceName),
+          ],
+        });
+        break;
+
+      case 'transfer_coin_to_sender':
+        // Use this for crank fees when the coin was placed via provide_coin
+        tx.moveCall({
+          target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_coin_to_sender_spec`,
+          arguments: [builder, tx.pure.string(action.resourceName)],
+        });
+        break;
+
       case 'memo':
         tx.moveCall({
           target: `${accountActionsPackageId}::memo_init_actions::add_emit_memo_spec`,

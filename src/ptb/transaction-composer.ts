@@ -47,7 +47,6 @@ export interface TransactionComposerSharedObjects {
  *     iterationsTotal: 12n,
  *     iterationPeriodMs: 2_592_000_000n,
  *     maxPerWithdrawal: 50_000_000n,
- *     isTransferable: true,
  *   })
  *   .addPoolWithMint({
  *     vaultName: 'treasury',
@@ -107,6 +106,8 @@ export class TransactionBuilder {
 
   /**
    * Add a create stream action
+   * Note: All vault streams are DAO-controlled (always cancellable, non-transferable).
+   * For transferable vestings with beneficiary control, use the standalone vesting module.
    */
   addStream(config: {
     vaultName: string;
@@ -118,8 +119,6 @@ export class TransactionBuilder {
     cliffTime?: number;
     claimWindowMs?: bigint;
     maxPerWithdrawal: bigint;
-    isTransferable: boolean;
-    // Note: All streams are always cancellable by DAO governance
   }): this {
     this.actions.push({
       type: 'create_stream',
@@ -204,24 +203,30 @@ export class TransactionBuilder {
 
   /**
    * Add a mint action
-   * Note: The minted coin is handled at execution time, not staging
+   * The minted coin is stored in executable_resources under resourceName
+   * @param amount - Amount to mint
+   * @param resourceName - Name to store the minted coin in executable_resources
    */
-  addMint(amount: bigint): this {
+  addMint(amount: bigint, resourceName: string): this {
     this.actions.push({
       type: 'mint',
       amount,
+      resourceName,
     });
     return this;
   }
 
   /**
    * Add a burn action
-   * Note: The coin to burn is provided at execution time
+   * The coin to burn is taken from executable_resources under resourceName
+   * @param amount - Amount to burn
+   * @param resourceName - Name of the coin to burn from executable_resources
    */
-  addBurn(amount: bigint): this {
+  addBurn(amount: bigint, resourceName: string): this {
     this.actions.push({
       type: 'burn',
       amount,
+      resourceName,
     });
     return this;
   }
@@ -275,6 +280,34 @@ export class TransactionBuilder {
   addTransferToSender(resourceName: string): this {
     this.actions.push({
       type: 'transfer_to_sender',
+      resourceName,
+    });
+    return this;
+  }
+
+  /**
+   * Add a transfer coin action (for coins via provide_coin)
+   * Use this when the coin was placed via provide_coin (e.g., from VaultSpend)
+   * @param recipient - The address to transfer the coin to
+   * @param resourceName - The name of the coin resource in executable_resources
+   */
+  addTransferCoin(recipient: string, resourceName: string): this {
+    this.actions.push({
+      type: 'transfer_coin',
+      recipient,
+      resourceName,
+    });
+    return this;
+  }
+
+  /**
+   * Add a transfer coin to sender action (for coins via provide_coin)
+   * Use this for crank fees when the coin was placed via provide_coin
+   * @param resourceName - The name of the coin resource in executable_resources
+   */
+  addTransferCoinToSender(resourceName: string): this {
+    this.actions.push({
+      type: 'transfer_coin_to_sender',
       resourceName,
     });
     return this;
@@ -428,7 +461,6 @@ export class TransactionBuilder {
             this.tx.pure.option('u64', action.cliffTime ?? null),
             this.tx.pure.option('u64', action.claimWindowMs ? Number(action.claimWindowMs) : null),
             this.tx.pure.u64(action.maxPerWithdrawal),
-            this.tx.pure.bool(action.isTransferable),
           ],
         });
         break;
@@ -565,6 +597,29 @@ export class TransactionBuilder {
       case 'transfer_to_sender':
         this.tx.moveCall({
           target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_to_sender_spec`,
+          arguments: [
+            this.builder!,
+            this.tx.pure.string(action.resourceName),
+          ],
+        });
+        break;
+
+      case 'transfer_coin':
+        // Use this when the coin was placed via provide_coin (e.g., from VaultSpend)
+        this.tx.moveCall({
+          target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_coin_spec`,
+          arguments: [
+            this.builder!,
+            this.tx.pure.address(action.recipient),
+            this.tx.pure.string(action.resourceName),
+          ],
+        });
+        break;
+
+      case 'transfer_coin_to_sender':
+        // Use this for crank fees when the coin was placed via provide_coin
+        this.tx.moveCall({
+          target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_coin_to_sender_spec`,
           arguments: [
             this.builder!,
             this.tx.pure.string(action.resourceName),

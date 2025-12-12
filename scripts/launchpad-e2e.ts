@@ -370,8 +370,21 @@ async function main() {
   // Use the SDK's createRaiseWithActions helper for cleaner flow
   const launchpadWorkflow = sdk.workflows.launchpad;
 
+  // === MINT & TRANSFER DEMO ===
+  // Mint some asset tokens for team allocation and transfer them
+  const teamMintAmount = TransactionUtils.suiToMist(100); // 100 asset tokens
+  const teamRecipient = sender; // Send to sender for demo
+
+  // === ASSET VESTING DEMO ===
+  // Create a vesting stream for asset tokens (separate from stable stream)
+  const assetStreamAmount = TransactionUtils.suiToMist(50); // 50 asset tokens
+  const assetIterationsTotal = 6n;
+  const assetIterationPeriodMs = 1_296_000_000n; // 15 days in milliseconds
+  const assetAmountPerIteration = assetStreamAmount / assetIterationsTotal;
+
   // Define success actions
   const successActions = [
+    // === 1. STABLE COIN VESTING (from treasury) ===
     {
       type: 'create_stream' as const,
       vaultName: 'treasury',
@@ -383,6 +396,50 @@ async function main() {
       maxPerWithdrawal: amountPerIteration,
       // Note: All streams are always cancellable by DAO governance
     },
+    // === 2. MINT ASSET TOKENS (for team allocation) ===
+    // This mints new asset tokens using the TreasuryCap and stores them
+    // in executable_resources under the name 'team_tokens'
+    {
+      type: 'mint' as const,
+      amount: teamMintAmount,
+      resourceName: 'team_tokens',
+    },
+    // === 3. TRANSFER MINTED TOKENS TO TEAM ===
+    // Takes the minted coins from executable_resources and transfers to recipient
+    // Uses transfer_coin because mint uses provide_coin (key: name::coin::CoinType)
+    {
+      type: 'transfer_coin' as const,
+      recipient: teamRecipient,
+      resourceName: 'team_tokens',
+    },
+    // === 4. MINT ASSET TOKENS FOR VESTING ===
+    // Mint tokens that will be deposited into treasury for vesting
+    {
+      type: 'mint' as const,
+      amount: assetStreamAmount,
+      resourceName: 'vesting_tokens',
+    },
+    // === 5. DEPOSIT MINTED TOKENS INTO TREASURY ===
+    // Deposit the minted asset tokens into treasury vault for vesting
+    {
+      type: 'deposit' as const,
+      vaultName: 'treasury',
+      amount: assetStreamAmount,
+      resourceName: 'vesting_tokens',
+    },
+    // === 6. CREATE ASSET COIN VESTING STREAM ===
+    // Now create a vesting stream from treasury for the deposited asset tokens
+    {
+      type: 'create_stream' as const,
+      vaultName: 'treasury',
+      beneficiary: streamRecipient,
+      amountPerIteration: assetAmountPerIteration,
+      startTime: streamStart,
+      iterationsTotal: assetIterationsTotal,
+      iterationPeriodMs: assetIterationPeriodMs,
+      maxPerWithdrawal: assetAmountPerIteration,
+    },
+    // === 7. CREATE AMM POOL ===
     {
       type: 'create_pool_with_mint' as const,
       vaultName: 'treasury',
@@ -393,11 +450,13 @@ async function main() {
       lpTreasuryCapId: testCoins.lp.treasuryCap,
       lpMetadataId: testCoins.lp.metadata,
     },
+    // === 8. UPDATE TRADING PARAMS ===
     {
       type: 'update_trading_params' as const,
       reviewPeriodMs: 1000n, // 1 second for testing
       tradingPeriodMs: 60_000n, // 1 minute
     },
+    // === 9. UPDATE TWAP CONFIG ===
     {
       type: 'update_twap_config' as const,
       startDelay: 0n,
@@ -476,11 +535,26 @@ async function main() {
   console.log("STEP 4: STAGE SUCCESS INIT ACTIONS (using sdk.workflows.launchpad)");
   console.log("=".repeat(80));
 
-  console.log("\n📋 Staging stream and AMM pool for SUCCESS outcome...");
-  console.log(`   Vault: treasury`);
-  console.log(`   Stream Beneficiary: ${streamRecipient}`);
-  console.log(`   Stream Amount: ${Number(streamAmount) / 1e9} TSTABLE over ${Number(iterationsTotal)} months`);
-  console.log(`   Pool: ${Number(poolAssetAmount) / 1e9} asset + ${Number(poolStableAmount) / 1e9} stable @ ${poolFeeBps / 100}% fee`);
+  console.log("\n📋 Staging SUCCESS actions (9 total)...");
+  console.log("   1. Create STABLE coin vesting stream:");
+  console.log(`      - Vault: treasury`);
+  console.log(`      - Beneficiary: ${streamRecipient}`);
+  console.log(`      - Amount: ${Number(streamAmount) / 1e9} TSTABLE over ${Number(iterationsTotal)} months`);
+  console.log("   2. Mint asset tokens for team allocation:");
+  console.log(`      - Amount: ${Number(teamMintAmount) / 1e9} TASSET`);
+  console.log("   3. Transfer minted tokens to team:");
+  console.log(`      - Recipient: ${teamRecipient}`);
+  console.log("   4. Mint asset tokens for vesting:");
+  console.log(`      - Amount: ${Number(assetStreamAmount) / 1e9} TASSET`);
+  console.log("   5. Deposit minted tokens to treasury");
+  console.log("   6. Create ASSET coin vesting stream:");
+  console.log(`      - Vault: treasury`);
+  console.log(`      - Beneficiary: ${streamRecipient}`);
+  console.log(`      - Amount: ${Number(assetStreamAmount) / 1e9} TASSET over ${Number(assetIterationsTotal)} periods`);
+  console.log("   7. Create AMM pool:");
+  console.log(`      - Pool: ${Number(poolAssetAmount) / 1e9} asset + ${Number(poolStableAmount) / 1e9} stable @ ${poolFeeBps / 100}% fee`);
+  console.log("   8. Update trading params (1s review, 60s trading)");
+  console.log("   9. Update TWAP config");
 
   const stageSuccessResult = await executeTransaction(
     sdk,
@@ -492,7 +566,7 @@ async function main() {
     }
   );
 
-  console.log("✅ Stream and AMM pool staged as SUCCESS actions!");
+  console.log("✅ All 9 SUCCESS actions staged!");
   console.log(`   Transaction: ${stageSuccessResult.digest}`);
 
   // Step 4.5: Stage FAILURE init actions using SDK workflow
@@ -698,10 +772,22 @@ async function main() {
   }
   console.log("=".repeat(80));
 
-  // Build action types for execution
+  // Build action types for execution (must match the staged actions ORDER)
   const actionTypes = raiseActuallySucceeded
     ? [
+        // 1. Stable coin vesting stream
         { type: 'create_stream' as const, coinType: testCoins.stable.type },
+        // 2. Mint asset tokens for team
+        { type: 'mint' as const, coinType: testCoins.asset.type },
+        // 3. Transfer minted tokens to team (uses transfer_coin for provide_coin pattern)
+        { type: 'transfer_coin' as const, coinType: testCoins.asset.type },
+        // 4. Mint asset tokens for vesting deposit
+        { type: 'mint' as const, coinType: testCoins.asset.type },
+        // 5. Deposit minted tokens into treasury
+        { type: 'deposit' as const, coinType: testCoins.asset.type },
+        // 6. Asset coin vesting stream
+        { type: 'create_stream' as const, coinType: testCoins.asset.type },
+        // 7. Create AMM pool
         {
           type: 'create_pool_with_mint' as const,
           assetType: testCoins.asset.type,
@@ -710,7 +796,9 @@ async function main() {
           lpTreasuryCapId: testCoins.lp.treasuryCap,
           lpMetadataId: testCoins.lp.metadata,
         },
+        // 8. Update trading params
         { type: 'update_trading_params' as const },
+        // 9. Update TWAP config
         { type: 'update_twap_config' as const },
       ]
     : [
@@ -736,14 +824,27 @@ async function main() {
     });
 
     if (raiseActuallySucceeded) {
-      console.log("✅ Stream and AMM pool created via Intent execution!");
+      console.log("✅ All 9 actions executed via Intent execution!");
       console.log(`   Transaction: ${executeResult.digest}`);
+      console.log("   Actions completed:");
+      console.log("     ✅ 1. Stable coin vesting stream created");
+      console.log("     ✅ 2. Asset tokens minted for team");
+      console.log("     ✅ 3. Minted tokens transferred to team");
+      console.log("     ✅ 4. Asset tokens minted for treasury");
+      console.log("     ✅ 5. Minted tokens deposited to treasury");
+      console.log("     ✅ 6. Asset coin vesting stream created");
+      console.log("     ✅ 7. AMM pool created");
+      console.log("     ✅ 8. Trading params updated");
+      console.log("     ✅ 9. TWAP config updated");
 
-      const streamObject = executeResult.objectChanges?.find((c: any) =>
+      const streamObjects = executeResult.objectChanges?.filter((c: any) =>
         c.objectType?.includes("::vault::Stream"),
       );
-      if (streamObject) {
-        console.log(`   Stream ID: ${streamObject.objectId}`);
+      if (streamObjects && streamObjects.length > 0) {
+        console.log(`   Stream(s) created: ${streamObjects.length}`);
+        streamObjects.forEach((s: any, i: number) => {
+          console.log(`     Stream ${i + 1}: ${s.objectId}`);
+        });
       }
 
       const poolObject = executeResult.objectChanges?.find((c: any) =>

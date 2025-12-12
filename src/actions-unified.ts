@@ -54,8 +54,7 @@ export class StreamActions {
       cliffTime?: number;
       claimWindowMs?: bigint;
       maxPerWithdrawal: bigint;
-      isTransferable: boolean;
-      // Note: All streams are always cancellable by DAO governance
+      // Note: Vault streams are always DAO-controlled (cancellable, non-transferable)
     }
   ): void {
     tx.moveCall({
@@ -71,7 +70,6 @@ export class StreamActions {
         tx.pure.option('u64', config.cliffTime ?? null),
         tx.pure.option('u64', config.claimWindowMs ? Number(config.claimWindowMs) : null),
         tx.pure.u64(config.maxPerWithdrawal),
-        tx.pure.bool(config.isTransferable),
       ],
     });
   }
@@ -85,23 +83,34 @@ export class CurrencyActions {
 
   /**
    * Add a mint action spec
-   * Note: The minted coin is returned to PTB for further handling at execution time
+   * Mints coins and stores them in executable_resources under resourceName
+   * for consumption by subsequent actions (e.g., CreateVesting, TransferCoin)
    */
-  addMint(tx: Transaction, builder: ReturnType<Transaction['moveCall']>, amount: bigint): void {
+  addMint(
+    tx: Transaction,
+    builder: ReturnType<Transaction['moveCall']>,
+    amount: bigint,
+    resourceName: string
+  ): void {
     tx.moveCall({
       target: `${this.packages.accountActionsPackageId}::currency_init_actions::add_mint_spec`,
-      arguments: [builder, tx.pure.u64(amount)],
+      arguments: [builder, tx.pure.u64(amount), tx.pure.string(resourceName)],
     });
   }
 
   /**
    * Add a burn action spec
-   * Note: The coin to burn is passed at execution time
+   * Burns coins from executable_resources with the given resourceName
    */
-  addBurn(tx: Transaction, builder: ReturnType<Transaction['moveCall']>, amount: bigint): void {
+  addBurn(
+    tx: Transaction,
+    builder: ReturnType<Transaction['moveCall']>,
+    amount: bigint,
+    resourceName: string
+  ): void {
     tx.moveCall({
       target: `${this.packages.accountActionsPackageId}::currency_init_actions::add_burn_spec`,
-      arguments: [builder, tx.pure.u64(amount)],
+      arguments: [builder, tx.pure.u64(amount), tx.pure.string(resourceName)],
     });
   }
 

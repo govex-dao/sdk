@@ -29,8 +29,6 @@ export interface CreateStreamConfig {
   claimWindowMs?: number;
   /** Maximum amount claimable per withdrawal */
   maxPerWithdrawal: bigint | number;
-  /** Whether stream can be transferred to another address */
-  isTransferable: boolean;
   // Note: All streams are always cancellable by DAO governance
 }
 
@@ -51,7 +49,6 @@ export interface CreateStreamConfig {
  *   iterationsTotal: 12n, // 12 months
  *   iterationPeriodMs: 2_592_000_000n, // 30 days
  *   maxPerWithdrawal: 1_000_000_000n,
- *   isTransferable: true,
  * });
  *
  * // Stage in launchpad
@@ -89,7 +86,6 @@ export class StreamInitActions {
    *   iterationPeriodMs: 2_592_000_000n, // 30 days
    *   cliffTime: Date.now() + 31_536_000_000, // 1 year cliff
    *   maxPerWithdrawal: totalAmount / 12n,
-   *   isTransferable: false, // Non-transferable
    * });
    * ```
    */
@@ -112,7 +108,6 @@ export class StreamInitActions {
         tx.pure.option('u64', config.cliffTime ?? null),
         tx.pure.option('u64', config.claimWindowMs ?? null),
         tx.pure.u64(config.maxPerWithdrawal),
-        tx.pure.bool(config.isTransferable),
       ],
     });
   }

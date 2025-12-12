@@ -372,8 +372,9 @@ export class IntentExecutor {
       // ACCOUNT ACTIONS - CURRENCY
       // =========================================================================
       case 'mint':
+        // do_init_mint mints coins and stores them in executable_resources via provide_coin
         tx.moveCall({
-          target: `${accountActionsPackageId}::currency::do_mint`,
+          target: `${accountActionsPackageId}::currency::do_init_mint`,
           typeArguments: [outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
@@ -481,7 +482,7 @@ export class IntentExecutor {
       }
 
       // =========================================================================
-      // ACCOUNT ACTIONS - TRANSFER
+      // ACCOUNT ACTIONS - TRANSFER (objects via provide_object)
       // =========================================================================
       case 'transfer':
         // do_init_transfer takes object from executable_resources (deterministic!)
@@ -502,6 +503,35 @@ export class IntentExecutor {
         tx.moveCall({
           target: `${accountActionsPackageId}::transfer::do_init_transfer_to_sender`,
           typeArguments: [outcomeType, action.objectType, witnessType],
+          arguments: [
+            executable,
+            intentWitness,
+          ],
+        });
+        break;
+
+      // =========================================================================
+      // ACCOUNT ACTIONS - TRANSFER (coins via provide_coin)
+      // =========================================================================
+      case 'transfer_coin':
+        // do_init_transfer_coin takes coin from executable_resources via take_coin
+        // Use this when coin was placed via provide_coin (e.g., VaultSpend, CurrencyMint)
+        tx.moveCall({
+          target: `${accountActionsPackageId}::transfer::do_init_transfer_coin`,
+          typeArguments: [outcomeType, action.coinType, witnessType],
+          arguments: [
+            executable,
+            intentWitness,
+          ],
+        });
+        break;
+
+      case 'transfer_coin_to_sender':
+        // do_init_transfer_coin_to_sender takes coin from executable_resources via take_coin
+        // Transfers to whoever executes the intent (cranker) - used for crank fees
+        tx.moveCall({
+          target: `${accountActionsPackageId}::transfer::do_init_transfer_coin_to_sender`,
+          typeArguments: [outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
             intentWitness,
