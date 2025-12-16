@@ -33,3 +33,20 @@ coverage/
 
 # Misc
 *.orig
+
+# Auto-generated test data
+test-dao-info.json
+test-proposal-info.json
+conditional-coins-info.json
+test-dao-info-*.json
+
+# Generated temp packages
+tmp/
+
+# Symlinks to other repos
+deployments-processed
+
+# Empty placeholder dirs
+.gen/
+lib/
+types/
