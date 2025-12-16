@@ -11,6 +11,7 @@
 import { Transaction } from '@mysten/sui/transactions';
 import type { SuiClient } from '@mysten/sui/client';
 import { TransactionUtils } from './transaction';
+import { extractFields, FeeManagerFields } from '../types';
 
 /**
  * Fee configuration for a specific coin type
@@ -349,12 +350,12 @@ export class FeeManagerOperations {
             options: { showContent: true },
         });
 
-        if (!feeManager.data?.content || feeManager.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FeeManagerFields>(feeManager);
+        if (!fields) {
             throw new Error('FeeManager not found or invalid');
         }
 
-        const fields = feeManager.data.content.fields as any;
-        return BigInt(fields.dao_creation_fee);
+        return BigInt(fields.dao_creation_fee || 0);
     }
 
     /**
@@ -368,12 +369,12 @@ export class FeeManagerOperations {
             options: { showContent: true },
         });
 
-        if (!feeManager.data?.content || feeManager.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FeeManagerFields>(feeManager);
+        if (!fields) {
             throw new Error('FeeManager not found or invalid');
         }
 
-        const fields = feeManager.data.content.fields as any;
-        return BigInt(fields.proposal_creation_fee_per_outcome);
+        return BigInt(fields.proposal_creation_fee || 0);
     }
 
     /**
@@ -387,12 +388,12 @@ export class FeeManagerOperations {
             options: { showContent: true },
         });
 
-        if (!feeManager.data?.content || feeManager.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FeeManagerFields>(feeManager);
+        if (!fields) {
             throw new Error('FeeManager not found or invalid');
         }
 
-        const fields = feeManager.data.content.fields as any;
-        return BigInt(fields.launchpad_creation_fee);
+        return BigInt(fields.launchpad_creation_fee || 0);
     }
 
     /**
@@ -406,11 +407,11 @@ export class FeeManagerOperations {
             options: { showContent: true },
         });
 
-        if (!feeManager.data?.content || feeManager.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FeeManagerFields>(feeManager);
+        if (!fields) {
             throw new Error('FeeManager not found or invalid');
         }
 
-        const fields = feeManager.data.content.fields as any;
-        return BigInt(fields.sui_balance);
+        return BigInt(fields.sui_balance || 0);
     }
 }

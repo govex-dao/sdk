@@ -1,6 +1,7 @@
 import { Transaction } from "@mysten/sui/transactions";
 import { SuiClient } from "@mysten/sui/client";
 import { BaseTransactionBuilder, TransactionUtils } from "./transaction";
+import { extractFields, FactoryFields } from "../types";
 
 /**
  * Factory operations for creating DAOs
@@ -36,11 +37,11 @@ export class FactoryOperations {
             options: { showContent: true },
         });
 
-        if (!factory.data?.content || factory.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FactoryFields>(factory);
+        if (!fields) {
             throw new Error('Factory not found');
         }
 
-        const fields = factory.data.content.fields as any;
         return Number(fields.dao_count || 0);
     }
 
@@ -53,11 +54,11 @@ export class FactoryOperations {
             options: { showContent: true },
         });
 
-        if (!factory.data?.content || factory.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FactoryFields>(factory);
+        if (!fields) {
             throw new Error('Factory not found');
         }
 
-        const fields = factory.data.content.fields as any;
         return fields.is_paused === true;
     }
 
@@ -70,11 +71,11 @@ export class FactoryOperations {
             options: { showContent: true },
         });
 
-        if (!factory.data?.content || factory.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FactoryFields>(factory);
+        if (!fields) {
             throw new Error('Factory not found');
         }
 
-        const fields = factory.data.content.fields as any;
         return fields.permanently_disabled === true;
     }
 
@@ -87,18 +88,13 @@ export class FactoryOperations {
             options: { showContent: true },
         });
 
-        if (!factory.data?.content || factory.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FactoryFields>(factory);
+        if (!fields) {
             throw new Error('Factory not found');
         }
 
-        const fields = factory.data.content.fields as any;
-        const allowedTypes = fields.allowed_stable_types?.fields?.contents || [];
-
-        // Check if stableType is in the allowed list
-        return allowedTypes.some((entry: any) => {
-            const typeName = entry.fields?.key?.fields?.name;
-            return typeName === stableType;
-        });
+        const allowedTypes = fields.allowed_stable_types || [];
+        return allowedTypes.includes(stableType);
     }
 
     /**
@@ -110,11 +106,11 @@ export class FactoryOperations {
             options: { showContent: true },
         });
 
-        if (!factory.data?.content || factory.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FactoryFields>(factory);
+        if (!fields) {
             throw new Error('Factory not found');
         }
 
-        const fields = factory.data.content.fields as any;
         return BigInt(fields.launchpad_bid_fee || 0);
     }
 
@@ -127,11 +123,11 @@ export class FactoryOperations {
             options: { showContent: true },
         });
 
-        if (!factory.data?.content || factory.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FactoryFields>(factory);
+        if (!fields) {
             throw new Error('Factory not found');
         }
 
-        const fields = factory.data.content.fields as any;
         return BigInt(fields.launchpad_cranker_reward || 0);
     }
 
@@ -144,11 +140,11 @@ export class FactoryOperations {
             options: { showContent: true },
         });
 
-        if (!factory.data?.content || factory.data.content.dataType !== 'moveObject') {
+        const fields = extractFields<FactoryFields>(factory);
+        if (!fields) {
             throw new Error('Factory not found');
         }
 
-        const fields = factory.data.content.fields as any;
         return BigInt(fields.launchpad_settlement_reward || 0);
     }
 

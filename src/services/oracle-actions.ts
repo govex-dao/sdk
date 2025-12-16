@@ -11,6 +11,7 @@ import { Transaction } from '@mysten/sui/transactions';
 import { SuiClient } from '@mysten/sui/client';
 import { BaseTransactionBuilder, TransactionUtils } from './transaction';
 import { bcs } from '@mysten/sui/bcs';
+import { extractFields, OracleGrantFields } from '../types';
 
 export interface TierSpec {
   /** Price threshold for this tier (u128) */
@@ -349,11 +350,11 @@ export class OracleActionsOperations {
       options: { showContent: true },
     });
 
-    if (!grant.data?.content || grant.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<OracleGrantFields>(grant);
+    if (!fields) {
       throw new Error('Grant not found');
     }
 
-    const fields = grant.data.content.fields as any;
     return BigInt(fields.total_amount || 0);
   }
 
@@ -370,11 +371,11 @@ export class OracleActionsOperations {
       options: { showContent: true },
     });
 
-    if (!grant.data?.content || grant.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<OracleGrantFields>(grant);
+    if (!fields) {
       throw new Error('Grant not found');
     }
 
-    const fields = grant.data.content.fields as any;
     return fields.is_canceled === true;
   }
 
@@ -391,11 +392,11 @@ export class OracleActionsOperations {
       options: { showContent: true },
     });
 
-    if (!grant.data?.content || grant.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<OracleGrantFields>(grant);
+    if (!fields) {
       throw new Error('Grant not found');
     }
 
-    const fields = grant.data.content.fields as any;
     return fields.description || '';
   }
 
@@ -412,13 +413,13 @@ export class OracleActionsOperations {
       options: { showContent: true },
     });
 
-    if (!grant.data?.content || grant.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<OracleGrantFields>(grant);
+    if (!fields) {
       throw new Error('Grant not found');
     }
 
-    const fields = grant.data.content.fields as any;
-    const tiers = fields.tiers as any[];
-    return tiers?.length || 0;
+    const tiers = fields.tiers || [];
+    return tiers.length;
   }
 
   /**

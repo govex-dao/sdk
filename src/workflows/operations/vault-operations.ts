@@ -10,6 +10,7 @@
 import { Transaction } from '@mysten/sui/transactions';
 import { SuiClient } from '@mysten/sui/client';
 import { BaseTransactionBuilder, TransactionUtils } from '../../services/transaction';
+import { extractFields, StreamFields } from '../../types';
 
 /**
  * Configuration for VaultOperations
@@ -379,11 +380,10 @@ export class VaultOperations {
       options: { showContent: true },
     });
 
-    if (!obj.data?.content || obj.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<StreamFields>(obj);
+    if (!fields) {
       throw new Error(`Stream not found: ${streamId}`);
     }
-
-    const fields = obj.data.content.fields as any;
 
     const amountPerIteration = BigInt(fields.amount_per_iteration || 0);
     const iterationsTotal = Number(fields.iterations_total || 0);
@@ -396,7 +396,7 @@ export class VaultOperations {
       startTime: Number(fields.start_time || 0),
       cliffTime: fields.cliff_time ? Number(fields.cliff_time) : undefined,
       iterationsTotal,
-      iterationPeriodMs: Number(fields.iteration_period_ms || 0),
+      iterationPeriodMs: Number(fields.iteration_period_ms || fields.period_ms || 0),
       maxPerWithdrawal: BigInt(fields.max_per_withdrawal || 0),
       totalAmount: amountPerIteration * BigInt(iterationsTotal),
     };

@@ -7,16 +7,14 @@
  *
  * ```
  * src/
- * ├── sdk/           # Main SDK entry point
- * ├── config/        # Network & deployment configuration
- * ├── types/         # TypeScript type definitions
- * ├── core/          # Foundation (action registry, validation, errors)
- * ├── workflows/     # High-level orchestration (launchpad, proposal)
- * ├── staging/       # Action staging functions (add_*_spec)
- * ├── execution/     # Action execution wrappers (do_*)
- * ├── protocol/      # Move module wrappers (queries)
- * ├── services/      # High-level service classes
- * └── utils/         # Shared utilities
+ * ├── FutarchySDK.ts  # Main SDK entry point
+ * ├── config/         # Network & deployment configuration
+ * ├── types/          # TypeScript type definitions
+ * ├── workflows/      # High-level orchestration (launchpad, proposal)
+ * ├── protocol/       # Move module wrappers (queries)
+ * ├── services/       # High-level service classes
+ * ├── ptb/            # PTB helpers
+ * └── utils/          # Shared utilities
  * ```
  *
  * ## Quick Start
@@ -24,13 +22,14 @@
  * ```typescript
  * import { FutarchySDK } from '@govex/futarchy-sdk';
  *
- * const sdk = await FutarchySDK.init({
+ * const sdk = new FutarchySDK({
  *   network: 'testnet',
  *   deployments
  * });
  *
- * // Use high-level workflows
- * const tx = sdk.workflows.launchpad.createRaise({...});
+ * // Use high-level services
+ * const info = await sdk.dao.getInfo(daoId);
+ * const tx = sdk.launchpad.createRaise({...});
  * ```
  *
  * @packageDocumentation
@@ -40,7 +39,7 @@
 // MAIN SDK
 // ============================================================================
 
-export * from './sdk';
+export { FutarchySDK } from './FutarchySDK';
 
 // ============================================================================
 // CONFIGURATION
@@ -55,28 +54,10 @@ export * from './config';
 export * from './types';
 
 // ============================================================================
-// CORE (Foundation)
-// ============================================================================
-
-export * from './core';
-
-// ============================================================================
 // WORKFLOWS (High-level orchestration)
 // ============================================================================
 
 export * from './workflows';
-
-// ============================================================================
-// STAGING (Action staging functions)
-// ============================================================================
-
-export * from './staging';
-
-// ============================================================================
-// EXECUTION (Action execution wrappers)
-// ============================================================================
-
-export * from './execution';
 
 // ============================================================================
 // PROTOCOL (Move module wrappers)

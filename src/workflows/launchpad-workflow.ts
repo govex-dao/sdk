@@ -436,7 +436,7 @@ export class LaunchpadWorkflow {
         break;
 
       default:
-        throw new Error(`Unknown action type: ${(action as any).type}`);
+        throw new Error(`Unknown action type: ${(action as { type?: string }).type}`);
     }
   }
 
@@ -619,7 +619,7 @@ export class LaunchpadWorkflow {
           case 'deposit':
             return { action: 'deposit' as const, coinType: at.coinType };
           default:
-            throw new Error(`Unknown action type: ${(at as any).type}`);
+            throw new Error(`Unknown action type: ${(at as { type?: string }).type}`);
         }
       }),
     });

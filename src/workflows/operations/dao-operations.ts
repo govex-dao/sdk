@@ -11,6 +11,7 @@ import { Transaction } from '@mysten/sui/transactions';
 import { SuiClient } from '@mysten/sui/client';
 import { BaseTransactionBuilder, TransactionUtils } from '../../services/transaction';
 import { Version } from '../../protocol/futarchy/version';
+import { extractFields, DAOFields } from '../../types';
 
 /**
  * Configuration for DAOOperations
@@ -482,11 +483,11 @@ export class DAOOperations {
       options: { showContent: true },
     });
 
-    if (!obj.data?.content || obj.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<DAOFields>(obj);
+    if (!fields) {
       throw new Error(`DAO not found: ${daoId}`);
     }
 
-    const fields = obj.data.content.fields as any;
     const metadata = fields.metadata?.fields || {};
     const config = fields.config?.fields || {};
 
@@ -563,11 +564,11 @@ export class DAOOperations {
       options: { showContent: true },
     });
 
-    if (!obj.data?.content || obj.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<DAOFields>(obj);
+    if (!fields) {
       throw new Error(`DAO not found: ${daoId}`);
     }
 
-    const fields = obj.data.content.fields as any;
     const tracker = fields.object_tracker?.fields || {};
 
     return {

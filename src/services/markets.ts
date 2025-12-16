@@ -14,6 +14,7 @@
 import { Transaction } from '@mysten/sui/transactions';
 import { SuiClient } from '@mysten/sui/client';
 import { BaseTransactionBuilder, TransactionUtils } from './transaction';
+import { extractFields, PoolFields, MarketStateFields } from '../types';
 
 export interface SwapConfig {
   poolId: string;
@@ -224,11 +225,11 @@ export class MarketsOperations {
       options: { showContent: true },
     });
 
-    if (!pool.data?.content || pool.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<PoolFields>(pool);
+    if (!fields) {
       throw new Error('Pool not found');
     }
 
-    const fields = pool.data.content.fields as any;
     return {
       asset: BigInt(fields.asset_reserve || 0),
       stable: BigInt(fields.stable_reserve || 0),
@@ -259,12 +260,12 @@ export class MarketsOperations {
       options: { showContent: true },
     });
 
-    if (!pool.data?.content || pool.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<PoolFields>(pool);
+    if (!fields) {
       throw new Error('Pool not found');
     }
 
-    const fields = pool.data.content.fields as any;
-    return BigInt(fields.lp_token_supply || 0);
+    return BigInt(fields.lp_supply || 0);
   }
 
   /**
@@ -279,12 +280,12 @@ export class MarketsOperations {
       options: { showContent: true },
     });
 
-    if (!pool.data?.content || pool.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<PoolFields>(pool);
+    if (!fields) {
       throw new Error('Pool not found');
     }
 
-    const fields = pool.data.content.fields as any;
-    return Number(fields.total_fee_bps || 0);
+    return Number(fields.fee_bps || 0);
   }
 
   /**
@@ -394,14 +395,11 @@ export class TWAPOperations {
       options: { showContent: true },
     });
 
-    if (
-      !marketState.data?.content ||
-      marketState.data.content.dataType !== 'moveObject'
-    ) {
+    const fields = extractFields<MarketStateFields>(marketState);
+    if (!fields) {
       throw new Error('Market state not found');
     }
 
-    const fields = marketState.data.content.fields as any;
     return BigInt(fields.current_twap || 0);
   }
 
@@ -417,14 +415,11 @@ export class TWAPOperations {
       options: { showContent: true },
     });
 
-    if (
-      !marketState.data?.content ||
-      marketState.data.content.dataType !== 'moveObject'
-    ) {
+    const fields = extractFields<MarketStateFields>(marketState);
+    if (!fields) {
       throw new Error('Market state not found');
     }
 
-    const fields = marketState.data.content.fields as any;
     return Number(fields.observation_count || 0);
   }
 }

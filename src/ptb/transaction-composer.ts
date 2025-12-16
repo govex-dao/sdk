@@ -635,7 +635,7 @@ export class TransactionBuilder {
         break;
 
       default:
-        throw new Error(`Unknown action type: ${(action as any).type}`);
+        throw new Error(`Unknown action type: ${(action as { type?: string }).type}`);
     }
   }
 }

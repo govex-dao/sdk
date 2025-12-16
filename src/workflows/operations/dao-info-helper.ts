@@ -5,6 +5,7 @@
  */
 
 import { SuiClient } from '@mysten/sui/client';
+import { extractFields, DAOFields } from '../../types';
 
 /**
  * DAO information fetched from on-chain
@@ -57,10 +58,10 @@ export class DAOInfoHelper {
     const stableType = typeMatch[2].trim();
 
     // Get spot pool ID from DAO config
-    const fields = (daoObject.data.content as any).fields;
-    const configFields = fields?.config?.fields;
+    const fields = extractFields<DAOFields>(daoObject);
+    const spotPoolId = fields?.config?.fields?.spot_pool_id;
 
-    if (!configFields?.spot_pool_id) {
+    if (!spotPoolId) {
       throw new Error(`DAO does not have spot pool configured: ${daoId}`);
     }
 
@@ -68,7 +69,7 @@ export class DAOInfoHelper {
       id: daoId,
       assetType,
       stableType,
-      spotPoolId: configFields.spot_pool_id,
+      spotPoolId,
     };
   }
 }

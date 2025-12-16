@@ -10,3 +10,9 @@
 // Core deployment types
 export * from './deployment';
 export * from './init-actions';
+
+// Sui object type helpers
+export * from './sui-types';
+
+// Service types
+export * from './services';

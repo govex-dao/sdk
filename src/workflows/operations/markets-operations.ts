@@ -11,6 +11,7 @@ import { Transaction } from '@mysten/sui/transactions';
 import { SuiClient } from '@mysten/sui/client';
 import { BaseTransactionBuilder, TransactionUtils } from '../../services/transaction';
 import { DAOInfoHelper } from './dao-info-helper';
+import { extractFields, PoolFields, CoinFields } from '../../types';
 
 /**
  * Configuration for MarketsHighLevelOperations
@@ -302,11 +303,11 @@ export class MarketsHighLevelOperations {
       options: { showContent: true },
     });
 
-    if (!poolObj.data?.content || poolObj.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<PoolFields>(poolObj);
+    if (!fields) {
       throw new Error(`Pool not found: ${daoInfo.spotPoolId}`);
     }
 
-    const fields = poolObj.data.content.fields as any;
     const assetReserve = BigInt(fields.asset_reserve || 0);
     const stableReserve = BigInt(fields.stable_reserve || 0);
 
@@ -330,11 +331,10 @@ export class MarketsHighLevelOperations {
       options: { showContent: true },
     });
 
-    if (!poolObj.data?.content || poolObj.data.content.dataType !== 'moveObject') {
+    const fields = extractFields<PoolFields>(poolObj);
+    if (!fields) {
       throw new Error(`Pool not found: ${daoInfo.spotPoolId}`);
     }
-
-    const fields = poolObj.data.content.fields as any;
 
     return {
       assetReserve: BigInt(fields.asset_reserve || 0),
@@ -402,8 +402,8 @@ export class MarketsHighLevelOperations {
 
     let total = 0n;
     for (const obj of objects.data) {
-      if (obj.data?.content && obj.data.content.dataType === 'moveObject') {
-        const fields = obj.data.content.fields as any;
+      const fields = extractFields<CoinFields>(obj);
+      if (fields) {
         total += BigInt(fields.balance || 0);
       }
     }

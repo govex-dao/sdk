@@ -358,7 +358,7 @@ export class ProposalWorkflow {
         throw new Error(`Action type '${action.type}' is not typically used in proposals`);
 
       default:
-        throw new Error(`Unknown action type: ${(action as any).type}`);
+        throw new Error(`Unknown action type: ${(action as { type?: string }).type}`);
     }
   }
 
@@ -759,10 +759,9 @@ export class ProposalWorkflow {
         ],
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      splitProgress = (result as any)[0];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      stableCoinsByOutcome[outcome.outcomeIndex] = (result as any)[1];
+      // MoveCall returns tuple - access by index using type assertion for nested results
+      splitProgress = result[0] as unknown as typeof splitProgress;
+      stableCoinsByOutcome[outcome.outcomeIndex] = result[1];
     }
 
     // Finish split progress
@@ -817,10 +816,9 @@ export class ProposalWorkflow {
         }),
       ],
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updatedBatch = (swapResult as any)[0];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const condOutputCoin = (swapResult as any)[1];
+    // MoveCall returns tuple - access by index
+    const updatedBatch = swapResult[0];
+    const condOutputCoin = swapResult[1];
 
     // Finalize conditional swaps
     tx.moveCall({
@@ -937,7 +935,7 @@ export class ProposalWorkflow {
           case 'memo':
             return { action: 'memo' as const };
           default:
-            throw new Error(`Unknown action type: ${(at as any).type}`);
+            throw new Error(`Unknown action type: ${(at as { type?: string }).type}`);
         }
       }),
     });

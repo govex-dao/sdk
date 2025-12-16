@@ -12,17 +12,29 @@ The SDK follows a layered architecture with clear separation of concerns:
 
 ```
 src/
-├── sdk/           # Main SDK entry point (FutarchySDK class)
-├── config/        # Network and deployment configuration
-├── types/         # TypeScript type definitions
-├── core/          # Foundation (action registry, validation, errors)
-├── workflows/     # High-level orchestration (launchpad, proposal)
-├── staging/       # Action staging functions (add_*_spec pattern)
-├── execution/     # Action execution wrappers (do_* pattern)
-├── protocol/      # Move module wrappers (queries)
+├── FutarchySDK.ts # Main SDK entry point
+├── config/        # Network, deployment, and error mapping
+├── types/         # TypeScript types (sui-types, deployment, init-actions)
+├── workflows/     # High-level orchestration
+│   ├── launchpad-workflow.ts  # Launchpad creation and execution
+│   ├── proposal-workflow.ts   # Proposal lifecycle management
+│   ├── intent-executor.ts     # Intent execution (uses action-registry)
+│   ├── action-registry.ts     # Modular action handler registry
+│   ├── types/                 # Workflow type definitions
+│   │   └── actions/           # Domain-specific action configs
+│   └── operations/            # High-level operation helpers
+├── protocol/      # Move module wrappers
+│   ├── account/   # Account protocol bindings
+│   ├── futarchy/  # Futarchy core bindings
+│   └── markets/   # Markets core bindings
 ├── services/      # Service classes for protocol interactions
+│   ├── admin/     # Admin operations
+│   ├── dao/       # DAO, vault, oracle services
+│   ├── market/    # Market and pool services
+│   ├── proposal/  # Proposal services
+│   └── utils/     # Query helpers, transaction builder
 ├── ptb/           # PTB composition helpers
-└── utils/         # Shared utilities
+└── utils/         # BCS, hex, validation utilities
 ```
 
 ### Current Features
@@ -73,7 +85,7 @@ src/
 - ✅ Version - Protocol version tracking (2 functions)
 - ✅ ActionValidation - Type validation for action specs (1 function)
 
-**Phase 6: Move Framework - Account Protocol & Actions** 🆕
+**Phase 6: Move Framework - Account Protocol & Actions**
 - ✅ Complete TypeScript SDK for account_protocol (122 functions)
   - ✅ Account - Account creation, ownership, managed data/assets (39 functions)
   - ✅ Intents - Intent lifecycle with action specs and expiration (47 functions)
@@ -87,15 +99,23 @@ src/
   - ✅ Vault - Multi-coin storage with vesting streams (47 functions)
   - ✅ PackageUpgrade - Timelock-based upgrade governance (50 functions)
 
+**Phase 7: Type Safety & Code Quality**
+- ✅ Zero `as any` casts - fully type-safe codebase
+- ✅ Type-safe Sui object access (`sui-types.ts` helpers)
+- ✅ Modular action registry pattern (IntentExecutor refactored)
+- ✅ Domain-specific workflow types (10 files vs 1 monolithic file)
+- ✅ Human-readable Move error translation
+- ✅ Granular service types (config, execution, intents, etc.)
+
 ### Roadmap
 
 - [ ] Auto-generated Move bindings (.gen layer)
 - [x] Market operations (create, trade, resolve) - **Completed via markets_core**
 - [x] Proposal voting and execution - **Completed via markets_core**
+- [x] Init action execution helpers - **Completed via IntentExecutor**
 - [ ] Event subscriptions and listeners
 - [ ] Caching layer for on-chain data
 - [ ] Batch transaction builders
-- [ ] Init action execution helpers (PTB construction from staged specs)
 
 ## Installation
 
@@ -673,7 +693,53 @@ dist/
 └── cjs/           # CommonJS (.js)
 ```
 
-## Recent Updates 🆕
+## Recent Updates
+
+### Type Safety & Code Quality (Phase 7)
+
+Major engineering improvements for production readiness:
+
+**Type-Safe Sui Object Access:**
+```typescript
+import { extractFields, DAOFields, isMoveObject } from '@govex/futarchy-sdk';
+
+// Safe field extraction with generics
+const fields = extractFields<DAOFields>(obj);
+if (!fields) throw new Error('Could not extract fields');
+
+const daoName = fields.name;
+const poolId = fields.config?.fields?.spot_pool_id;
+```
+
+**Zero `as any` Casts:**
+- Eliminated all 43 unsafe type casts
+- Added proper interfaces for all Sui object types
+- Helper functions: `extractFields<T>()`, `isMoveObject()`, `txResultAt()`
+
+**Modular Action Registry:**
+```typescript
+// Action handlers are now independent and testable
+import { registerAction, executeAction } from './action-registry';
+
+registerAction('create_stream', (ctx, action) => {
+  // Handler logic here
+});
+```
+
+**Human-Readable Error Messages:**
+```typescript
+import { translateMoveError, isSlippageError } from '@govex/futarchy-sdk';
+
+try {
+  await signAndExecute(tx);
+} catch (e) {
+  const error = translateMoveError(e);
+  // "Slippage tolerance exceeded (unified_spot_pool error code 3)"
+  if (isSlippageError(error)) {
+    console.log('Try a smaller trade amount');
+  }
+}
+```
 
 ### Cross-Package Action Orchestration (Phase 3)
 

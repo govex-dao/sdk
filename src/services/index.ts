@@ -7,6 +7,21 @@
  * @module services
  */
 
+// Shared service types
+export type { ServiceParams, SwapConfig } from './types';
+
+// Domain services - explicit exports to avoid conflicts
+export { DAOService, DAOInfoHelper, VaultService, OracleService } from './dao';
+export { MarketService, PoolService } from './market';
+export { LaunchpadService } from './launchpad';
+export { ProposalService, SponsorshipService, TradeService, TwapService, EscrowService } from './proposal';
+export { AdminService, FactoryAdminService, VerificationService, PackageRegistryService, FeeManagerService } from './admin';
+export { IntentService, OracleQueryService, VaultQueryService } from './intents';
+
+// Utility services
+export { BaseTransactionBuilder, TransactionUtils, QueryHelper, CurrencyUtils } from './utils';
+
+// Protocol services
 export * from './factory';
 export * from './factory-admin';
 export * from './factory-validator';
@@ -19,5 +34,3 @@ export * from './package-registry-admin';
 export * from './oracle-actions';
 export * from './coin-registry';
 export * from './markets';
-export * from './queries';
-export * from './transaction';
