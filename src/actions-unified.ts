@@ -260,7 +260,7 @@ export class ConfigActions {
     }
   ): void {
     tx.moveCall({
-      target: `${this.packages.futarchyActionsPackageId}::config_init_actions::add_update_trading_params_spec`,
+      target: `${this.packages.futarchyActionsPackageId}::futarchy_config_init_actions::add_update_trading_params_spec`,
       arguments: [
         builder,
         tx.pure.option('u64', config.minAssetAmount ? Number(config.minAssetAmount) : null),
@@ -305,7 +305,7 @@ export class ConfigActions {
     }
 
     tx.moveCall({
-      target: `${this.packages.futarchyActionsPackageId}::config_init_actions::add_update_twap_config_spec`,
+      target: `${this.packages.futarchyActionsPackageId}::futarchy_config_init_actions::add_update_twap_config_spec`,
       arguments: [
         builder,
         tx.pure.option('u64', config.startDelay ? Number(config.startDelay) : null),

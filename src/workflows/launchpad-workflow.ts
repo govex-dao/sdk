@@ -296,7 +296,7 @@ export class LaunchpadWorkflow {
 
       case 'update_trading_params':
         tx.moveCall({
-          target: `${futarchyActionsPackageId}::config_init_actions::add_update_trading_params_spec`,
+          target: `${futarchyActionsPackageId}::futarchy_config_init_actions::add_update_trading_params_spec`,
           arguments: [
             builder,
             tx.pure.option('u64', action.minAssetAmount ? Number(action.minAssetAmount) : null),
@@ -330,7 +330,7 @@ export class LaunchpadWorkflow {
         }
 
         tx.moveCall({
-          target: `${futarchyActionsPackageId}::config_init_actions::add_update_twap_config_spec`,
+          target: `${futarchyActionsPackageId}::futarchy_config_init_actions::add_update_twap_config_spec`,
           arguments: [
             builder,
             tx.pure.option('u64', action.startDelay ? Number(action.startDelay) : null),

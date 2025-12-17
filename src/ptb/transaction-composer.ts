@@ -494,7 +494,7 @@ export class TransactionBuilder {
 
       case 'update_trading_params':
         this.tx.moveCall({
-          target: `${futarchyActionsPackageId}::config_init_actions::add_update_trading_params_spec`,
+          target: `${futarchyActionsPackageId}::futarchy_config_init_actions::add_update_trading_params_spec`,
           arguments: [
             this.builder!,
             this.tx.pure.option('u64', action.minAssetAmount ? Number(action.minAssetAmount) : null),
@@ -527,7 +527,7 @@ export class TransactionBuilder {
         }
 
         this.tx.moveCall({
-          target: `${futarchyActionsPackageId}::config_init_actions::add_update_twap_config_spec`,
+          target: `${futarchyActionsPackageId}::futarchy_config_init_actions::add_update_twap_config_spec`,
           arguments: [
             this.builder!,
             this.tx.pure.option('u64', action.startDelay ? Number(action.startDelay) : null),

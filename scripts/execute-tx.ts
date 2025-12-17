@@ -8,7 +8,7 @@
  * - Handle results and errors
  */
 
-import { FutarchySDK } from '../src/sdk/FutarchySDK';
+import { FutarchySDK } from '../src/FutarchySDK';
 import { TransactionUtils } from '../src/services/transaction';
 import { Transaction } from '@mysten/sui/transactions';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
@@ -124,13 +124,13 @@ export function loadTestCoins(): {
 /**
  * Initialize SDK with current network
  */
-export async function initSDK(network?: Network): Promise<FutarchySDK> {
+export function initSDK(network?: Network): FutarchySDK {
     const deployments = loadDeployments();
     const actualNetwork = network || getActiveEnv();
 
     console.log(`🚀 Initializing SDK on ${actualNetwork}...`);
 
-    const sdk = await FutarchySDK.init({
+    const sdk = new FutarchySDK({
         network: actualNetwork,
         deployments,
     });

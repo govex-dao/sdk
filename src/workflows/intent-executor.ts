@@ -136,7 +136,7 @@ export class IntentExecutor {
 
     // Create witnesses
     const versionWitness = tx.moveCall({
-      target: `${accountActionsPackageId}::version::current`,
+      target: `${accountActionsPackageId}::actions_version::current`,
       arguments: [],
     });
 
@@ -205,7 +205,7 @@ export class IntentExecutor {
 
     // Create witnesses
     const versionWitness = tx.moveCall({
-      target: `${accountActionsPackageId}::version::current`,
+      target: `${accountActionsPackageId}::actions_version::current`,
       arguments: [],
     });
 

@@ -354,7 +354,7 @@ export class LaunchpadIntentExecutor {
     accountActionsPackageId: string
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
-      target: `${accountActionsPackageId}::version::current`,
+      target: `${accountActionsPackageId}::actions_version::current`,
       arguments: [],
     });
   }
