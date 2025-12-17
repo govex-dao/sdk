@@ -47,9 +47,6 @@ export class DaoConfig {
    *   reviewPeriodMs: 86_400_000n, // 24 hours
    *   tradingPeriodMs: 604_800_000n, // 7 days
    *   conditionalAmmFeeBps: 30n, // 0.3%
-   *   spotAmmFeeBps: 30n, // 0.3%
-   *   marketOpReviewPeriodMs: 0n, // immediate
-   *   maxAmmSwapPercentBps: 1000n, // 10%
    *   conditionalLiquidityRatioPercent: 80n, // 80%
    * });
    * ```
@@ -63,9 +60,6 @@ export class DaoConfig {
       reviewPeriodMs: bigint;
       tradingPeriodMs: bigint;
       conditionalAmmFeeBps: bigint;
-      spotAmmFeeBps: bigint;
-      marketOpReviewPeriodMs: bigint;
-      maxAmmSwapPercentBps: bigint;
       conditionalLiquidityRatioPercent: bigint;
     }
   ): ReturnType<Transaction['moveCall']> {
@@ -81,9 +75,6 @@ export class DaoConfig {
         tx.pure.u64(config.reviewPeriodMs),
         tx.pure.u64(config.tradingPeriodMs),
         tx.pure.u64(config.conditionalAmmFeeBps),
-        tx.pure.u64(config.spotAmmFeeBps),
-        tx.pure.u64(config.marketOpReviewPeriodMs),
-        tx.pure.u64(config.maxAmmSwapPercentBps),
         tx.pure.u64(config.conditionalLiquidityRatioPercent),
       ],
     });
@@ -736,78 +727,6 @@ export class DaoConfig {
         config.futarchyCorePackageId,
         'dao_config',
         'conditional_amm_fee_bps'
-      ),
-      arguments: [config.tradingParams],
-    });
-  }
-
-  /**
-   * Get spot AMM fee in basis points
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Spot AMM fee in basis points (u64)
-   */
-  static spotAmmFeeBps(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      tradingParams: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'spot_amm_fee_bps'
-      ),
-      arguments: [config.tradingParams],
-    });
-  }
-
-  /**
-   * Get market operation review period in milliseconds
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Market operation review period in milliseconds (u64)
-   */
-  static marketOpReviewPeriodMs(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      tradingParams: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'market_op_review_period_ms'
-      ),
-      arguments: [config.tradingParams],
-    });
-  }
-
-  /**
-   * Get max AMM swap percent in basis points
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Max AMM swap percent in basis points (u64)
-   */
-  static maxAmmSwapPercentBps(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      tradingParams: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'max_amm_swap_percent_bps'
       ),
       arguments: [config.tradingParams],
     });
@@ -2351,78 +2270,6 @@ export class DaoConfig {
         'set_conditional_amm_fee_bps'
       ),
       arguments: [config.tradingParams, tx.pure.u64(config.feeBps)],
-    });
-  }
-
-  /**
-   * Set spot AMM fee in basis points
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setSpotAmmFeeBps(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      tradingParams: ReturnType<Transaction['moveCall']>;
-      feeBps: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_spot_amm_fee_bps'
-      ),
-      arguments: [config.tradingParams, tx.pure.u64(config.feeBps)],
-    });
-  }
-
-  /**
-   * Set market operation review period in milliseconds
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setMarketOpReviewPeriodMs(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      tradingParams: ReturnType<Transaction['moveCall']>;
-      period: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_market_op_review_period_ms'
-      ),
-      arguments: [config.tradingParams, tx.pure.u64(config.period)],
-    });
-  }
-
-  /**
-   * Set max AMM swap percent in basis points
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setMaxAmmSwapPercentBps(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      tradingParams: ReturnType<Transaction['moveCall']>;
-      percentBps: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_max_amm_swap_percent_bps'
-      ),
-      arguments: [config.tradingParams, tx.pure.u64(config.percentBps)],
     });
   }
 

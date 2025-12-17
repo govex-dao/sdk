@@ -31,7 +31,7 @@ export class FeeScheduler {
    * Create new fee schedule with linear decay
    *
    * Schedules linear decay from high initial MEV fee (0-99%) to pool's base spot fee.
-   * After decay period ends, pool permanently uses its base spot_amm_fee_bps.
+   * After decay period ends, pool permanently uses its base fee_bps (set per pool).
    *
    * **Constraints:**
    * - initial_fee_bps must be <= 9900 (99% maximum - DAO policy)

@@ -25,6 +25,7 @@ export interface ActionParams {
   lpType?: string;
   lpTreasuryCapId?: string;
   lpMetadataId?: string;
+  poolId?: string;
 }
 
 /**
@@ -405,6 +406,25 @@ registerAction('create_pool_with_mint', (ctx, action) => {
       tx.object(typeContext.clockId),
       versionWitness,
       intentWitness,
+    ],
+  });
+});
+
+registerAction('update_pool_fee', (ctx, action) => {
+  const { tx, executable, versionWitness, config, packages, typeContext } = ctx;
+  tx.moveCall({
+    target: `${packages.futarchyActionsPackageId}::liquidity_actions::do_update_pool_fee`,
+    typeArguments: [
+      action.assetType!,
+      action.stableType!,
+      action.lpType!,
+      typeContext.outcomeType,
+    ],
+    arguments: [
+      executable,
+      tx.object(config.accountId),
+      tx.object(action.poolId!),
+      versionWitness,
     ],
   });
 });

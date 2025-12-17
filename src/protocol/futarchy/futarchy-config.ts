@@ -1570,30 +1570,6 @@ export class FutarchyConfig {
   }
 
   /**
-   * Get spot AMM fee in basis points (delegated from dao_config)
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Spot AMM fee in basis points (u64)
-   */
-  static spotAmmFeeBps(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'spot_amm_fee_bps'
-      ),
-      arguments: [config.futarchyConfig],
-    });
-  }
-
-  /**
    * Get AMM total fee in basis points (delegated from dao_config)
    *
    * @param tx - Transaction
@@ -1660,54 +1636,6 @@ export class FutarchyConfig {
         config.futarchyCorePackageId,
         'futarchy_config',
         'enable_premarket_reservation_lock'
-      ),
-      arguments: [config.futarchyConfig],
-    });
-  }
-
-  /**
-   * Get market operation review period in milliseconds (delegated from dao_config)
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Market operation review period in milliseconds (u64)
-   */
-  static marketOpReviewPeriodMs(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'market_op_review_period_ms'
-      ),
-      arguments: [config.futarchyConfig],
-    });
-  }
-
-  /**
-   * Get max AMM swap percent in basis points (delegated from dao_config)
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Max AMM swap percent in basis points (u64)
-   */
-  static maxAmmSwapPercentBps(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'max_amm_swap_percent_bps'
       ),
       arguments: [config.futarchyConfig],
     });
@@ -2110,30 +2038,6 @@ export class FutarchyConfig {
   }
 
   /**
-   * Set spot AMM fee in basis points
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setSpotAmmFeeBps(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-      fee: number;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'set_spot_amm_fee_bps'
-      ),
-      arguments: [config.futarchyConfig, tx.pure.u16(config.fee)],
-    });
-  }
-
-  /**
    * Set AMM TWAP start delay
    *
    * @param tx - Transaction
@@ -2442,54 +2346,6 @@ export class FutarchyConfig {
         'set_show_proposal_details'
       ),
       arguments: [config.futarchyConfig, tx.pure.bool(config.show)],
-    });
-  }
-
-  /**
-   * Set market operation review period in milliseconds
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setMarketOpReviewPeriodMs(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-      period: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'set_market_op_review_period_ms'
-      ),
-      arguments: [config.futarchyConfig, tx.pure.u64(config.period)],
-    });
-  }
-
-  /**
-   * Set max AMM swap percent in basis points
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setMaxAmmSwapPercentBps(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-      percentBps: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'set_max_amm_swap_percent_bps'
-      ),
-      arguments: [config.futarchyConfig, tx.pure.u64(config.percentBps)],
     });
   }
 
