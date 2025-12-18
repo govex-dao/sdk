@@ -39,9 +39,9 @@ export interface OwnedObject {
 
 export interface PackageDeployment {
     packageName: string;
-    transactionDigest: string;
+    transactionDigest?: string;
     packageId: string;
-    upgradeCap: UpgradeCap;
+    upgradeCap?: UpgradeCap;
     adminCaps: AdminCap[];
     sharedObjects: SharedObject[];
     ownedObjects: OwnedObject[];

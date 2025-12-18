@@ -45,7 +45,8 @@ export function getActiveEnv(): Network {
 }
 
 /**
- * Load deployments config
+ * Load deployments config from external file
+ * @deprecated SDK now bundles deployments - use `new FutarchySDK({ network })` instead
  */
 export function loadDeployments(): any {
     const deploymentsPath = path.join(__dirname, '../../packages/deployments-processed/_all-packages.json');
@@ -123,16 +124,16 @@ export function loadTestCoins(): {
 
 /**
  * Initialize SDK with current network
+ * Uses bundled deployments by default (no file loading needed for devnet)
  */
 export function initSDK(network?: Network): FutarchySDK {
-    const deployments = loadDeployments();
     const actualNetwork = network || getActiveEnv();
 
     console.log(`🚀 Initializing SDK on ${actualNetwork}...`);
 
+    // SDK now uses bundled deployments automatically for supported networks
     const sdk = new FutarchySDK({
         network: actualNetwork,
-        deployments,
     });
 
     console.log(`✅ SDK initialized`);

@@ -5,7 +5,11 @@
  * ```typescript
  * import { FutarchySDK } from '@govex/futarchy-sdk';
  *
- * const sdk = new FutarchySDK({ network: 'devnet', deployments });
+ * // Using bundled deployments (recommended for supported networks)
+ * const sdk = new FutarchySDK({ network: 'devnet' });
+ *
+ * // Using custom deployments
+ * const sdk = new FutarchySDK({ network: 'devnet', deployments: customDeployments });
  *
  * // DAO operations
  * const info = await sdk.dao.getInfo(daoId);
@@ -29,7 +33,7 @@
 
 import { SuiClient } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
-import { NetworkType, createNetworkConfig, NetworkConfig, DeploymentManager } from './config';
+import { NetworkType, createNetworkConfig, NetworkConfig, DeploymentManager, getBundledDeployments } from './config';
 import type { DeploymentConfig } from './types/deployment';
 import type { Packages, SharedObjects } from './types';
 
@@ -111,11 +115,22 @@ export class FutarchySDK {
 
   constructor(config: {
     network: NetworkType | string;
-    deployments: DeploymentConfig;
+    deployments?: DeploymentConfig;
   }) {
     // Setup network and client
     const networkConfig = createNetworkConfig(config.network);
-    const deploymentManager = DeploymentManager.fromConfig(config.deployments);
+
+    // Resolve deployments: use provided or fall back to bundled
+    const deploymentsConfig = config.deployments ?? getBundledDeployments(config.network);
+
+    if (!deploymentsConfig) {
+      throw new Error(
+        `No deployments available for network "${config.network}". ` +
+        `Either provide deployments in the config, or use a network with bundled deployments (devnet, testnet, mainnet).`
+      );
+    }
+
+    const deploymentManager = DeploymentManager.fromConfig(deploymentsConfig);
 
     this.client = networkConfig.client;
     this.network = networkConfig;

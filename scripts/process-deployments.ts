@@ -105,7 +105,33 @@ function processDeployment(packageName: string, deploymentPath: string): Process
   return processed;
 }
 
+function parseArgs(): { network: string } {
+  const args = process.argv.slice(2);
+  let network = 'devnet'; // default
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--network' && args[i + 1]) {
+      network = args[i + 1];
+      i++;
+    }
+  }
+
+  // Validate network
+  const validNetworks = ['localnet', 'devnet', 'testnet', 'mainnet'];
+  if (!validNetworks.includes(network)) {
+    console.error(`Invalid network: ${network}`);
+    console.error(`Valid networks: ${validNetworks.join(', ')}`);
+    process.exit(1);
+  }
+
+  return { network };
+}
+
 function main() {
+  const { network } = parseArgs();
+
+  console.log(`Processing deployments for network: ${network}`);
+
   const deploymentsDir = path.join(__dirname, '../../packages/deployments');
   const processedDir = path.join(__dirname, '../../packages/deployments-processed');
 
@@ -138,10 +164,16 @@ function main() {
     }
   }
 
-  // Write combined _all-packages.json
+  // Write network-specific combined file: _all-packages-{network}.json
+  const networkFileName = `_all-packages-${network}.json`;
+  const networkFilePath = path.join(processedDir, networkFileName);
+  fs.writeFileSync(networkFilePath, JSON.stringify(allPackages, null, 2));
+  console.log(`\n✓ Network packages written to ${networkFilePath}`);
+
+  // Also write/update the generic _all-packages.json (backwards compatibility)
   const allPackagesPath = path.join(processedDir, '_all-packages.json');
   fs.writeFileSync(allPackagesPath, JSON.stringify(allPackages, null, 2));
-  console.log(`\n✓ All packages written to ${allPackagesPath}`);
+  console.log(`✓ Generic _all-packages.json updated`);
 }
 
 main();
