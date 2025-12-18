@@ -470,7 +470,7 @@ for (const actionName of packageRegistryActionNames) {
     tx.moveCall({
       target: `${packages.futarchyGovernanceActionsPackageId}::package_registry_actions::${packageRegistryActionTargets[actionName]}`,
       typeArguments: [typeContext.outcomeType, typeContext.witnessType],
-      arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+      arguments: [executable, tx.object(config.accountId), versionWitness, intentWitness, tx.object(packages.packageRegistryId)],
     });
   });
 }
