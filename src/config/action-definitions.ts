@@ -249,6 +249,25 @@ export const VAULT_ACTIONS: ActionDefinition[] = [
     launchpadSupported: false,
     proposalSupported: true,
   },
+  {
+    id: 'deposit_external',
+    name: 'Deposit External',
+    category: 'vault',
+    package: 'accountActions',
+    stagingModule: 'vault_init_actions',
+    stagingFunction: 'add_deposit_external_spec',
+    executionModule: 'vault',
+    executionFunction: 'do_deposit_external',
+    markerType: 'account_actions::vault::VaultDepositExternal',
+    typeParams: ['CoinType'],
+    params: [
+      { name: 'vaultName', type: 'string', description: 'Name of the vault' },
+      { name: 'expectedAmount', type: 'u64', description: 'Expected amount (validated at execution)' },
+    ],
+    description: 'Deposit external coins from PTB (amount validated at execution to match staged amount)',
+    launchpadSupported: false,
+    proposalSupported: true,
+  },
 ];
 
 // ============================================================================

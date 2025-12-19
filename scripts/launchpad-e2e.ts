@@ -387,6 +387,7 @@ async function main() {
     // === 1. STABLE COIN VESTING (from treasury) ===
     {
       type: 'create_stream' as const,
+      coinType: testCoins.stable.type, // Specify stable coin for the stream
       vaultName: 'treasury',
       beneficiary: streamRecipient,
       amountPerIteration: amountPerIteration,
@@ -394,13 +395,13 @@ async function main() {
       iterationsTotal: iterationsTotal,
       iterationPeriodMs: iterationPeriodMs,
       maxPerWithdrawal: amountPerIteration,
-      // Note: All streams are always cancellable by DAO governance
     },
     // === 2. MINT ASSET TOKENS (for team allocation) ===
     // This mints new asset tokens using the TreasuryCap and stores them
     // in executable_resources under the name 'team_tokens'
     {
       type: 'mint' as const,
+      coinType: testCoins.asset.type, // Specify asset coin to mint
       amount: teamMintAmount,
       resourceName: 'team_tokens',
     },
@@ -409,6 +410,7 @@ async function main() {
     // Uses transfer_coin because mint uses provide_coin (key: name::coin::CoinType)
     {
       type: 'transfer_coin' as const,
+      coinType: testCoins.asset.type, // Specify asset coin being transferred
       recipient: teamRecipient,
       resourceName: 'team_tokens',
     },
@@ -416,6 +418,7 @@ async function main() {
     // Mint tokens that will be deposited into treasury for vesting
     {
       type: 'mint' as const,
+      coinType: testCoins.asset.type, // Specify asset coin to mint
       amount: assetStreamAmount,
       resourceName: 'vesting_tokens',
     },
@@ -423,6 +426,7 @@ async function main() {
     // Deposit the minted asset tokens into treasury vault for vesting
     {
       type: 'deposit' as const,
+      coinType: testCoins.asset.type, // Specify asset coin being deposited
       vaultName: 'treasury',
       amount: assetStreamAmount,
       resourceName: 'vesting_tokens',
@@ -431,6 +435,7 @@ async function main() {
     // Now create a vesting stream from treasury for the deposited asset tokens
     {
       type: 'create_stream' as const,
+      coinType: testCoins.asset.type, // Specify asset coin for the stream
       vaultName: 'treasury',
       beneficiary: streamRecipient,
       amountPerIteration: assetAmountPerIteration,
@@ -442,6 +447,8 @@ async function main() {
     // === 7. CREATE AMM POOL ===
     {
       type: 'create_pool_with_mint' as const,
+      assetType: testCoins.asset.type, // Specify asset type for pool
+      stableType: testCoins.stable.type, // Specify stable type for pool
       vaultName: 'treasury',
       assetAmount: poolAssetAmount,
       stableAmount: poolStableAmount,
@@ -468,10 +475,12 @@ async function main() {
   const failureActions = [
     {
       type: 'return_treasury_cap' as const,
+      coinType: testCoins.asset.type, // Specify asset coin for the treasury cap
       recipient: sender,
     },
     {
       type: 'return_metadata' as const,
+      coinType: testCoins.asset.type, // Specify asset coin for the metadata
       recipient: sender,
     },
   ];

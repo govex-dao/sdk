@@ -61,7 +61,6 @@ export class SpotConditionalQuoter {
    *   escrow,
    *   outcomeIdx: 0,
    *   amountIn: 1_000_000n,
-   *   clock: '0x6',
    * });
    * ```
    */
@@ -75,7 +74,6 @@ export class SpotConditionalQuoter {
       escrow: ReturnType<Transaction['moveCall']>;
       outcomeIdx: bigint;
       amountIn: bigint;
-      clock?: string;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -90,7 +88,6 @@ export class SpotConditionalQuoter {
         config.escrow,
         tx.pure.u64(config.outcomeIdx),
         tx.pure.u64(config.amountIn),
-        tx.object(config.clock || '0x6'),
       ],
     });
   }
@@ -114,7 +111,6 @@ export class SpotConditionalQuoter {
       escrow: ReturnType<Transaction['moveCall']>;
       outcomeIdx: bigint;
       amountIn: bigint;
-      clock?: string;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -129,7 +125,6 @@ export class SpotConditionalQuoter {
         config.escrow,
         tx.pure.u64(config.outcomeIdx),
         tx.pure.u64(config.amountIn),
-        tx.object(config.clock || '0x6'),
       ],
     });
   }
@@ -157,7 +152,6 @@ export class SpotConditionalQuoter {
       escrow: ReturnType<Transaction['moveCall']>;
       outcomeIdx: bigint;
       amountIn: bigint;
-      clock?: string;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -172,7 +166,6 @@ export class SpotConditionalQuoter {
         config.escrow,
         tx.pure.u64(config.outcomeIdx),
         tx.pure.u64(config.amountIn),
-        tx.object(config.clock || '0x6'),
       ],
     });
   }
@@ -196,7 +189,6 @@ export class SpotConditionalQuoter {
       escrow: ReturnType<Transaction['moveCall']>;
       outcomeIdx: bigint;
       amountIn: bigint;
-      clock?: string;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -211,7 +203,6 @@ export class SpotConditionalQuoter {
         config.escrow,
         tx.pure.u64(config.outcomeIdx),
         tx.pure.u64(config.amountIn),
-        tx.object(config.clock || '0x6'),
       ],
     });
   }
@@ -238,7 +229,6 @@ export class SpotConditionalQuoter {
    *   proposal,
    *   escrow,
    *   amountIn: 1_000_000n,
-   *   clock: '0x6',
    * });
    * ```
    */
@@ -251,7 +241,6 @@ export class SpotConditionalQuoter {
       proposal: ReturnType<Transaction['moveCall']>;
       escrow: ReturnType<Transaction['moveCall']>;
       amountIn: bigint;
-      clock?: string;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -265,7 +254,6 @@ export class SpotConditionalQuoter {
         config.proposal,
         config.escrow,
         tx.pure.u64(config.amountIn),
-        tx.object(config.clock || '0x6'),
       ],
     });
   }
@@ -288,7 +276,6 @@ export class SpotConditionalQuoter {
       proposal: ReturnType<Transaction['moveCall']>;
       escrow: ReturnType<Transaction['moveCall']>;
       amountIn: bigint;
-      clock?: string;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -302,7 +289,6 @@ export class SpotConditionalQuoter {
         config.proposal,
         config.escrow,
         tx.pure.u64(config.amountIn),
-        tx.object(config.clock || '0x6'),
       ],
     });
   }

@@ -265,6 +265,7 @@ async function main() {
     actions: [
       {
         type: 'create_stream',
+        coinType: stableType, // Specify stable coin for the stream
         vaultName: 'treasury',
         beneficiary: activeAddress,
         amountPerIteration: BigInt(streamAmountPerIteration),

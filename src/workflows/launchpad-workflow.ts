@@ -237,21 +237,33 @@ export class LaunchpadWorkflow {
 
   /**
    * Add an action configuration to the builder
+   * Type arguments are now required for type-safe staging
    */
   private addActionToBuilder(
     tx: Transaction,
     builder: ReturnType<Transaction['moveCall']>,
     action: ActionConfig,
-    _config: StageActionsConfig
+    config: StageActionsConfig
   ): void {
     const { accountActionsPackageId, futarchyActionsPackageId, futarchyTypesPackageId } =
       this.packages;
 
+    // Helper to get coin type - uses action's coinType if specified, otherwise falls back to config
+    const getCoinType = (actionCoinType?: string, defaultType?: string): string => {
+      const coinType = actionCoinType || defaultType;
+      if (!coinType) {
+        throw new Error('coinType is required for type-safe staging');
+      }
+      return coinType;
+    };
+
     switch (action.type) {
       case 'create_stream':
         // Note: All streams are always cancellable by DAO governance
+        // coinType determines which coin the stream will pay out
         tx.moveCall({
           target: `${accountActionsPackageId}::stream_init_actions::add_create_stream_spec`,
+          typeArguments: [getCoinType(action.coinType, config.stableType)],
           arguments: [
             builder,
             tx.pure.string(action.vaultName),
@@ -270,6 +282,11 @@ export class LaunchpadWorkflow {
       case 'create_pool_with_mint':
         tx.moveCall({
           target: `${futarchyActionsPackageId}::liquidity_init_actions::add_create_pool_with_mint_spec`,
+          typeArguments: [
+            action.assetType || config.assetType,
+            action.stableType || config.stableType,
+            action.lpType,
+          ],
           arguments: [
             builder,
             tx.pure.string(action.vaultName),
@@ -283,6 +300,7 @@ export class LaunchpadWorkflow {
       case 'return_treasury_cap':
         tx.moveCall({
           target: `${accountActionsPackageId}::currency_init_actions::add_return_treasury_cap_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
           arguments: [builder, tx.pure.address(action.recipient)],
         });
         break;
@@ -290,6 +308,7 @@ export class LaunchpadWorkflow {
       case 'return_metadata':
         tx.moveCall({
           target: `${accountActionsPackageId}::currency_init_actions::add_return_metadata_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
           arguments: [builder, tx.pure.address(action.recipient)],
         });
         break;
@@ -345,6 +364,7 @@ export class LaunchpadWorkflow {
         // Mint tokens and store in executable_resources for subsequent actions
         tx.moveCall({
           target: `${accountActionsPackageId}::currency_init_actions::add_mint_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
           arguments: [
             builder,
             tx.pure.u64(action.amount),
@@ -357,6 +377,7 @@ export class LaunchpadWorkflow {
         // Burn tokens from executable_resources
         tx.moveCall({
           target: `${accountActionsPackageId}::currency_init_actions::add_burn_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
           arguments: [
             builder,
             tx.pure.u64(action.amount),
@@ -368,6 +389,7 @@ export class LaunchpadWorkflow {
       case 'deposit':
         tx.moveCall({
           target: `${accountActionsPackageId}::vault_init_actions::add_deposit_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
           arguments: [
             builder,
             tx.pure.string(action.vaultName),
@@ -380,6 +402,7 @@ export class LaunchpadWorkflow {
       case 'spend':
         tx.moveCall({
           target: `${accountActionsPackageId}::vault_init_actions::add_spend_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
           arguments: [
             builder,
             tx.pure.string(action.vaultName),
@@ -412,6 +435,7 @@ export class LaunchpadWorkflow {
         // Use this when the coin was placed via provide_coin (e.g., from VaultSpend)
         tx.moveCall({
           target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_coin_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
           arguments: [
             builder,
             tx.pure.address(action.recipient),
@@ -424,6 +448,7 @@ export class LaunchpadWorkflow {
         // Use this for crank fees when the coin was placed via provide_coin
         tx.moveCall({
           target: `${accountActionsPackageId}::transfer_init_actions::add_transfer_coin_to_sender_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
           arguments: [builder, tx.pure.string(action.resourceName)],
         });
         break;
@@ -432,6 +457,72 @@ export class LaunchpadWorkflow {
         tx.moveCall({
           target: `${accountActionsPackageId}::memo_init_actions::add_emit_memo_spec`,
           arguments: [builder, tx.pure.string(action.message)],
+        });
+        break;
+
+      case 'cancel_stream':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::vault_init_actions::add_cancel_stream_spec`,
+          typeArguments: [getCoinType(action.coinType, config.stableType)],
+          arguments: [
+            builder,
+            tx.pure.string(action.vaultName),
+            tx.pure.address(action.streamId),
+          ],
+        });
+        break;
+
+      case 'approve_coin_type':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::vault_init_actions::add_approve_coin_type_spec`,
+          typeArguments: [getCoinType(action.coinType, config.stableType)],
+          arguments: [builder, tx.pure.string(action.vaultName)],
+        });
+        break;
+
+      case 'remove_approved_coin_type':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::vault_init_actions::add_remove_approved_coin_type_spec`,
+          typeArguments: [getCoinType(action.coinType, config.stableType)],
+          arguments: [builder, tx.pure.string(action.vaultName)],
+        });
+        break;
+
+      case 'disable_currency':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::currency_init_actions::add_disable_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
+          arguments: [
+            builder,
+            tx.pure.bool(action.mint),
+            tx.pure.bool(action.burn),
+            tx.pure.bool(action.updateSymbol),
+            tx.pure.bool(action.updateName),
+            tx.pure.bool(action.updateDescription),
+            tx.pure.bool(action.updateIcon),
+          ],
+        });
+        break;
+
+      case 'update_currency':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::currency_init_actions::add_update_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
+          arguments: [
+            builder,
+            tx.pure.option('string', action.symbol ?? null),
+            tx.pure.option('string', action.name ?? null),
+            tx.pure.option('string', action.description ?? null),
+            tx.pure.option('string', action.iconUrl ?? null),
+          ],
+        });
+        break;
+
+      case 'create_dissolution_capability':
+        tx.moveCall({
+          target: `${futarchyActionsPackageId}::dissolution_init_actions::add_create_dissolution_capability_spec`,
+          typeArguments: [action.assetType || config.assetType],
+          arguments: [builder],
         });
         break;
 
