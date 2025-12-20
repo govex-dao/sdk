@@ -27,7 +27,7 @@ export * from './factory-admin';
 export * from './factory-validator';
 export * from './launchpad-intent-executor';
 export * from './governance-ptb-executor';
-export * from './proposal-escrow';
+export * from './proposal-lifecycle';
 export * from './proposal-sponsorship';
 export * from './fee-manager';
 export * from './package-registry-admin';

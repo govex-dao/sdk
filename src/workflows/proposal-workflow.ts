@@ -199,7 +199,7 @@ export class ProposalWorkflow {
       arguments: [builder],
     });
 
-    // Set intent spec for outcome
+    // Set intent spec for outcome (with whitelist validation)
     tx.moveCall({
       target: `${futarchyMarketsCorePackageId}::proposal::set_intent_spec_for_outcome`,
       typeArguments: [config.assetType, config.stableType],
@@ -208,6 +208,9 @@ export class ProposalWorkflow {
         tx.pure.u64(config.outcomeIndex),
         specs,
         tx.pure.u64(config.maxActionsPerOutcome || 10),
+        tx.object(config.daoAccountId),    // account for whitelist check
+        tx.object(config.registryId),       // PackageRegistry
+        tx.object(config.accountDepsId),    // Table<address, DepInfo>
       ],
     });
 

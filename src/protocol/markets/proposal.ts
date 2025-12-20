@@ -1239,6 +1239,16 @@ export class Proposal {
     });
   }
 
+  /**
+   * Set intent spec for an outcome with whitelist validation
+   *
+   * SECURITY: Validates ALL action types are from authorized packages at STAGING time.
+   * This prevents attacks where a proposal could toggle unverified_allowed and then
+   * execute malicious actions.
+   *
+   * @param tx - Transaction
+   * @param config - Configuration including whitelist validation parameters
+   */
   static setIntentSpecForOutcome(
     tx: Transaction,
     config: {
@@ -1248,12 +1258,24 @@ export class Proposal {
       proposal: ReturnType<Transaction['moveCall']>;
       outcomeIdx: number;
       intentSpec: ReturnType<Transaction['moveCall']>;
+      maxActionsPerOutcome: number;
+      account: string | ReturnType<Transaction['moveCall']>;      // DAO account for whitelist check
+      registry: string | ReturnType<Transaction['moveCall']>;     // PackageRegistry
+      accountDeps: string | ReturnType<Transaction['moveCall']>;  // Table<address, DepInfo>
     }
   ): void {
     tx.moveCall({
       target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'set_intent_spec_for_outcome'),
       typeArguments: [config.assetType, config.stableType],
-      arguments: [config.proposal, tx.pure.u8(config.outcomeIdx), config.intentSpec],
+      arguments: [
+        config.proposal,
+        tx.pure.u64(config.outcomeIdx),
+        config.intentSpec,
+        tx.pure.u64(config.maxActionsPerOutcome),
+        typeof config.account === 'string' ? tx.object(config.account) : config.account,
+        typeof config.registry === 'string' ? tx.object(config.registry) : config.registry,
+        typeof config.accountDeps === 'string' ? tx.object(config.accountDeps) : config.accountDeps,
+      ],
     });
   }
 
@@ -1488,6 +1510,153 @@ export class Proposal {
       target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'get_effective_twap_threshold'),
       typeArguments: [config.assetType, config.stableType],
       arguments: [config.proposal],
+    });
+  }
+
+  // ============================================================================
+  // State Constants (Added for execution-required finalization)
+  // ============================================================================
+
+  /**
+   * Get PREMARKET state constant (0)
+   */
+  static statePremarket(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'state_premarket'),
+      arguments: [],
+    });
+  }
+
+  /**
+   * Get REVIEW state constant (1)
+   */
+  static stateReview(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'state_review'),
+      arguments: [],
+    });
+  }
+
+  /**
+   * Get TRADING state constant (2)
+   */
+  static stateTrading(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'state_trading'),
+      arguments: [],
+    });
+  }
+
+  /**
+   * Get AWAITING_EXECUTION state constant (3)
+   *
+   * New state: TWAP measured, 30-minute execution window active.
+   */
+  static stateAwaitingExecution(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'state_awaiting_execution'),
+      arguments: [],
+    });
+  }
+
+  /**
+   * Get FINALIZED state constant (4)
+   *
+   * Note: Changed from 3 to 4 with addition of AWAITING_EXECUTION state.
+   */
+  static stateFinalized(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'state_finalized'),
+      arguments: [],
+    });
+  }
+
+  // ============================================================================
+  // Execution Window Functions (Added for execution-required finalization)
+  // ============================================================================
+
+  /**
+   * Check if proposal is in the execution window (AWAITING_EXECUTION state)
+   *
+   * @returns True if proposal is awaiting execution
+   */
+  static isAwaitingExecution(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+      assetType: string;
+      stableType: string;
+      proposal: ReturnType<Transaction['moveCall']>;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'is_awaiting_execution'),
+      typeArguments: [config.assetType, config.stableType],
+      arguments: [config.proposal],
+    });
+  }
+
+  /**
+   * Check if the trading period has ended based on current time
+   *
+   * @returns True if current_time >= trading_end
+   */
+  static isTradingPeriodEnded(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+      assetType: string;
+      stableType: string;
+      proposal: ReturnType<Transaction['moveCall']>;
+      clock?: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'is_trading_period_ended'),
+      typeArguments: [config.assetType, config.stableType],
+      arguments: [config.proposal, tx.object(config.clock || '0x6')],
+    });
+  }
+
+  /**
+   * Get the execution window duration in milliseconds (30 minutes)
+   *
+   * @returns 30 * 60 * 1000 = 1800000 ms
+   */
+  static executionWindowMs(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'execution_window_ms'),
+      arguments: [],
     });
   }
 }

@@ -799,6 +799,185 @@ export class PackageRegistry {
   }
 
   // ============================================================================
+  // FEE MANAGEMENT (8)
+  // ============================================================================
+
+  /**
+   * Set account creation fee configuration
+   * Requires PackageAdminCap to authorize
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The PackageRegistry object
+   * @param cap - The PackageAdminCap
+   * @param config - Fee configuration
+   * @param config.feeAmount - Fee amount in MIST (0 = disabled)
+   * @param config.feeRecipient - Address to receive fees (stored for reference)
+   */
+  static setAccountCreationFee(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: ReturnType<Transaction['moveCall']>,
+    cap: ReturnType<Transaction['moveCall']>,
+    config: {
+      feeAmount: bigint;
+      feeRecipient: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'set_account_creation_fee'),
+      arguments: [
+        registry,
+        cap,
+        tx.pure.u64(config.feeAmount),
+        tx.pure.address(config.feeRecipient),
+      ],
+    });
+  }
+
+  /**
+   * Add a package to the fee-exempt list
+   * Exempt packages can create accounts without paying fees
+   * Requires PackageAdminCap to authorize
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The PackageRegistry object
+   * @param cap - The PackageAdminCap
+   * @param packageAddr - Package address to exempt
+   */
+  static addFeeExemptPackage(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: ReturnType<Transaction['moveCall']>,
+    cap: ReturnType<Transaction['moveCall']>,
+    packageAddr: string
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'add_fee_exempt_package'),
+      arguments: [registry, cap, tx.pure.address(packageAddr)],
+    });
+  }
+
+  /**
+   * Remove a package from the fee-exempt list
+   * Requires PackageAdminCap to authorize
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The PackageRegistry object
+   * @param cap - The PackageAdminCap
+   * @param packageAddr - Package address to remove from exempt list
+   */
+  static removeFeeExemptPackage(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: ReturnType<Transaction['moveCall']>,
+    cap: ReturnType<Transaction['moveCall']>,
+    packageAddr: string
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'remove_fee_exempt_package'),
+      arguments: [registry, cap, tx.pure.address(packageAddr)],
+    });
+  }
+
+  /**
+   * Withdraw fees from the treasury
+   * Returns Coin<SUI> to caller for PTB composability
+   * Requires PackageAdminCap to authorize
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The PackageRegistry object
+   * @param cap - The PackageAdminCap
+   * @param amount - Amount to withdraw in MIST
+   * @returns The Coin<SUI> object
+   */
+  static withdrawFees(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: ReturnType<Transaction['moveCall']>,
+    cap: ReturnType<Transaction['moveCall']>,
+    amount: bigint
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'withdraw_fees'),
+      arguments: [registry, cap, tx.pure.u64(amount)],
+    });
+  }
+
+  /**
+   * Check if a package is exempt from fees
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The PackageRegistry object
+   * @param packageAddr - Package address to check
+   * @returns Boolean indicating if package is fee-exempt
+   */
+  static isFeeExemptPackage(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: ReturnType<Transaction['moveCall']>,
+    packageAddr: string
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'is_fee_exempt_package'),
+      arguments: [registry, tx.pure.address(packageAddr)],
+    });
+  }
+
+  /**
+   * Get account creation fee amount
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The PackageRegistry object
+   * @returns The fee amount in MIST
+   */
+  static accountCreationFeeAmount(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: ReturnType<Transaction['moveCall']>
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'account_creation_fee_amount'),
+      arguments: [registry],
+    });
+  }
+
+  /**
+   * Get account creation fee recipient
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The PackageRegistry object
+   * @returns The fee recipient address
+   */
+  static accountCreationFeeRecipient(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: ReturnType<Transaction['moveCall']>
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'account_creation_fee_recipient'),
+      arguments: [registry],
+    });
+  }
+
+  /**
+   * Get fee treasury balance
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The PackageRegistry object
+   * @returns The treasury balance in MIST
+   */
+  static feeTreasuryBalance(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: ReturnType<Transaction['moveCall']>
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'fee_treasury_balance'),
+      arguments: [registry],
+    });
+  }
+
+  // ============================================================================
   // PACKAGE VERSION HELPERS (3)
   // ============================================================================
 

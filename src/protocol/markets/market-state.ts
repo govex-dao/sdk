@@ -672,4 +672,245 @@ export class MarketState {
       arguments: [marketState],
     });
   }
+
+  // ============================================================================
+  // Execution Window Functions (Added for execution-required finalization)
+  // ============================================================================
+
+  /**
+   * Assert swaps are allowed on conditional AMMs
+   *
+   * Swaps are allowed during:
+   * 1. Normal trading (trading_started && !trading_ended)
+   * 2. Execution window (in_execution_window && !finalized)
+   *
+   * This is different from assertTradingActive because TWAP measurement
+   * ends when trading ends, but conditional swaps should continue during
+   * the 30-minute execution window.
+   */
+  static assertSwapsAllowed(
+    tx: Transaction,
+    marketsPackageId: string,
+    marketState: ReturnType<Transaction['moveCall']>
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        marketsPackageId,
+        'market_state',
+        'assert_swaps_allowed'
+      ),
+      arguments: [marketState],
+    });
+  }
+
+  /**
+   * Assert execution can proceed
+   *
+   * Validates:
+   * - Market is in execution window
+   * - Execution deadline has not passed
+   */
+  static assertCanExecute(
+    tx: Transaction,
+    config: {
+      marketsPackageId: string;
+      marketState: ReturnType<Transaction['moveCall']>;
+      clock?: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.marketsPackageId,
+        'market_state',
+        'assert_can_execute'
+      ),
+      arguments: [config.marketState, tx.object(config.clock || '0x6')],
+    });
+  }
+
+  /**
+   * Start the execution window after TWAP measurement ends
+   *
+   * This captures the TWAP snapshot and determines the "market winner".
+   * Trading continues during the execution window (conditional AMMs remain active).
+   */
+  static startExecutionWindow(
+    tx: Transaction,
+    config: {
+      marketsPackageId: string;
+      marketState: ReturnType<Transaction['moveCall']>;
+      executionWindowMs: number;
+      frozenTwaps: ReturnType<Transaction['moveCall']>;
+      marketWinner: number;
+      clock?: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.marketsPackageId,
+        'market_state',
+        'start_execution_window'
+      ),
+      arguments: [
+        config.marketState,
+        tx.pure.u64(config.executionWindowMs),
+        config.frozenTwaps,
+        tx.pure.u64(config.marketWinner),
+        tx.object(config.clock || '0x6'),
+      ],
+    });
+  }
+
+  /**
+   * Finalize immediately with REJECT (fast path when TWAP shows REJECT wins)
+   *
+   * No execution window needed since there are no actions to execute.
+   */
+  static finalizeImmediatelyWithReject(
+    tx: Transaction,
+    config: {
+      marketsPackageId: string;
+      marketState: ReturnType<Transaction['moveCall']>;
+      frozenTwaps: ReturnType<Transaction['moveCall']>;
+      clock?: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.marketsPackageId,
+        'market_state',
+        'finalize_immediately_with_reject'
+      ),
+      arguments: [
+        config.marketState,
+        config.frozenTwaps,
+        tx.object(config.clock || '0x6'),
+      ],
+    });
+  }
+
+  /**
+   * Finalize with execution success
+   *
+   * Called when execution succeeds within the execution window.
+   * The market winner becomes the actual winner.
+   */
+  static finalizeWithExecutionSuccess(
+    tx: Transaction,
+    config: {
+      marketsPackageId: string;
+      marketState: ReturnType<Transaction['moveCall']>;
+      clock?: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.marketsPackageId,
+        'market_state',
+        'finalize_with_execution_success'
+      ),
+      arguments: [config.marketState, tx.object(config.clock || '0x6')],
+    });
+  }
+
+  /**
+   * Force finalize with REJECT on timeout
+   *
+   * Called by anyone when execution window expires without successful execution.
+   * REJECT wins regardless of what TWAP said.
+   */
+  static forceFinalizeRejectOnTimeout(
+    tx: Transaction,
+    config: {
+      marketsPackageId: string;
+      marketState: ReturnType<Transaction['moveCall']>;
+      clock?: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.marketsPackageId,
+        'market_state',
+        'force_finalize_reject_on_timeout'
+      ),
+      arguments: [config.marketState, tx.object(config.clock || '0x6')],
+    });
+  }
+
+  /**
+   * Check if market is in execution window
+   */
+  static isInExecutionWindow(
+    tx: Transaction,
+    marketsPackageId: string,
+    marketState: ReturnType<Transaction['moveCall']>
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        marketsPackageId,
+        'market_state',
+        'is_in_execution_window'
+      ),
+      arguments: [marketState],
+    });
+  }
+
+  /**
+   * Get the market winner (what TWAP said should win)
+   *
+   * Only valid after execution window starts.
+   * The actual winner depends on whether execution succeeds.
+   */
+  static getMarketWinner(
+    tx: Transaction,
+    marketsPackageId: string,
+    marketState: ReturnType<Transaction['moveCall']>
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        marketsPackageId,
+        'market_state',
+        'get_market_winner'
+      ),
+      arguments: [marketState],
+    });
+  }
+
+  /**
+   * Get the execution deadline timestamp
+   *
+   * Only valid after execution window starts.
+   */
+  static getExecutionDeadline(
+    tx: Transaction,
+    marketsPackageId: string,
+    marketState: ReturnType<Transaction['moveCall']>
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        marketsPackageId,
+        'market_state',
+        'get_execution_deadline'
+      ),
+      arguments: [marketState],
+    });
+  }
+
+  /**
+   * Get the frozen TWAP values captured when execution window started
+   */
+  static getFrozenTwaps(
+    tx: Transaction,
+    marketsPackageId: string,
+    marketState: ReturnType<Transaction['moveCall']>
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        marketsPackageId,
+        'market_state',
+        'get_frozen_twaps'
+      ),
+      arguments: [marketState],
+    });
+  }
 }

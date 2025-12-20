@@ -37,6 +37,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { LaunchpadWorkflow } from "../src/workflows/launchpad-workflow";
 import { TransactionUtils } from "../src/services/transaction";
+import { PackageRegistryAdminOperations } from "../src/services/package-registry-admin";
 import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
 
 // Test coin with private TreasuryCap (for mainnet - only owner can mint)
@@ -239,7 +240,7 @@ async function main() {
 
   // Register packages in PackageRegistry (required for deps validation)
   console.log("\n" + "=".repeat(80));
-  console.log("PRE-STEP: REGISTER PACKAGES IN PACKAGE REGISTRY");
+  console.log("PRE-STEP 1: REGISTER PACKAGES IN PACKAGE REGISTRY");
   console.log("=".repeat(80));
   try {
     execSync("npx tsx scripts/register-new-packages.ts", {
@@ -253,6 +254,62 @@ async function main() {
       "⚠️  Package registration failed (may already be registered):",
       error.message,
     );
+  }
+
+  // Add factory package to fee exempt list (so factory can create accounts without fees)
+  console.log("\n" + "=".repeat(80));
+  console.log("PRE-STEP 2: ADD FACTORY TO FEE EXEMPT PACKAGES");
+  console.log("=".repeat(80));
+  try {
+    // Load AccountProtocol deployment for registry and admin cap
+    const accountProtocolPath = path.join(__dirname, "../../packages/deployments-processed/AccountProtocol.json");
+    const accountProtocolDeployment = JSON.parse(fs.readFileSync(accountProtocolPath, "utf8"));
+
+    const registryObj = accountProtocolDeployment.sharedObjects?.find((obj: any) => obj.name === "PackageRegistry");
+    const adminCapId = accountProtocolDeployment.adminCaps?.find((obj: any) => obj.name === "PackageAdminCap")?.objectId;
+    const protocolPkgId = accountProtocolDeployment.packageId;
+
+    // Load Factory deployment for package address
+    const factoryPath = path.join(__dirname, "../../packages/deployments-processed/futarchy_factory.json");
+    const factoryDeployment = JSON.parse(fs.readFileSync(factoryPath, "utf8"));
+    const factoryPkgId = factoryDeployment.packageId;
+
+    if (registryObj?.objectId && adminCapId && protocolPkgId && factoryPkgId) {
+      console.log(`PackageRegistry: ${registryObj.objectId}`);
+      console.log(`PackageAdminCap: ${adminCapId}`);
+      console.log(`Factory Package: ${factoryPkgId}`);
+
+      // Use SDK service for clean API
+      const registryAdmin = new PackageRegistryAdminOperations(
+        sdk.client,
+        protocolPkgId,
+        registryObj.objectId,
+        registryObj.initialSharedVersion
+      );
+
+      const exemptTx = registryAdmin.addFeeExemptPackage(adminCapId, factoryPkgId);
+
+      await executeTransaction(sdk, exemptTx, {
+        network: "devnet",
+        dryRun: false,
+        showEffects: false,
+      });
+      console.log("✅ Factory package added to fee exempt list");
+    } else {
+      console.log("⚠️  Missing deployment data for fee exemption setup");
+      console.log(`   Registry: ${registryObj?.objectId || "missing"}`);
+      console.log(`   AdminCap: ${adminCapId || "missing"}`);
+      console.log(`   Factory: ${factoryPkgId || "missing"}`);
+    }
+  } catch (error: any) {
+    // Check if already exempt
+    const isAlreadyExempt = error.message?.includes("EPackageAlreadyExempt") ||
+                           error.message?.includes("}, 10)"); // Abort code 10
+    if (isAlreadyExempt) {
+      console.log("✅ Factory package already fee exempt");
+    } else {
+      console.log("⚠️  Fee exemption setup failed:", error.message);
+    }
   }
 
   // Step 0: Create fresh test coins

@@ -1257,4 +1257,108 @@ export class UnifiedSpotPool {
       arguments: [config.pool],
     });
   }
+
+  // ============================================================================
+  // Fee Query Functions (Added for proportional fee split model)
+  // ============================================================================
+
+  /**
+   * Get current total fee in basis points
+   *
+   * Returns the current TOTAL fee (protocol + LP) including any launch fee decay.
+   * This is what the user pays as swap fee.
+   *
+   * Fee Model:
+   * - Steady-state: Protocol (50 bps) + LP (25 bps) = 75 bps total
+   * - Launch mode: Decays from 99% (9900 bps) to steady-state total over time
+   *
+   * @param tx - Transaction
+   * @param config - Configuration
+   * @returns Current total fee in bps (u64)
+   */
+  static currentFeeBps(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+      assetType: string;
+      stableType: string;
+      lpType: string;
+      pool: ReturnType<Transaction['moveCall']>;
+      clock?: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.marketsCorePackageId,
+        'unified_spot_pool',
+        'current_fee_bps'
+      ),
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [config.pool, tx.object(config.clock || '0x6')],
+    });
+  }
+
+  /**
+   * Get LP's share of the steady-state fee
+   *
+   * Returns the LP fee portion in basis points (typically 25 bps = 0.25%).
+   * This is the LP's share BEFORE any proportional split during launch mode.
+   *
+   * During launch mode with elevated fees, LPs get a proportional share:
+   *   LP fee = total_fee * (steady_lp_bps / steady_total_bps)
+   *
+   * @param tx - Transaction
+   * @param config - Configuration
+   * @returns LP fee in bps (u64)
+   */
+  static lpFeeBps(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+      assetType: string;
+      stableType: string;
+      lpType: string;
+      pool: ReturnType<Transaction['moveCall']>;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.marketsCorePackageId,
+        'unified_spot_pool',
+        'lp_fee_bps'
+      ),
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [config.pool],
+    });
+  }
+
+  /**
+   * Get pool ID
+   *
+   * Returns the unique ID of the pool object.
+   *
+   * @param tx - Transaction
+   * @param config - Configuration
+   * @returns Pool ID
+   */
+  static getPoolId(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+      assetType: string;
+      stableType: string;
+      lpType: string;
+      pool: ReturnType<Transaction['moveCall']>;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.marketsCorePackageId,
+        'unified_spot_pool',
+        'get_pool_id'
+      ),
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [config.pool],
+    });
+  }
 }

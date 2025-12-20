@@ -366,12 +366,26 @@ export class TransactionBuilder {
 
   /**
    * Stage actions to a proposal outcome
+   *
+   * SECURITY: Action packages are validated against the whitelist at staging time.
+   *
+   * @param proposalId - Proposal object ID
+   * @param assetType - Asset coin type
+   * @param stableType - Stable coin type
+   * @param outcomeIndex - Outcome index (0 = Reject, 1+ = Accept)
+   * @param daoAccountId - DAO account ID for whitelist validation
+   * @param registryId - Package registry ID for whitelist validation
+   * @param accountDepsId - Account deps table ID for whitelist validation
+   * @param maxActionsPerOutcome - Max actions per outcome (default 10)
    */
   stageToProposal(
     proposalId: string,
     assetType: string,
     stableType: string,
     outcomeIndex: number,
+    daoAccountId: string,
+    registryId: string,
+    accountDepsId: string,
     maxActionsPerOutcome?: number
   ): this {
     this.ensureBuilder();
@@ -387,7 +401,7 @@ export class TransactionBuilder {
       arguments: [this.builder!],
     });
 
-    // Set intent spec for outcome
+    // Set intent spec for outcome (with whitelist validation)
     this.tx.moveCall({
       target: `${this.packages.futarchyMarketsCorePackageId}::proposal::set_intent_spec_for_outcome`,
       typeArguments: [assetType, stableType],
@@ -396,6 +410,9 @@ export class TransactionBuilder {
         this.tx.pure.u64(outcomeIndex),
         specs,
         this.tx.pure.u64(maxActionsPerOutcome || 10),
+        this.tx.object(daoAccountId),    // account for whitelist check
+        this.tx.object(registryId),       // PackageRegistry
+        this.tx.object(accountDepsId),    // Table<address, DepInfo>
       ],
     });
 

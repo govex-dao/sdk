@@ -1,8 +1,20 @@
 /**
  * Governance PTB Executor
  *
- * PTB (Programmable Transaction Block) execution helpers for Futarchy proposals.
- * Provides begin/finalize pattern for executing proposal actions in custom PTBs.
+ * PTB (Programmable Transaction Block) execution helpers for Futarchy proposals
+ * with execution-required finalization.
+ *
+ * The frontend composes a programmable transaction that:
+ * 1. Calls `begin_execution` to receive the governance executable hot potato.
+ * 2. Invokes the relevant `do_init_*` action functions in order.
+ * 3. Calls `finalize_execution_success` to confirm, finalize proposal, and emit events.
+ *
+ * CRITICAL: Execution must succeed for accept outcomes to win.
+ * - If execution succeeds: market_winner becomes actual winner
+ * - If execution fails (PTB aborts): no state change, can retry
+ * - If timeout: anyone calls force_reject_on_timeout() -> REJECT wins
+ *
+ * This ensures unexecutable proposals cannot win.
  *
  * @module governance-ptb-executor
  */
@@ -20,7 +32,7 @@ import { TransactionUtils } from './transaction';
  * ```typescript
  * const tx = new Transaction();
  *
- * // Step 1: Begin execution
+ * // Step 1: Begin execution (requires AWAITING_EXECUTION state)
  * const [executable, intentKey] = GovernancePTBExecutor.beginExecution(tx, {
  *   governancePackageId,
  *   daoId,
@@ -35,14 +47,18 @@ import { TransactionUtils } from './transaction';
  * // The executable hot potato allows you to call do_init_* functions
  * // from account_actions package
  *
- * // Step 3: Finalize execution
- * GovernancePTBExecutor.finalizeExecution(tx, {
+ * // Step 3: Finalize execution (confirms success and finalizes proposal)
+ * GovernancePTBExecutor.finalizeExecutionSuccess(tx, {
  *   governancePackageId,
  *   daoId,
  *   proposalId,
+ *   escrowId,
+ *   marketStateId,
+ *   spotPoolId,
  *   registryId,
  *   assetType,
  *   stableType,
+ *   lpType,
  * }, executable);
  * ```
  */
@@ -50,12 +66,13 @@ export class GovernancePTBExecutor {
   /**
    * Begin execution of proposal actions (Step 1 of 3)
    *
-   * Creates an Executable hot potato that must be consumed by finalizeExecution.
+   * Creates an Executable hot potato that must be consumed by finalizeExecutionSuccess.
    * Between begin and finalize, you can call do_init_* actions.
    *
    * Requirements:
-   * - Proposal must be finalized
-   * - Outcome 1 (Accept/Yes) must have won (Outcome 0 = Reject/No)
+   * - Proposal must be in AWAITING_EXECUTION state
+   * - Market winner must be an accept outcome (> 0)
+   * - Must be within the 30-minute execution deadline
    *
    * @param tx - Transaction to add the call to
    * @param config - Execution configuration
@@ -101,7 +118,7 @@ export class GovernancePTBExecutor {
         tx.object(config.daoId), // account
         tx.object(config.registryId), // registry
         tx.object(config.proposalId), // proposal
-        tx.object(config.marketStateId), // market
+        tx.object(config.marketStateId), // market_state
         tx.object(config.clock || '0x6'), // clock
       ],
     });
@@ -166,10 +183,11 @@ export class GovernancePTBExecutor {
   }
 
   /**
-   * Finalize execution of proposal actions (Step 3 of 3)
+   * Finalize execution success (Step 3 of 3)
    *
-   * Consumes the Executable hot potato and confirms all actions were executed.
-   * Emits ProposalIntentExecuted event.
+   * Consumes the Executable hot potato, confirms all actions were executed,
+   * and finalizes the proposal with the market winner as actual winner.
+   * Emits ProposalExecutionSucceeded and ProposalMarketFinalized events.
    *
    * @param tx - Transaction to add the call to
    * @param config - Execution configuration
@@ -180,16 +198,124 @@ export class GovernancePTBExecutor {
    * const tx = new Transaction();
    *
    * // After begin_execution and do_init_* calls
-   * GovernancePTBExecutor.finalizeExecution(tx, {
+   * GovernancePTBExecutor.finalizeExecutionSuccess(tx, {
    *   governancePackageId,
    *   daoId,
    *   proposalId,
+   *   escrowId,
+   *   marketStateId,
+   *   spotPoolId,
    *   registryId,
    *   assetType,
    *   stableType,
+   *   lpType,
    *   clock: '0x6',
    * }, executable);
    * ```
+   */
+  static finalizeExecutionSuccess(
+    tx: Transaction,
+    config: {
+      governancePackageId: string;
+      daoId: string;
+      proposalId: string;
+      escrowId: string;
+      marketStateId: string;
+      spotPoolId: string;
+      registryId: string;
+      assetType: string;
+      stableType: string;
+      lpType: string;
+      clock?: string;
+    },
+    executable: ReturnType<Transaction['moveCall']>
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.governancePackageId,
+        'ptb_executor',
+        'finalize_execution_success'
+      ),
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [
+        tx.object(config.daoId), // account
+        tx.object(config.registryId), // registry
+        tx.object(config.proposalId), // proposal
+        tx.object(config.escrowId), // escrow
+        tx.object(config.marketStateId), // market_state
+        tx.object(config.spotPoolId), // spot_pool
+        executable, // executable
+        tx.object(config.clock || '0x6'), // clock
+      ],
+    });
+  }
+
+  /**
+   * Force reject on timeout (permissionless)
+   *
+   * Anyone can call this when the 30-minute execution window has expired
+   * without successful execution. REJECT wins regardless of what TWAP said.
+   *
+   * NOTE: This function is in proposal_lifecycle module, not ptb_executor.
+   * It's included here for convenience since it's part of the execution flow.
+   *
+   * @param tx - Transaction to add the call to
+   * @param config - Configuration
+   *
+   * @example
+   * ```typescript
+   * const tx = new Transaction();
+   *
+   * // Execution window expired, force REJECT to win
+   * GovernancePTBExecutor.forceRejectOnTimeout(tx, {
+   *   governancePackageId,
+   *   proposalId,
+   *   escrowId,
+   *   marketStateId,
+   *   spotPoolId,
+   *   assetType,
+   *   stableType,
+   *   lpType,
+   *   clock: '0x6',
+   * });
+   * ```
+   */
+  static forceRejectOnTimeout(
+    tx: Transaction,
+    config: {
+      governancePackageId: string;
+      proposalId: string;
+      escrowId: string;
+      marketStateId: string;
+      spotPoolId: string;
+      assetType: string;
+      stableType: string;
+      lpType: string;
+      clock?: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.governancePackageId,
+        'proposal_lifecycle',
+        'force_reject_on_timeout'
+      ),
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [
+        tx.object(config.proposalId), // proposal
+        tx.object(config.escrowId), // escrow
+        tx.object(config.marketStateId), // market_state
+        tx.object(config.spotPoolId), // spot_pool
+        tx.object(config.clock || '0x6'), // clock
+      ],
+    });
+  }
+
+  /**
+   * @deprecated Use finalizeExecutionSuccess instead.
+   *
+   * The old finalize_execution function is replaced by finalize_execution_success
+   * in the execution-required finalization model.
    */
   static finalizeExecution(
     tx: Transaction,
@@ -204,6 +330,9 @@ export class GovernancePTBExecutor {
     },
     executable: ReturnType<Transaction['moveCall']>
   ): void {
+    console.warn(
+      'GovernancePTBExecutor.finalizeExecution is deprecated. Use finalizeExecutionSuccess instead.'
+    );
     tx.moveCall({
       target: TransactionUtils.buildTarget(
         config.governancePackageId,
