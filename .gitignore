@@ -38,6 +38,7 @@ coverage/
 test-dao-info.json
 test-proposal-info.json
 conditional-coins-info.json
+test-coins-info.json
 test-dao-info-*.json
 
 # Generated temp packages
