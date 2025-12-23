@@ -52,10 +52,7 @@ async function main() {
   console.log("Network:", sdk.network.network);
 
   const proposalWorkflow = sdk.workflows.proposal;
-  const registryId = sdk.deployments.getSharedObject(
-    "AccountProtocol",
-    "PackageRegistry"
-  )!.objectId;
+  const registryId = sdk.deployments.getPackageRegistry()!.objectId;
 
   // ===== STEP 1: Create Proposal =====
 

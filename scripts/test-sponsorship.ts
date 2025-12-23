@@ -71,10 +71,7 @@ async function main() {
   console.log();
 
   const proposalWorkflow = sdk.workflows.proposal;
-  const registryId = sdk.deployments.getSharedObject(
-    "AccountProtocol",
-    "PackageRegistry"
-  )!.objectId;
+  const registryId = sdk.deployments.getPackageRegistry()!.objectId;
 
   // Get governance package ID for sponsorship call
   const governancePackageId = sdk.deployments.getPackage("futarchy_governance")!.packageId;
@@ -118,7 +115,7 @@ async function main() {
     assetType,
     stableType,
     title: "Test Sponsorship",
-    introductionDetails: "Testing the sponsorship system",
+    introduction: "Testing the sponsorship system",
     metadata: JSON.stringify({ test: "sponsorship" }),
     outcomeMessages: ["Reject", "Accept with sponsorship"],
     outcomeDetails: ["Do nothing", "Execute if sponsored"],

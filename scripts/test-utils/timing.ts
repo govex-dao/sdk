@@ -21,9 +21,9 @@ export const TEST_CONFIG = {
   STATE_POLL_INTERVAL_MS: 2000,
   STATE_MAX_WAIT_MS: 120_000,
 
-  // Proposal timing (for tests)
-  REVIEW_PERIOD_MS: 5_000,
-  TRADING_PERIOD_MS: 10_000,
+  // Proposal timing (for tests) - must match launchpad-e2e.ts config
+  REVIEW_PERIOD_MS: 1_000,      // 1 second (matches launchpad reviewPeriodMs: 1000n)
+  TRADING_PERIOD_MS: 60_000,    // 60 seconds (matches launchpad tradingPeriodMs: 60_000n)
 
   // Network-specific multipliers
   LOCALNET_MULTIPLIER: 1,

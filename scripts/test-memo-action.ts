@@ -72,10 +72,7 @@ async function main() {
   console.log();
 
   const proposalWorkflow = sdk.workflows.proposal;
-  const registryId = sdk.deployments.getSharedObject(
-    "AccountProtocol",
-    "PackageRegistry"
-  )!.objectId;
+  const registryId = sdk.deployments.getPackageRegistry()!.objectId;
 
   // ============================================================================
   // STEP 1: Mint fee tokens
@@ -114,7 +111,7 @@ async function main() {
     assetType,
     stableType,
     title: "Test Memo Action",
-    introductionDetails: "Testing the memo action execution",
+    introduction: "Testing the memo action execution",
     metadata: JSON.stringify({ test: "memo-action" }),
     outcomeMessages: ["Reject", "Accept and emit memo"],
     outcomeDetails: ["Do nothing", "Emit a memo event"],
@@ -181,6 +178,7 @@ async function main() {
     stableType,
     lpType,
     spotPoolId,
+    senderAddress: activeAddress,
     conditionalCoinsRegistry: {
       registryId: conditionalCoinsInfo.registryId,
       coinSets: conditionalOutcomes.map((outcome) => ({
@@ -208,11 +206,14 @@ async function main() {
   // Wait for review period
   await waitForTimePeriod(TEST_CONFIG.REVIEW_PERIOD_MS + 2000, { description: "review period" });
 
-  const toTradingTx = proposalWorkflow.advanceState({
+  const toTradingTx = proposalWorkflow.advanceToTrading({
     proposalId,
     escrowId,
+    daoAccountId,
+    spotPoolId,
     assetType,
     stableType,
+    lpType,
   });
 
   await executeTransaction(sdk, toTradingTx.transaction, { network: "devnet" });
@@ -250,7 +251,7 @@ async function main() {
     outcomeIndex: ACCEPT_OUTCOME_INDEX,
     assetConditionalType: acceptOutcome.asset.coinType,
     stableConditionalType: acceptOutcome.stable.coinType,
-    direction: "buy_asset",
+    direction: "stable_to_asset",
     stableAmount: tradeAmount,
   });
 
@@ -266,7 +267,7 @@ async function main() {
   // Wait for trading period
   await waitForTimePeriod(TEST_CONFIG.TRADING_PERIOD_MS + 2000, { description: "trading period" });
 
-  const finalizeTx = proposalWorkflow.finalize({
+  const finalizeTx = proposalWorkflow.finalizeProposal({
     daoAccountId,
     proposalId,
     escrowId,

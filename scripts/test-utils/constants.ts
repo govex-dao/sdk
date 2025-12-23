@@ -40,9 +40,9 @@ export function getStateName(state: number): string {
 // Execution window for proposals
 export const EXECUTION_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
-// Test timing defaults
-export const DEFAULT_REVIEW_PERIOD_MS = 5_000; // 5 seconds
-export const DEFAULT_TRADING_PERIOD_MS = 10_000; // 10 seconds
+// Test timing defaults - must match launchpad-e2e.ts config
+export const DEFAULT_REVIEW_PERIOD_MS = 1_000; // 1 second (matches launchpad)
+export const DEFAULT_TRADING_PERIOD_MS = 60_000; // 60 seconds (matches launchpad)
 
 // ============================================================================
 // Test Token Amounts

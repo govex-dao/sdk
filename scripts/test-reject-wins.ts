@@ -77,10 +77,7 @@ async function main() {
 
   // Get workflow
   const proposalWorkflow = sdk.workflows.proposal;
-  const registryId = sdk.deployments.getSharedObject(
-    "AccountProtocol",
-    "PackageRegistry"
-  )!.objectId;
+  const registryId = sdk.deployments.getPackageRegistry()!.objectId;
 
   // Track conditional tokens for redemption
   const allConditionalTokens: ConditionalTokenRecord[] = [];
@@ -122,7 +119,7 @@ async function main() {
     assetType,
     stableType,
     title: "Test Reject Wins",
-    introductionDetails: "Testing that reject outcome wins correctly",
+    introduction: "Testing that reject outcome wins correctly",
     metadata: JSON.stringify({ test: "reject-wins" }),
     outcomeMessages: ["Reject this proposal", "Accept this proposal"],
     outcomeDetails: ["Do nothing", "Execute memo action"],
@@ -188,6 +185,7 @@ async function main() {
     stableType,
     lpType,
     spotPoolId,
+    senderAddress: activeAddress,
     conditionalCoinsRegistry: {
       registryId: conditionalCoinsInfo.registryId,
       coinSets: conditionalOutcomes.map((outcome) => ({
@@ -216,11 +214,14 @@ async function main() {
   // Wait for review period
   await waitForTimePeriod(TEST_CONFIG.REVIEW_PERIOD_MS + 2000, { description: "review period" });
 
-  const toTradingTx = proposalWorkflow.advanceState({
+  const toTradingTx = proposalWorkflow.advanceToTrading({
     proposalId,
     escrowId,
+    daoAccountId,
+    spotPoolId,
     assetType,
     stableType,
+    lpType,
   });
 
   await executeTransaction(sdk, toTradingTx.transaction, { network: "devnet" });
@@ -281,7 +282,7 @@ async function main() {
     outcomeIndex: REJECT_OUTCOME_INDEX,
     assetConditionalType: rejectOutcome.asset.coinType,
     stableConditionalType: rejectOutcome.stable.coinType,
-    direction: "buy_asset", // Buy reject-asset tokens
+    direction: "stable_to_asset", // Buy reject-asset tokens
     stableAmount: tradeAmount,
   });
 
@@ -322,7 +323,7 @@ async function main() {
   // Wait for trading period to end
   await waitForTimePeriod(TEST_CONFIG.TRADING_PERIOD_MS + 2000, { description: "trading period" });
 
-  const finalizeTx = proposalWorkflow.finalize({
+  const finalizeTx = proposalWorkflow.finalizeProposal({
     daoAccountId,
     proposalId,
     escrowId,

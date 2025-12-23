@@ -94,10 +94,7 @@ async function main() {
   console.log();
 
   const proposalWorkflow = sdk.workflows.proposal;
-  const registryId = sdk.deployments.getSharedObject(
-    "AccountProtocol",
-    "PackageRegistry"
-  )!.objectId;
+  const registryId = sdk.deployments.getPackageRegistry()!.objectId;
 
   // Track conditional tokens
   const allConditionalTokens: ConditionalTokenRecord[] = [];
@@ -150,7 +147,7 @@ async function main() {
     assetType,
     stableType,
     title: `Multi-Outcome Test (${NUM_OUTCOMES} options)`,
-    introductionDetails: `Testing proposal with ${NUM_OUTCOMES} outcomes`,
+    introduction: `Testing proposal with ${NUM_OUTCOMES} outcomes`,
     metadata: JSON.stringify({ test: "multi-outcome", numOutcomes: NUM_OUTCOMES }),
     outcomeMessages,
     outcomeDetails,
@@ -218,6 +215,7 @@ async function main() {
     stableType,
     lpType,
     spotPoolId,
+    senderAddress: activeAddress,
     conditionalCoinsRegistry: {
       registryId: conditionalCoinsInfo.registryId,
       coinSets: outcomes.map((outcome) => ({
@@ -245,11 +243,14 @@ async function main() {
   // Wait for review period
   await waitForTimePeriod(TEST_CONFIG.REVIEW_PERIOD_MS + 2000, { description: "review period" });
 
-  const toTradingTx = proposalWorkflow.advanceState({
+  const toTradingTx = proposalWorkflow.advanceToTrading({
     proposalId,
     escrowId,
+    daoAccountId,
+    spotPoolId,
     assetType,
     stableType,
+    lpType,
   });
 
   await executeTransaction(sdk, toTradingTx.transaction, { network: "devnet" });
@@ -306,7 +307,7 @@ async function main() {
       outcomeIndex: i,
       assetConditionalType: outcome.asset.coinType,
       stableConditionalType: outcome.stable.coinType,
-      direction: "buy_asset",
+      direction: "stable_to_asset",
       stableAmount: amount,
     });
 
@@ -348,7 +349,7 @@ async function main() {
   // Wait for trading period
   await waitForTimePeriod(TEST_CONFIG.TRADING_PERIOD_MS + 2000, { description: "trading period" });
 
-  const finalizeTx = proposalWorkflow.finalize({
+  const finalizeTx = proposalWorkflow.finalizeProposal({
     daoAccountId,
     proposalId,
     escrowId,
