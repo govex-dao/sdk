@@ -13,7 +13,7 @@
  * @module workflows/launchpad-workflow
  */
 
-import { Transaction } from '@mysten/sui/transactions';
+import { Transaction, Inputs } from '@mysten/sui/transactions';
 import { bcs } from '@mysten/sui/bcs';
 import { SuiClient } from '@mysten/sui/client';
 import {
@@ -24,9 +24,42 @@ import {
   ExecuteLaunchpadActionsConfig,
   ActionConfig,
   WorkflowTransaction,
+  ObjectIdOrRef,
+  isOwnedObjectRef,
+  isTxSharedObjectRef,
 } from './types';
 import { IntentExecutor, IntentExecutorPackages } from './intent-executor';
-// TransactionUtils may be used in future enhancements
+
+/**
+ * Helper to convert ObjectIdOrRef to transaction object argument.
+ * Uses Inputs.ObjectRef for owned objects and sharedObjectRef for shared objects
+ * to avoid RPC lookups (important for localnet where indexing may lag).
+ */
+function txObject(tx: Transaction, input: ObjectIdOrRef) {
+  if (isTxSharedObjectRef(input)) {
+    const sharedVersion =
+      typeof input.initialSharedVersion === 'string'
+        ? input.initialSharedVersion
+        : String(input.initialSharedVersion);
+    return tx.object(
+      Inputs.SharedObjectRef({
+        objectId: input.objectId,
+        initialSharedVersion: sharedVersion,
+        mutable: input.mutable,
+      })
+    );
+  }
+  if (isOwnedObjectRef(input)) {
+    return tx.object(
+      Inputs.ObjectRef({
+        objectId: input.objectId,
+        version: typeof input.version === 'string' ? input.version : String(input.version),
+        digest: input.digest,
+      })
+    );
+  }
+  return tx.object(input);
+}
 
 /**
  * Package IDs required for launchpad workflow
@@ -221,9 +254,9 @@ export class LaunchpadWorkflow {
       target: stageTarget,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
-        tx.object(config.raiseId),
+        txObject(tx, config.raiseId),
         tx.object(packageRegistryId),
-        tx.object(config.creatorCapId),
+        txObject(tx, config.creatorCapId),
         builder,
         tx.object(clockId),
       ],
@@ -293,6 +326,7 @@ export class LaunchpadWorkflow {
             tx.pure.u64(action.assetAmount),
             tx.pure.u64(action.stableAmount),
             tx.pure.u64(action.feeBps),
+            tx.pure.u64(action.launchFeeDurationMs ?? 0n),
           ],
         });
         break;
@@ -488,6 +522,16 @@ export class LaunchpadWorkflow {
         });
         break;
 
+      case 'deposit_from_resources':
+        // Deposit coins from executable_resources into temporary_deposits vault
+        // Use crank_temporary_to_treasury to move to treasury afterward
+        tx.moveCall({
+          target: `${accountActionsPackageId}::vault_init_actions::add_deposit_from_resources_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
+          arguments: [builder, tx.pure.string(action.resourceName)],
+        });
+        break;
+
       case 'disable_currency':
         tx.moveCall({
           target: `${accountActionsPackageId}::currency_init_actions::add_disable_spec`,
@@ -539,8 +583,8 @@ export class LaunchpadWorkflow {
    * Lock intents and start the raise (prevents further modifications)
    */
   lockIntentsAndStart(
-    raiseId: string,
-    creatorCapId: string,
+    raiseId: ObjectIdOrRef,
+    creatorCapId: ObjectIdOrRef,
     assetType: string,
     stableType: string
   ): WorkflowTransaction {
@@ -551,7 +595,7 @@ export class LaunchpadWorkflow {
     tx.moveCall({
       target: `${futarchyFactoryPackageId}::launchpad::lock_intents_and_start_raise`,
       typeArguments: [assetType, stableType],
-      arguments: [tx.object(raiseId), tx.object(creatorCapId)],
+      arguments: [txObject(tx, raiseId), txObject(tx, creatorCapId)],
     });
 
     return {
@@ -590,7 +634,7 @@ export class LaunchpadWorkflow {
       target: `${futarchyFactoryPackageId}::launchpad::contribute`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
-        tx.object(config.raiseId),
+        txObject(tx, config.raiseId),
         tx.sharedObjectRef({
           objectId: factoryId,
           initialSharedVersion: factorySharedVersion,
@@ -630,7 +674,7 @@ export class LaunchpadWorkflow {
     tx.moveCall({
       target: `${futarchyFactoryPackageId}::launchpad::settle_raise`,
       typeArguments: [config.assetType, config.stableType],
-      arguments: [tx.object(config.raiseId), tx.object(clockId)],
+      arguments: [txObject(tx, config.raiseId), tx.object(clockId)],
     });
 
     // 2. Begin DAO creation
@@ -638,7 +682,7 @@ export class LaunchpadWorkflow {
       target: `${futarchyFactoryPackageId}::launchpad::begin_dao_creation`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
-        tx.object(config.raiseId),
+        txObject(tx, config.raiseId),
         tx.object(factoryId),
         tx.object(packageRegistryId),
         tx.object(clockId),
@@ -650,7 +694,7 @@ export class LaunchpadWorkflow {
       target: `${futarchyFactoryPackageId}::launchpad::finalize_and_share_dao`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
-        tx.object(config.raiseId),
+        txObject(tx, config.raiseId),
         unsharedDao,
         tx.object(packageRegistryId),
         tx.object(clockId),
@@ -709,6 +753,8 @@ export class LaunchpadWorkflow {
             return { action: 'transfer_coin' as const, coinType: at.coinType };
           case 'deposit':
             return { action: 'deposit' as const, coinType: at.coinType };
+          case 'deposit_from_resources':
+            return { action: 'deposit_from_resources' as const, coinType: at.coinType };
           default:
             throw new Error(`Unknown action type: ${(at as { type?: string }).type}`);
         }
@@ -724,7 +770,7 @@ export class LaunchpadWorkflow {
    * Claim tokens from a completed raise
    */
   claimTokens(
-    raiseId: string,
+    raiseId: ObjectIdOrRef,
     assetType: string,
     stableType: string,
     clockId?: string
@@ -737,7 +783,7 @@ export class LaunchpadWorkflow {
     tx.moveCall({
       target: `${futarchyFactoryPackageId}::launchpad::claim_tokens`,
       typeArguments: [assetType, stableType],
-      arguments: [tx.object(raiseId), tx.object(clock)],
+      arguments: [txObject(tx, raiseId), tx.object(clock)],
     });
 
     return {
@@ -756,6 +802,11 @@ export class LaunchpadWorkflow {
    * This combines createRaise + stageActions (success) + stageActions (failure)
    * into a single transaction when possible, or returns multiple transactions
    * if they must be sequential.
+   *
+   * @param raiseConfig - Configuration for the raise
+   * @param successActions - Actions to execute on raise success
+   * @param failureActions - Actions to execute on raise failure
+   * @returns Object with transaction builders that accept ObjectIdOrRef (string or full ObjectRef)
    */
   createRaiseWithActions(
     raiseConfig: CreateRaiseConfig,
@@ -764,13 +815,13 @@ export class LaunchpadWorkflow {
     _creatorAddress?: string // Reserved for future use
   ): {
     createTx: WorkflowTransaction;
-    stageSuccessTx: (raiseId: string, creatorCapId: string) => WorkflowTransaction;
-    stageFailureTx: (raiseId: string, creatorCapId: string) => WorkflowTransaction;
-    lockTx: (raiseId: string, creatorCapId: string) => WorkflowTransaction;
+    stageSuccessTx: (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) => WorkflowTransaction;
+    stageFailureTx: (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) => WorkflowTransaction;
+    lockTx: (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) => WorkflowTransaction;
   } {
     const createTx = this.createRaise(raiseConfig);
 
-    const stageSuccessTx = (raiseId: string, creatorCapId: string) =>
+    const stageSuccessTx = (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) =>
       this.stageActions({
         raiseId,
         creatorCapId,
@@ -780,7 +831,7 @@ export class LaunchpadWorkflow {
         actions: successActions,
       });
 
-    const stageFailureTx = (raiseId: string, creatorCapId: string) =>
+    const stageFailureTx = (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) =>
       this.stageActions({
         raiseId,
         creatorCapId,
@@ -790,7 +841,7 @@ export class LaunchpadWorkflow {
         actions: failureActions,
       });
 
-    const lockTx = (raiseId: string, creatorCapId: string) =>
+    const lockTx = (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) =>
       this.lockIntentsAndStart(
         raiseId,
         creatorCapId,

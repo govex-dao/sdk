@@ -26,6 +26,7 @@ export interface ExecuteConfig {
     showObjectChanges?: boolean;
     showEvents?: boolean;
     dryRun?: boolean; // If true, only dry run. If false, actually execute
+    suppressErrors?: boolean; // If true, don't print error details (useful for expected failures in tests)
 }
 
 // ===== Utilities =====
@@ -286,11 +287,13 @@ export async function executeTransaction(
             }
         }
     } catch (error) {
-        console.error('\n❌ Transaction failed:', error);
+        if (!config.suppressErrors) {
+            console.error('\n❌ Transaction failed:', error);
 
-        // Try to print more details if available
-        if ((error as any).cause?.effects?.status) {
-            console.error('\nStatus:', JSON.stringify((error as any).cause.effects.status, null, 2));
+            // Try to print more details if available
+            if ((error as any).cause?.effects?.status) {
+                console.error('\nStatus:', JSON.stringify((error as any).cause.effects.status, null, 2));
+            }
         }
 
         throw error;
@@ -379,6 +382,47 @@ export async function waitForTransaction(sdk: FutarchySDK, digest: string): Prom
     return result;
 }
 
+/**
+ * Wait for objects to be indexed and available on RPC
+ * Useful for localnet where objects may take a moment to be visible
+ */
+export async function waitForObjects(
+    sdk: FutarchySDK,
+    objectIds: string[],
+    maxAttempts: number = 30,
+    delayMs: number = 500
+): Promise<void> {
+    console.log(`\n⏳ Waiting for ${objectIds.length} objects to be indexed...`);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const results = await sdk.client.multiGetObjects({
+                ids: objectIds,
+                options: { showContent: false }
+            });
+
+            const allExist = results.every(r => r.data !== null && r.data !== undefined);
+
+            if (allExist) {
+                console.log(`✅ All objects are now indexed (attempt ${attempt})`);
+                return;
+            }
+
+            const missing = results.filter(r => !r.data).length;
+            process.stdout.write(`.`);
+
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        } catch (error) {
+            // Objects may throw errors if they don't exist yet
+            process.stdout.write(`x`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+
+    console.log('');
+    throw new Error(`Objects not found after ${maxAttempts} attempts: ${objectIds.join(', ')}`);
+}
+
 // ===== Export everything =====
 export default {
     getActiveAddress,
@@ -390,4 +434,5 @@ export default {
     executeTransactionWithKeypair,
     printTransaction,
     waitForTransaction,
+    waitForObjects,
 };

@@ -6,9 +6,39 @@
  * @module workflows/action-registry
  */
 
-import { Transaction, TransactionResult } from '@mysten/sui/transactions';
-import { IntentExecutionConfig } from './types/index';
+import { Transaction, TransactionResult, Inputs } from '@mysten/sui/transactions';
+import { IntentExecutionConfig, ObjectIdOrRef, isOwnedObjectRef, isTxSharedObjectRef } from './types/index';
 import type { IntentExecutorPackages } from './intent-executor';
+
+/**
+ * Helper to convert ObjectIdOrRef to transaction object argument.
+ * Uses Inputs.ObjectRef for owned objects and sharedObjectRef for shared objects.
+ */
+function txObject(tx: Transaction, input: ObjectIdOrRef) {
+  if (isTxSharedObjectRef(input)) {
+    const sharedVersion =
+      typeof input.initialSharedVersion === 'string'
+        ? input.initialSharedVersion
+        : String(input.initialSharedVersion);
+    return tx.object(
+      Inputs.SharedObjectRef({
+        objectId: input.objectId,
+        initialSharedVersion: sharedVersion,
+        mutable: input.mutable,
+      })
+    );
+  }
+  if (isOwnedObjectRef(input)) {
+    return tx.object(
+      Inputs.ObjectRef({
+        objectId: input.objectId,
+        version: typeof input.version === 'string' ? input.version : String(input.version),
+        digest: input.digest,
+      })
+    );
+  }
+  return tx.object(input);
+}
 
 /**
  * Action parameters - all possible fields from any action type
@@ -90,7 +120,7 @@ registerAction('create_stream', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::vault::do_init_create_stream`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), tx.object(typeContext.clockId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), tx.object(typeContext.clockId), versionWitness, intentWitness],
   });
 });
 
@@ -99,7 +129,7 @@ registerAction('cancel_stream', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::vault::do_cancel_stream`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), tx.object(typeContext.clockId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), tx.object(typeContext.clockId), versionWitness, intentWitness],
   });
 });
 
@@ -112,7 +142,7 @@ registerAction('deposit', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::vault::do_init_deposit`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -121,7 +151,7 @@ registerAction('spend', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::vault::do_spend`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -130,7 +160,7 @@ registerAction('approve_coin_type', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::vault::do_approve_coin_type`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -139,7 +169,7 @@ registerAction('remove_approved_coin_type', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::vault::do_remove_approved_coin_type`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -152,7 +182,7 @@ registerAction('mint', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::currency::do_init_mint`,
     typeArguments: [typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -161,7 +191,7 @@ registerAction('burn', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::currency::do_init_burn`,
     typeArguments: [typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -170,7 +200,7 @@ registerAction('disable_currency', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::currency::do_disable`,
     typeArguments: [typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -179,7 +209,7 @@ registerAction('update_currency', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::currency::do_update`,
     typeArguments: [typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -188,7 +218,7 @@ registerAction('return_treasury_cap', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::currency::do_init_remove_treasury_cap`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -208,7 +238,7 @@ registerAction('return_metadata', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::currency::do_init_remove_metadata`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, keyType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), metadataKey, versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), metadataKey, versionWitness, intentWitness],
   });
 });
 
@@ -261,7 +291,7 @@ registerAction('upgrade_package', (ctx) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::package_upgrade::do_upgrade`,
     typeArguments: [typeContext.outcomeType, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -270,7 +300,7 @@ registerAction('commit_upgrade', (ctx) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::package_upgrade::do_commit_dao_only`,
     typeArguments: [typeContext.outcomeType, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -279,7 +309,7 @@ registerAction('restrict_upgrade', (ctx) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::package_upgrade::do_restrict`,
     typeArguments: [typeContext.outcomeType, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -288,7 +318,7 @@ registerAction('create_commit_cap', (ctx) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::package_upgrade::do_create_commit_cap`,
     typeArguments: [typeContext.outcomeType, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -301,7 +331,7 @@ registerAction('borrow_access', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::access_control::do_borrow`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, action.capType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -310,7 +340,7 @@ registerAction('return_access', (ctx, action) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::access_control::do_return`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, action.capType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
   });
 });
 
@@ -323,7 +353,7 @@ registerAction('memo', (ctx) => {
   tx.moveCall({
     target: `${packages.accountActionsPackageId}::memo::do_emit_memo`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), intentWitness, tx.object(typeContext.clockId)],
+    arguments: [executable, txObject(tx, config.accountId), intentWitness, tx.object(typeContext.clockId)],
   });
 });
 
@@ -363,7 +393,7 @@ for (const actionName of configActionNames) {
     tx.moveCall({
       target: `${packages.futarchyActionsPackageId}::config_actions::${configActionTargets[actionName]}`,
       typeArguments: [typeContext.outcomeType, typeContext.witnessType],
-      arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+      arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
     });
   });
 }
@@ -377,7 +407,7 @@ registerAction('set_quotas', (ctx) => {
   tx.moveCall({
     target: `${packages.futarchyActionsPackageId}::quota_actions::do_set_quotas`,
     typeArguments: [typeContext.outcomeType, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
   });
 });
 
@@ -399,7 +429,7 @@ registerAction('create_pool_with_mint', (ctx, action) => {
     ],
     arguments: [
       executable,
-      tx.object(config.accountId),
+      txObject(tx, config.accountId),
       tx.object(packages.packageRegistryId),
       tx.object(action.lpTreasuryCapId!),
       tx.object(action.lpMetadataId!),
@@ -422,7 +452,7 @@ registerAction('update_pool_fee', (ctx, action) => {
     ],
     arguments: [
       executable,
-      tx.object(config.accountId),
+      txObject(tx, config.accountId),
       tx.object(action.poolId!),
       versionWitness,
     ],
@@ -438,7 +468,7 @@ registerAction('create_dissolution_capability', (ctx, action) => {
   tx.moveCall({
     target: `${packages.futarchyActionsPackageId}::dissolution_actions::do_create_dissolution_capability`,
     typeArguments: [action.assetType!, typeContext.outcomeType, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
   });
 });
 
@@ -470,7 +500,7 @@ for (const actionName of packageRegistryActionNames) {
     tx.moveCall({
       target: `${packages.futarchyGovernanceActionsPackageId}::package_registry_actions::${packageRegistryActionTargets[actionName]}`,
       typeArguments: [typeContext.outcomeType, typeContext.witnessType],
-      arguments: [executable, tx.object(config.accountId), versionWitness, intentWitness, tx.object(packages.packageRegistryId)],
+      arguments: [executable, txObject(tx, config.accountId), versionWitness, intentWitness, tx.object(packages.packageRegistryId)],
     });
   });
 }
@@ -505,7 +535,7 @@ for (const actionName of protocolAdminActionNames) {
     tx.moveCall({
       target: `${packages.futarchyGovernanceActionsPackageId}::protocol_admin_actions::${protocolAdminActionTargets[actionName]}`,
       typeArguments: [typeContext.outcomeType, typeContext.witnessType],
-      arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+      arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
     });
   });
 }
@@ -519,7 +549,7 @@ registerAction('add_stable_type', (ctx, action) => {
   tx.moveCall({
     target: `${packages.futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_add_stable_type`,
     typeArguments: [typeContext.outcomeType, typeContext.witnessType, action.stableType!],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
   });
 });
 
@@ -528,7 +558,7 @@ registerAction('remove_stable_type', (ctx, action) => {
   tx.moveCall({
     target: `${packages.futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_remove_stable_type`,
     typeArguments: [typeContext.outcomeType, typeContext.witnessType, action.stableType!],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
   });
 });
 
@@ -541,7 +571,7 @@ registerAction('withdraw_fees_to_treasury', (ctx, action) => {
   tx.moveCall({
     target: `${packages.futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_withdraw_fees_to_treasury`,
     typeArguments: [typeContext.configType, typeContext.outcomeType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
   });
 });
 
@@ -565,7 +595,7 @@ for (const actionName of coinFeeActionNames) {
     tx.moveCall({
       target: `${packages.futarchyGovernanceActionsPackageId}::protocol_admin_actions::${coinFeeActionTargets[actionName]}`,
       typeArguments: [typeContext.outcomeType, typeContext.witnessType, action.coinType!],
-      arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+      arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
     });
   });
 }
@@ -579,7 +609,7 @@ registerAction('create_oracle_grant', (ctx, action) => {
   tx.moveCall({
     target: `${packages.futarchyOracleActionsPackageId}::oracle_actions::do_create_oracle_grant`,
     typeArguments: [action.assetType!, action.stableType!, typeContext.outcomeType, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
   });
 });
 
@@ -588,6 +618,6 @@ registerAction('cancel_oracle_grant', (ctx, action) => {
   tx.moveCall({
     target: `${packages.futarchyOracleActionsPackageId}::oracle_actions::do_cancel_grant`,
     typeArguments: [action.assetType!, action.stableType!, typeContext.outcomeType, typeContext.witnessType],
-    arguments: [executable, tx.object(config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
+    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness, tx.object(typeContext.clockId)],
   });
 });

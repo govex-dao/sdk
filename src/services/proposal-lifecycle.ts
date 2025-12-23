@@ -32,7 +32,6 @@ import { TransactionUtils } from './transaction';
  *   governancePackageId,
  *   proposalId,
  *   escrowId,
- *   marketStateId,
  *   spotPoolId,
  *   assetType,
  *   stableType,
@@ -69,7 +68,6 @@ export class ProposalLifecycleOperations {
    *   governancePackageId,
    *   proposalId,
    *   escrowId,
-   *   marketStateId,
    *   spotPoolId,
    *   assetType,
    *   stableType,
@@ -83,7 +81,6 @@ export class ProposalLifecycleOperations {
       governancePackageId: string;
       proposalId: string;
       escrowId: string;
-      marketStateId: string;
       spotPoolId: string;
       assetType: string;
       stableType: string;
@@ -101,7 +98,6 @@ export class ProposalLifecycleOperations {
       arguments: [
         tx.object(config.proposalId), // proposal
         tx.object(config.escrowId), // escrow
-        tx.object(config.marketStateId), // market_state
         tx.object(config.spotPoolId), // spot_pool
         tx.object(config.clock || '0x6'), // clock
       ],
@@ -237,7 +233,6 @@ export class ProposalLifecycleOperations {
       governancePackageId: string;
       proposalId: string;
       escrowId: string;
-      marketStateId: string;
       spotPoolId: string;
       assetType: string;
       stableType: string;
@@ -255,7 +250,6 @@ export class ProposalLifecycleOperations {
       arguments: [
         tx.object(config.proposalId), // proposal
         tx.object(config.escrowId), // escrow
-        tx.object(config.marketStateId), // market_state
         tx.object(config.spotPoolId), // spot_pool
         tx.object(config.clock || '0x6'), // clock
       ],

@@ -11,13 +11,56 @@
  * @module workflows/intent-executor
  */
 
-import { Transaction } from '@mysten/sui/transactions';
+import { Transaction, Inputs } from '@mysten/sui/transactions';
 import { SuiClient } from '@mysten/sui/client';
 import {
   IntentExecutionConfig,
   IntentActionConfig,
   WorkflowTransaction,
+  ObjectIdOrRef,
+  isOwnedObjectRef,
+  isTxSharedObjectRef,
 } from './types';
+
+/**
+ * Helper to convert ObjectIdOrRef to transaction object argument.
+ * Uses Inputs.ObjectRef for owned objects and sharedObjectRef for shared objects.
+ */
+function txObject(tx: Transaction, input: ObjectIdOrRef) {
+  if (isTxSharedObjectRef(input)) {
+    const sharedVersion =
+      typeof input.initialSharedVersion === 'string'
+        ? input.initialSharedVersion
+        : String(input.initialSharedVersion);
+    return tx.object(
+      Inputs.SharedObjectRef({
+        objectId: input.objectId,
+        initialSharedVersion: sharedVersion,
+        mutable: input.mutable,
+      })
+    );
+  }
+  if (isOwnedObjectRef(input)) {
+    return tx.object(
+      Inputs.ObjectRef({
+        objectId: input.objectId,
+        version: typeof input.version === 'string' ? input.version : String(input.version),
+        digest: input.digest,
+      })
+    );
+  }
+  return tx.object(input);
+}
+
+/**
+ * Helper to get the object ID from an ObjectIdOrRef
+ */
+function getObjectId(input: ObjectIdOrRef): string {
+  if (isOwnedObjectRef(input) || isTxSharedObjectRef(input)) {
+    return input.objectId;
+  }
+  return input;
+}
 
 /**
  * Package IDs required for intent execution
@@ -127,8 +170,8 @@ export class IntentExecutor {
     const executable = tx.moveCall({
       target: `${futarchyFactoryPackageId}::dao_init_executor::begin_execution_for_launchpad`,
       arguments: [
-        tx.pure.id(config.raiseId),
-        tx.object(config.accountId),
+        tx.pure.id(getObjectId(config.raiseId!)),
+        txObject(tx, config.accountId),
         tx.object(packageRegistryId),
         tx.object(clockId),
       ],
@@ -159,7 +202,7 @@ export class IntentExecutor {
     tx.moveCall({
       target: `${futarchyFactoryPackageId}::dao_init_executor::finalize_execution`,
       arguments: [
-        tx.object(config.accountId),
+        txObject(tx, config.accountId),
         executable,
         tx.object(clockId),
       ],
@@ -195,10 +238,10 @@ export class IntentExecutor {
       target: `${futarchyGovernancePackageId}::ptb_executor::begin_execution_with_escrow`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
-        tx.object(config.accountId),
+        txObject(tx, config.accountId),
         tx.object(packageRegistryId),
-        tx.object(config.proposalId),
-        tx.object(config.escrowId),
+        txObject(tx, config.proposalId!),
+        txObject(tx, config.escrowId!),
         tx.object(clockId),
       ],
     });
@@ -229,9 +272,9 @@ export class IntentExecutor {
       target: `${futarchyGovernancePackageId}::ptb_executor::finalize_execution`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
-        tx.object(config.accountId),
+        txObject(tx, config.accountId),
         tx.object(packageRegistryId),
-        tx.object(config.proposalId),
+        txObject(tx, config.proposalId!),
         executable,
         tx.object(clockId),
       ],
@@ -280,7 +323,7 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             tx.object(clockId),
             versionWitness,
@@ -298,7 +341,7 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             tx.object(clockId),
             versionWitness,
@@ -318,7 +361,7 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -332,7 +375,7 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -346,7 +389,7 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -360,7 +403,23 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
+            tx.object(packageRegistryId),
+            versionWitness,
+            intentWitness,
+          ],
+        });
+        break;
+
+      case 'deposit_from_resources':
+        // Deposits coin from executable_resources into "temporary_deposits" vault
+        // The vault is hardcoded for security - prevents manipulation attacks
+        tx.moveCall({
+          target: `${accountActionsPackageId}::vault::do_init_deposit_from_resources`,
+          typeArguments: [configType, outcomeType, action.coinType, witnessType],
+          arguments: [
+            executable,
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -378,7 +437,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -394,7 +453,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -408,7 +467,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -422,7 +481,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -436,7 +495,7 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -471,7 +530,7 @@ export class IntentExecutor {
           ],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             metadataKey,
             versionWitness,
@@ -548,7 +607,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -563,7 +622,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -577,7 +636,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -591,7 +650,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -608,7 +667,7 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, action.capType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -622,7 +681,7 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, action.capType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -640,7 +699,7 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             intentWitness,
             tx.object(clockId),
           ],
@@ -656,7 +715,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -671,7 +730,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -686,7 +745,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -701,7 +760,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -716,7 +775,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -731,7 +790,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -746,7 +805,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -761,7 +820,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -776,7 +835,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -791,7 +850,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -809,7 +868,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -834,7 +893,7 @@ export class IntentExecutor {
           ],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             tx.object(action.lpTreasuryCapId),
             tx.object(action.lpMetadataId),
@@ -860,7 +919,7 @@ export class IntentExecutor {
           typeArguments: [action.assetType, outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -878,7 +937,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -893,7 +952,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -908,7 +967,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -923,7 +982,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -938,7 +997,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -953,7 +1012,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -971,7 +1030,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -986,7 +1045,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1001,7 +1060,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType, action.stableType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1016,7 +1075,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType, action.stableType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1031,7 +1090,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1046,7 +1105,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1061,7 +1120,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1076,7 +1135,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1091,7 +1150,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1106,7 +1165,7 @@ export class IntentExecutor {
           typeArguments: [configType, outcomeType, action.coinType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1121,7 +1180,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType, action.coinType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1136,7 +1195,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType, action.coinType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1151,7 +1210,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType, action.coinType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1166,7 +1225,7 @@ export class IntentExecutor {
           typeArguments: [outcomeType, witnessType, action.coinType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1184,7 +1243,7 @@ export class IntentExecutor {
           typeArguments: [action.assetType, action.stableType, outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,
@@ -1199,7 +1258,7 @@ export class IntentExecutor {
           typeArguments: [action.assetType, action.stableType, outcomeType, witnessType],
           arguments: [
             executable,
-            tx.object(config.accountId),
+            txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             versionWitness,
             intentWitness,

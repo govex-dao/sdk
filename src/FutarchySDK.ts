@@ -317,12 +317,13 @@ class FeeManagerServiceExtended extends FeeManagerService {
       daoCreationFee: bigint;
       proposalFeePerOutcome: bigint;
     },
-    feeAdminCapId: string
+    feeAdminCapId: string,
+    clock: string = '0x6'
   ): Transaction {
     const tx = new Transaction();
 
     tx.moveCall({
-      target: `${this._packages.futarchyMarketsCore}::fee::add_coin_fee_config`,
+      target: `${this._packages.futarchyMarketsCore}::fee::add_coin_fee_config_entry`,
       typeArguments: [config.coinType],
       arguments: [
         tx.object(this._sharedObjects.feeManager.id),
@@ -330,6 +331,7 @@ class FeeManagerServiceExtended extends FeeManagerService {
         tx.pure.u8(config.decimals),
         tx.pure.u64(config.daoCreationFee),
         tx.pure.u64(config.proposalFeePerOutcome),
+        tx.object(clock),
       ],
     });
 

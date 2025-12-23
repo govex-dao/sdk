@@ -375,7 +375,6 @@ export class TransactionBuilder {
    * @param outcomeIndex - Outcome index (0 = Reject, 1+ = Accept)
    * @param daoAccountId - DAO account ID for whitelist validation
    * @param registryId - Package registry ID for whitelist validation
-   * @param accountDepsId - Account deps table ID for whitelist validation
    * @param maxActionsPerOutcome - Max actions per outcome (default 10)
    */
   stageToProposal(
@@ -385,7 +384,6 @@ export class TransactionBuilder {
     outcomeIndex: number,
     daoAccountId: string,
     registryId: string,
-    accountDepsId: string,
     maxActionsPerOutcome?: number
   ): this {
     this.ensureBuilder();
@@ -412,7 +410,6 @@ export class TransactionBuilder {
         this.tx.pure.u64(maxActionsPerOutcome || 10),
         this.tx.object(daoAccountId),    // account for whitelist check
         this.tx.object(registryId),       // PackageRegistry
-        this.tx.object(accountDepsId),    // Table<address, DepInfo>
       ],
     });
 
@@ -491,6 +488,7 @@ export class TransactionBuilder {
             this.tx.pure.u64(action.assetAmount),
             this.tx.pure.u64(action.stableAmount),
             this.tx.pure.u64(action.feeBps),
+            this.tx.pure.u64(action.launchFeeDurationMs ?? 0n),
           ],
         });
         break;

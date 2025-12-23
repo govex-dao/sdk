@@ -4,219 +4,67 @@
  * Full end-to-end integration test of the launchpad two-outcome flow.
  * This test can simulate BOTH success and failure paths.
  *
+ * PREREQUISITES:
+ *   npx tsx scripts/protocol-setup.ts   # Run ONCE to set up test coins
+ *
  * USAGE:
  *   npx tsx scripts/launchpad-e2e.ts         # Default: success path
  *   npx tsx scripts/launchpad-e2e.ts success # Explicit success
  *   npx tsx scripts/launchpad-e2e.ts failure # Test failure path
  *
  * SUCCESS PATH (default):
- *   1. Creates fresh test coins
- *   2. Registers them in the system
- *   3. Creates a raise
- *   4. Stages SUCCESS init actions (stream creation)
- *   5. Stages FAILURE init actions (return caps)
- *   6. Locks intents (prevents modifications)
- *   7. Contributes to MEET minimum (2 TSTABLE > 1 TSTABLE)
- *   8. Completes the raise → STATE_SUCCESSFUL
- *   9. JIT converts success_specs → Intent → executes stream
- *   10. Creates AMM pool and claims tokens
+ *   1. Creates a raise
+ *   2. Stages SUCCESS init actions (stream creation)
+ *   3. Stages FAILURE init actions (return caps)
+ *   4. Locks intents (prevents modifications)
+ *   5. Contributes to MEET minimum (1500 TSTABLE > 1 TSTABLE)
+ *   6. Completes the raise → STATE_SUCCESSFUL
+ *   7. JIT converts success_specs → Intent → executes stream
+ *   8. Creates AMM pool and claims tokens
  *
  * FAILURE PATH:
- *   1-6. Same as success path
- *   7. Contributes BELOW minimum (0.5 TSTABLE < 1 TSTABLE)
- *   8. Completes the raise → STATE_FAILED
- *   9. JIT converts failure_specs → Intent → returns treasury cap & metadata
- *   10. Skips AMM pool and token claiming (not available for failed raises)
+ *   1-4. Same as success path
+ *   5. Contributes BELOW minimum (0.5 TSTABLE < 1 TSTABLE)
+ *   6. Completes the raise → STATE_FAILED
+ *   7. JIT converts failure_specs → Intent → returns treasury cap & metadata
+ *   8. Skips AMM pool and token claiming (not available for failed raises)
  *
  * This test demonstrates proper SDK usage with the LaunchpadWorkflow class.
  */
 
 import { Transaction } from "@mysten/sui/transactions";
-import { execSync } from "child_process";
-import * as fs from "fs";
-import * as path from "path";
 import { LaunchpadWorkflow } from "../src/workflows/launchpad-workflow";
 import { TransactionUtils } from "../src/services/transaction";
-import { PackageRegistryAdminOperations } from "../src/services/package-registry-admin";
 import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
 
-// Test coin with private TreasuryCap (for mainnet - only owner can mint)
-const testCoinSourcePrivate = (symbol: string, name: string) => `
-module test_coin::coin {
-    use sui::coin::{Self, TreasuryCap};
-    use sui::transfer;
-    use sui::tx_context::TxContext;
+// Import utilities from centralized test-utils
+import {
+  // Object reference utilities
+  getObjectRef,
+  getObjectRefById,
+  getObjId,
+  isLocalnet,
+  // Timing utilities
+  sleep,
+  TEST_CONFIG,
+  // Fixture loading
+  loadTestCoinsInfo,
+  saveDaoInfo,
+  // Logging
+  logSection,
+  logStep,
+  logSuccess,
+  logError,
+  // Types
+  type ObjectIdOrRef,
+  type TxSharedObjectRef,
+  type TestCoinsInfo,
+  type DaoInfo,
+} from "./test-utils";
 
-    public struct COIN has drop {}
-
-    fun init(witness: COIN, ctx: &mut TxContext) {
-        let (treasury, metadata) = coin::create_currency(
-            witness,
-            9,
-            b"${symbol}",
-            b"${name}",
-            b"Test coin for launchpad E2E testing",
-            option::none(),
-            ctx
-        );
-
-        // Transfer treasury and metadata to sender WITHOUT freezing (required for launchpad)
-        transfer::public_transfer(treasury, ctx.sender());
-        transfer::public_transfer(metadata, ctx.sender());
-    }
-
-    public entry fun mint(
-        treasury_cap: &mut TreasuryCap<COIN>,
-        amount: u64,
-        recipient: address,
-        ctx: &mut TxContext
-    ) {
-        let coin = coin::mint(treasury_cap, amount, ctx);
-        transfer::public_transfer(coin, recipient)
-    }
-}
-`;
-
-// Test coin with shared TreasuryCap (for devnet/testnet - anyone can mint for testing)
-const testCoinSourceShared = (symbol: string, name: string) => `
-module test_coin::coin {
-    use sui::coin::{Self, TreasuryCap};
-    use sui::transfer;
-    use sui::tx_context::TxContext;
-
-    public struct COIN has drop {}
-
-    fun init(witness: COIN, ctx: &mut TxContext) {
-        let (treasury, metadata) = coin::create_currency(
-            witness,
-            9,
-            b"${symbol}",
-            b"${name}",
-            b"Test coin for launchpad E2E testing",
-            option::none(),
-            ctx
-        );
-
-        // Share treasury cap so anyone can mint (for testing on devnet/testnet)
-        transfer::public_share_object(treasury);
-        transfer::public_transfer(metadata, ctx.sender());
-    }
-
-    public entry fun mint(
-        treasury_cap: &mut TreasuryCap<COIN>,
-        amount: u64,
-        recipient: address,
-        ctx: &mut TxContext
-    ) {
-        let coin = coin::mint(treasury_cap, amount, ctx);
-        transfer::public_transfer(coin, recipient)
-    }
-}
-`;
-
-// Determine which coin source to use based on network
-type NetworkType = "devnet" | "testnet" | "mainnet";
-const getTestCoinSource = (symbol: string, name: string, network: NetworkType) => {
-  // On mainnet, use private treasury cap (only owner can mint)
-  // On devnet/testnet, use shared treasury cap (anyone can mint for testing)
-  if (network === "mainnet") {
-    return testCoinSourcePrivate(symbol, name);
-  }
-  return testCoinSourceShared(symbol, name);
-};
-
-// Get the current network from environment or default to devnet
-const getCurrentNetwork = (): NetworkType => {
-  const network = process.env.SUI_NETWORK?.toLowerCase();
-  if (network === "mainnet") return "mainnet";
-  if (network === "testnet") return "testnet";
-  return "devnet";
-};
-
-async function createTestCoin(
-  name: string,
-  symbol: string,
-  network: NetworkType = getCurrentNetwork(),
-): Promise<{
-  packageId: string;
-  type: string;
-  treasuryCap: string;
-  metadata: string;
-  isSharedTreasuryCap: boolean;
-}> {
-  const isSharedTreasuryCap = network !== "mainnet";
-  console.log(`\n📦 Publishing ${name} test coin (network: ${network}, shared treasury: ${isSharedTreasuryCap})...`);
-
-  const tmpDir = `/tmp/test_coin_${symbol.toLowerCase()}`;
-  execSync(`rm -rf ${tmpDir} && mkdir -p ${tmpDir}/sources`, {
-    encoding: "utf8",
-  });
-
-  fs.writeFileSync(
-    `${tmpDir}/Move.toml`,
-    `
-[package]
-name = "test_coin"
-edition = "2024.beta"
-
-[dependencies]
-Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
-
-[addresses]
-test_coin = "0x0"
-`,
-  );
-
-  fs.writeFileSync(`${tmpDir}/sources/coin.move`, getTestCoinSource(symbol, name, network));
-
-  console.log("   Building...");
-  execSync(`cd ${tmpDir} && sui move build 2>&1 | grep -v "warning"`, {
-    encoding: "utf8",
-  });
-
-  console.log("   Publishing...");
-  const result = execSync(
-    `cd ${tmpDir} && sui client publish --gas-budget 100000000 --json`,
-    { encoding: "utf8" },
-  );
-  const parsed = JSON.parse(result);
-
-  if (parsed.effects.status.status !== "success") {
-    throw new Error(
-      `Failed to publish ${name}: ${parsed.effects.status.error}`,
-    );
-  }
-
-  const published = parsed.objectChanges.find(
-    (c: any) => c.type === "published",
-  );
-  const packageId = published.packageId;
-
-  const created = parsed.objectChanges.filter((c: any) => c.type === "created");
-  const treasuryCap = created.find((c: any) =>
-    c.objectType.includes("TreasuryCap"),
-  );
-  const metadata = created.find((c: any) =>
-    c.objectType.includes("CoinMetadata"),
-  );
-
-  const coinType = `${packageId}::coin::COIN`;
-
-  console.log(`   ✅ Published!`);
-  console.log(`      Package: ${packageId}`);
-  console.log(`      Type: ${coinType}`);
-  console.log(`      TreasuryCap: ${treasuryCap.objectId}`);
-  console.log(`      Metadata: ${metadata.objectId}`);
-  console.log(`      Shared TreasuryCap: ${isSharedTreasuryCap}`);
-
-  return {
-    packageId,
-    type: coinType,
-    treasuryCap: treasuryCap.objectId,
-    metadata: metadata.objectId,
-    isSharedTreasuryCap,
-  };
-}
+// ============================================================================
+// Main Test
+// ============================================================================
 
 async function main() {
   // Parse command line arguments
@@ -238,175 +86,24 @@ async function main() {
 
   console.log(`\n👤 Active Address: ${sender}`);
 
-  // Register packages in PackageRegistry (required for deps validation)
-  console.log("\n" + "=".repeat(80));
-  console.log("PRE-STEP 1: REGISTER PACKAGES IN PACKAGE REGISTRY");
-  console.log("=".repeat(80));
-  try {
-    execSync("npx tsx scripts/register-new-packages.ts", {
-      cwd: "/Users/admin/govex/sdk",
-      encoding: "utf8",
-      stdio: "inherit",
-    });
-    console.log("✅ Package registration completed");
-  } catch (error: any) {
-    console.log(
-      "⚠️  Package registration failed (may already be registered):",
-      error.message,
-    );
-  }
-
-  // Add factory package to fee exempt list (so factory can create accounts without fees)
-  console.log("\n" + "=".repeat(80));
-  console.log("PRE-STEP 2: ADD FACTORY TO FEE EXEMPT PACKAGES");
-  console.log("=".repeat(80));
-  try {
-    // Load AccountProtocol deployment for registry and admin cap
-    const accountProtocolPath = path.join(__dirname, "../../packages/deployments-processed/AccountProtocol.json");
-    const accountProtocolDeployment = JSON.parse(fs.readFileSync(accountProtocolPath, "utf8"));
-
-    const registryObj = accountProtocolDeployment.sharedObjects?.find((obj: any) => obj.name === "PackageRegistry");
-    const adminCapId = accountProtocolDeployment.adminCaps?.find((obj: any) => obj.name === "PackageAdminCap")?.objectId;
-    const protocolPkgId = accountProtocolDeployment.packageId;
-
-    // Load Factory deployment for package address
-    const factoryPath = path.join(__dirname, "../../packages/deployments-processed/futarchy_factory.json");
-    const factoryDeployment = JSON.parse(fs.readFileSync(factoryPath, "utf8"));
-    const factoryPkgId = factoryDeployment.packageId;
-
-    if (registryObj?.objectId && adminCapId && protocolPkgId && factoryPkgId) {
-      console.log(`PackageRegistry: ${registryObj.objectId}`);
-      console.log(`PackageAdminCap: ${adminCapId}`);
-      console.log(`Factory Package: ${factoryPkgId}`);
-
-      // Use SDK service for clean API
-      const registryAdmin = new PackageRegistryAdminOperations(
-        sdk.client,
-        protocolPkgId,
-        registryObj.objectId,
-        registryObj.initialSharedVersion
-      );
-
-      const exemptTx = registryAdmin.addFeeExemptPackage(adminCapId, factoryPkgId);
-
-      await executeTransaction(sdk, exemptTx, {
-        network: "devnet",
-        dryRun: false,
-        showEffects: false,
-      });
-      console.log("✅ Factory package added to fee exempt list");
-    } else {
-      console.log("⚠️  Missing deployment data for fee exemption setup");
-      console.log(`   Registry: ${registryObj?.objectId || "missing"}`);
-      console.log(`   AdminCap: ${adminCapId || "missing"}`);
-      console.log(`   Factory: ${factoryPkgId || "missing"}`);
-    }
-  } catch (error: any) {
-    // Check if already exempt
-    const isAlreadyExempt = error.message?.includes("EPackageAlreadyExempt") ||
-                           error.message?.includes("}, 10)"); // Abort code 10
-    if (isAlreadyExempt) {
-      console.log("✅ Factory package already fee exempt");
-    } else {
-      console.log("⚠️  Fee exemption setup failed:", error.message);
-    }
-  }
-
-  // Step 0: Create fresh test coins
-  console.log("\n" + "=".repeat(80));
-  console.log("STEP 0: CREATE TEST COINS");
-  console.log("=".repeat(80));
-
-  const currentNetwork = getCurrentNetwork();
-  const testCoins = {
-    // Asset coin MUST have private TreasuryCap - launchpad takes ownership of it
-    asset: await createTestCoin("Test Asset", "TASSET", "mainnet"), // Force private treasury
-    // Stable coin can have shared TreasuryCap on devnet/testnet for easy minting
-    stable: await createTestCoin("Test Stable", "TSTABLE", currentNetwork),
-    // LP coin MUST have private TreasuryCap - pool takes ownership of it for minting
-    lp: await createTestCoin("GOVEX_LP_TOKEN", "GOVEX_LP_TOKEN", "mainnet"), // Force private treasury
-  };
-
-  console.log("\n✅ Test coins created (asset, stable, lp)!");
-
-  // Step 1: Register test stable coin for fee payments
-  console.log("\n" + "=".repeat(80));
-  console.log("STEP 1: REGISTER TEST STABLE COIN FOR FEE PAYMENTS");
-  console.log("=".repeat(80));
-
-  const feeManagerDeployment = sdk.deployments.getPackage("futarchy_markets_core");
-  const feeAdminCapId = feeManagerDeployment?.adminCaps?.find((obj: any) =>
-    obj.name === "FeeAdminCap"
-  )?.objectId;
-
-  if (!feeAdminCapId) {
+  // Load test coins from protocol setup
+  console.log("\n📦 Loading test coins from protocol-setup...");
+  const testCoins = loadTestCoinsInfo();
+  if (!testCoins) {
     throw new Error(
-      "FeeAdminCap not found in futarchy_markets_core deployment",
+      "Test coins not found.\n" +
+      "Please run protocol setup first:\n" +
+      "  npx tsx scripts/protocol-setup.ts"
     );
   }
+  console.log(`   Asset: ${testCoins.asset.type}`);
+  console.log(`   Stable: ${testCoins.stable.type}`);
+  console.log(`   LP: ${testCoins.lp.type}`);
+  logSuccess("Test coins loaded!");
 
-  console.log(`Using FeeAdminCap: ${feeAdminCapId}`);
-
-  try {
-    const registerFeeTx = sdk.feeManager.addCoinFeeConfig(
-      {
-        coinType: testCoins.stable.type,
-        decimals: 9,
-        daoCreationFee: 100_000_000n,
-        proposalFeePerOutcome: 10_000_000n,
-      },
-      feeAdminCapId,
-    );
-
-    await executeTransaction(sdk, registerFeeTx, {
-      network: "devnet",
-      dryRun: false,
-      showEffects: false,
-    });
-    console.log("✅ Test stable coin registered for fee payments");
-  } catch (error: any) {
-    console.log(
-      "✅ Test stable coin already registered for fee payments (or registration not needed)",
-    );
-  }
-
-  // Step 2: Register test stable coin type in Factory
+  // Step 1: Create raise using SDK workflow
   console.log("\n" + "=".repeat(80));
-  console.log("STEP 2: REGISTER TEST STABLE COIN IN FACTORY ALLOWLIST");
-  console.log("=".repeat(80));
-
-  const factoryDeployment = sdk.deployments.getPackage("futarchy_factory");
-  const factoryOwnerCapId = factoryDeployment?.adminCaps?.find((obj: any) =>
-    obj.name === "FactoryOwnerCap"
-  )?.objectId;
-
-  if (!factoryOwnerCapId) {
-    throw new Error("FactoryOwnerCap not found in futarchy_factory deployment");
-  }
-
-  console.log(`Using FactoryOwnerCap: ${factoryOwnerCapId}`);
-
-  try {
-    const registerFactoryTx = sdk.factoryAdmin.addAllowedStableType(
-      testCoins.stable.type,
-      factoryOwnerCapId,
-    );
-
-    await executeTransaction(sdk, registerFactoryTx, {
-      network: "devnet",
-      dryRun: false,
-      showEffects: false,
-    });
-    console.log("✅ Test stable coin registered in factory allowlist");
-  } catch (error: any) {
-    console.log(
-      "✅ Test stable coin already allowed in factory (or registration not needed)",
-    );
-  }
-
-  // Step 3: Create raise using SDK workflow
-  console.log("\n" + "=".repeat(80));
-  console.log("STEP 3: CREATE RAISE (using sdk.workflows.launchpad)");
+  console.log("STEP 1: CREATE RAISE (using sdk.workflows.launchpad)");
   console.log("=".repeat(80));
 
   const streamRecipient = sender;
@@ -428,15 +125,13 @@ async function main() {
   const launchpadWorkflow = sdk.workflows.launchpad;
 
   // === MINT & TRANSFER DEMO ===
-  // Mint some asset tokens for team allocation and transfer them
   const teamMintAmount = TransactionUtils.suiToMist(100); // 100 asset tokens
-  const teamRecipient = sender; // Send to sender for demo
+  const teamRecipient = sender;
 
   // === ASSET VESTING DEMO ===
-  // Create a vesting stream for asset tokens (separate from stable stream)
   const assetStreamAmount = TransactionUtils.suiToMist(50); // 50 asset tokens
   const assetIterationsTotal = 6n;
-  const assetIterationPeriodMs = 1_296_000_000n; // 15 days in milliseconds
+  const assetIterationPeriodMs = 1_296_000_000n; // 15 days
   const assetAmountPerIteration = assetStreamAmount / assetIterationsTotal;
 
   // Define success actions
@@ -444,7 +139,7 @@ async function main() {
     // === 1. STABLE COIN VESTING (from treasury) ===
     {
       type: 'create_stream' as const,
-      coinType: testCoins.stable.type, // Specify stable coin for the stream
+      coinType: testCoins.stable.type,
       vaultName: 'treasury',
       beneficiary: streamRecipient,
       amountPerIteration: amountPerIteration,
@@ -454,45 +149,38 @@ async function main() {
       maxPerWithdrawal: amountPerIteration,
     },
     // === 2. MINT ASSET TOKENS (for team allocation) ===
-    // This mints new asset tokens using the TreasuryCap and stores them
-    // in executable_resources under the name 'team_tokens'
     {
       type: 'mint' as const,
-      coinType: testCoins.asset.type, // Specify asset coin to mint
+      coinType: testCoins.asset.type,
       amount: teamMintAmount,
       resourceName: 'team_tokens',
     },
     // === 3. TRANSFER MINTED TOKENS TO TEAM ===
-    // Takes the minted coins from executable_resources and transfers to recipient
-    // Uses transfer_coin because mint uses provide_coin (key: name::coin::CoinType)
     {
       type: 'transfer_coin' as const,
-      coinType: testCoins.asset.type, // Specify asset coin being transferred
+      coinType: testCoins.asset.type,
       recipient: teamRecipient,
       resourceName: 'team_tokens',
     },
     // === 4. MINT ASSET TOKENS FOR VESTING ===
-    // Mint tokens that will be deposited into treasury for vesting
     {
       type: 'mint' as const,
-      coinType: testCoins.asset.type, // Specify asset coin to mint
+      coinType: testCoins.asset.type,
       amount: assetStreamAmount,
       resourceName: 'vesting_tokens',
     },
     // === 5. DEPOSIT MINTED TOKENS INTO TREASURY ===
-    // Deposit the minted asset tokens into treasury vault for vesting
     {
       type: 'deposit' as const,
-      coinType: testCoins.asset.type, // Specify asset coin being deposited
+      coinType: testCoins.asset.type,
       vaultName: 'treasury',
       amount: assetStreamAmount,
       resourceName: 'vesting_tokens',
     },
     // === 6. CREATE ASSET COIN VESTING STREAM ===
-    // Now create a vesting stream from treasury for the deposited asset tokens
     {
       type: 'create_stream' as const,
-      coinType: testCoins.asset.type, // Specify asset coin for the stream
+      coinType: testCoins.asset.type,
       vaultName: 'treasury',
       beneficiary: streamRecipient,
       amountPerIteration: assetAmountPerIteration,
@@ -504,8 +192,8 @@ async function main() {
     // === 7. CREATE AMM POOL ===
     {
       type: 'create_pool_with_mint' as const,
-      assetType: testCoins.asset.type, // Specify asset type for pool
-      stableType: testCoins.stable.type, // Specify stable type for pool
+      assetType: testCoins.asset.type,
+      stableType: testCoins.stable.type,
       vaultName: 'treasury',
       assetAmount: poolAssetAmount,
       stableAmount: poolStableAmount,
@@ -532,12 +220,12 @@ async function main() {
   const failureActions = [
     {
       type: 'return_treasury_cap' as const,
-      coinType: testCoins.asset.type, // Specify asset coin for the treasury cap
+      coinType: testCoins.asset.type,
       recipient: sender,
     },
     {
       type: 'return_metadata' as const,
-      coinType: testCoins.asset.type, // Specify asset coin for the metadata
+      coinType: testCoins.asset.type,
       recipient: sender,
     },
   ];
@@ -586,113 +274,119 @@ async function main() {
     throw new Error("Failed to find RaiseCreated event");
   }
 
+  // Get network for localnet detection
+  const network = sdk.network.network;
+
+  // Extract object refs (full ref on localnet, string ID on mainnet/testnet)
   const raiseId = raiseCreatedEvent.parsedJson.raise_id;
-  const creatorCapObj = createResult.objectChanges?.find((c: any) =>
-    c.objectType?.includes("CreatorCap"),
-  );
-  const creatorCapId = creatorCapObj?.objectId;
+
+  let raiseRef = getObjectRefById(createResult, raiseId, network);
+  let creatorCapRef = getObjectRef(createResult, "CreatorCap", network);
+
+  if (!creatorCapRef) {
+    throw new Error("Failed to find CreatorCap in transaction result");
+  }
+
+  const creatorCapId = typeof creatorCapRef === 'string' ? creatorCapRef : creatorCapRef.objectId;
 
   console.log("\n✅ Raise Created!");
   console.log(`   Raise ID: ${raiseId}`);
   console.log(`   CreatorCap ID: ${creatorCapId}`);
 
-  // Step 4: Stage SUCCESS init actions using SDK workflow
+  // On localnet, wait for indexer to catch up before next transaction
+  if (isLocalnet(network)) {
+    console.log("\n⏳ Waiting for indexer to catch up (2s)...");
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  // Step 2: Stage SUCCESS init actions
   console.log("\n" + "=".repeat(80));
-  console.log("STEP 4: STAGE SUCCESS INIT ACTIONS (using sdk.workflows.launchpad)");
+  console.log("STEP 2: STAGE SUCCESS INIT ACTIONS");
   console.log("=".repeat(80));
 
   console.log("\n📋 Staging SUCCESS actions (9 total)...");
-  console.log("   1. Create STABLE coin vesting stream:");
-  console.log(`      - Vault: treasury`);
-  console.log(`      - Beneficiary: ${streamRecipient}`);
-  console.log(`      - Amount: ${Number(streamAmount) / 1e9} TSTABLE over ${Number(iterationsTotal)} months`);
-  console.log("   2. Mint asset tokens for team allocation:");
-  console.log(`      - Amount: ${Number(teamMintAmount) / 1e9} TASSET`);
-  console.log("   3. Transfer minted tokens to team:");
-  console.log(`      - Recipient: ${teamRecipient}`);
-  console.log("   4. Mint asset tokens for vesting:");
-  console.log(`      - Amount: ${Number(assetStreamAmount) / 1e9} TASSET`);
-  console.log("   5. Deposit minted tokens to treasury");
-  console.log("   6. Create ASSET coin vesting stream:");
-  console.log(`      - Vault: treasury`);
-  console.log(`      - Beneficiary: ${streamRecipient}`);
-  console.log(`      - Amount: ${Number(assetStreamAmount) / 1e9} TASSET over ${Number(assetIterationsTotal)} periods`);
-  console.log("   7. Create AMM pool:");
-  console.log(`      - Pool: ${Number(poolAssetAmount) / 1e9} asset + ${Number(poolStableAmount) / 1e9} stable @ ${poolFeeBps / 100}% fee`);
-  console.log("   8. Update trading params (1s review, 60s trading)");
-  console.log("   9. Update TWAP config");
 
   const stageSuccessResult = await executeTransaction(
     sdk,
-    raiseFlow.stageSuccessTx(raiseId, creatorCapId!).transaction,
+    raiseFlow.stageSuccessTx(raiseRef, creatorCapRef).transaction,
     {
       network: "devnet",
       dryRun: false,
       showEffects: false,
+      showObjectChanges: true,
     }
   );
+
+  // Update refs for next transaction (on localnet)
+  raiseRef = getObjectRefById(stageSuccessResult, raiseId, network);
+  creatorCapRef = getObjectRefById(stageSuccessResult, creatorCapId, network);
 
   console.log("✅ All 9 SUCCESS actions staged!");
   console.log(`   Transaction: ${stageSuccessResult.digest}`);
 
-  // Step 4.5: Stage FAILURE init actions using SDK workflow
+  // Step 3: Stage FAILURE init actions
   console.log("\n" + "=".repeat(80));
-  console.log("STEP 4.5: STAGE FAILURE INIT ACTIONS (using sdk.workflows.launchpad)");
+  console.log("STEP 3: STAGE FAILURE INIT ACTIONS");
   console.log("=".repeat(80));
 
   console.log("\n📋 Staging failure actions...");
-  console.log(`   These execute ONLY if raise fails (doesn't meet minimum)`);
-  console.log(`   Recipient: ${sender} (creator)`);
 
   const stageFailureResult = await executeTransaction(
     sdk,
-    raiseFlow.stageFailureTx(raiseId, creatorCapId!).transaction,
+    raiseFlow.stageFailureTx(raiseRef, creatorCapRef).transaction,
     {
       network: "devnet",
       dryRun: false,
       showEffects: false,
+      showObjectChanges: true,
     }
   );
+
+  // Update refs for next transaction
+  raiseRef = getObjectRefById(stageFailureResult, raiseId, network);
+  creatorCapRef = getObjectRefById(stageFailureResult, creatorCapId, network);
 
   console.log("✅ Failure specs staged!");
   console.log(`   Transaction: ${stageFailureResult.digest}`);
 
-  // Step 5: Lock intents using SDK workflow
+  // Step 4: Lock intents
   console.log("\n" + "=".repeat(80));
-  console.log("STEP 5: LOCK INTENTS (using sdk.workflows.launchpad)");
+  console.log("STEP 4: LOCK INTENTS");
   console.log("=".repeat(80));
 
   console.log("\n🔒 Locking intents...");
-  console.log("   After this, success_specs cannot be changed!");
 
-  await executeTransaction(
+  const lockResult = await executeTransaction(
     sdk,
-    raiseFlow.lockTx(raiseId, creatorCapId!).transaction,
+    raiseFlow.lockTx(raiseRef, creatorCapRef).transaction,
     {
       network: "devnet",
       dryRun: false,
       showEffects: false,
+      showObjectChanges: true,
     }
   );
 
+  // Update raiseRef (creatorCap may be deleted after lock)
+  raiseRef = getObjectRefById(lockResult, raiseId, network);
+
   console.log("✅ Intents locked!");
-  console.log("   ✅ Investors are now protected - specs frozen");
 
   // Wait for start delay
   console.log("\n⏳ Waiting for start delay (5s)...");
   await new Promise((resolve) => setTimeout(resolve, 6000));
   console.log("✅ Raise has started!");
 
-  // Step 6: Contribute using SDK workflow
+  // Step 5: Contribute
   console.log("\n" + "=".repeat(80));
   console.log(
-    `STEP 6: CONTRIBUTE (using sdk.workflows.launchpad) ${shouldRaiseSucceed ? "TO MEET MINIMUM" : "(INSUFFICIENT - WILL FAIL)"}`,
+    `STEP 5: CONTRIBUTE ${shouldRaiseSucceed ? "(MEET MINIMUM)" : "(INSUFFICIENT - WILL FAIL)"}`,
   );
   console.log("=".repeat(80));
 
   const amountToContribute = shouldRaiseSucceed
-    ? TransactionUtils.suiToMist(1500) // Meet max
-    : TransactionUtils.suiToMist(0.5); // Below minimum
+    ? TransactionUtils.suiToMist(1500)
+    : TransactionUtils.suiToMist(0.5);
 
   console.log(
     `\n💰 Minting ${TransactionUtils.mistToSui(amountToContribute)} TSTABLE...`,
@@ -727,9 +421,8 @@ async function main() {
 
   const stableCoinIds = stableCoins.data.map((c) => c.coinObjectId);
 
-  // Use SDK workflow for contribution
   const contributeTx = launchpadWorkflow.contribute({
-    raiseId,
+    raiseId: raiseRef,
     assetType: testCoins.asset.type,
     stableType: testCoins.stable.type,
     stableCoins: stableCoinIds,
@@ -748,29 +441,24 @@ async function main() {
 
   console.log("✅ Contributed!");
 
-  // Step 7: Wait for deadline
+  // Step 6: Wait for deadline
   console.log("\n" + "=".repeat(80));
-  console.log("STEP 7: WAIT FOR DEADLINE");
+  console.log("STEP 6: WAIT FOR DEADLINE");
   console.log("=".repeat(80));
 
   console.log("\n⏰ Waiting for deadline (30s)...");
   await new Promise((resolve) => setTimeout(resolve, 30000));
   console.log("✅ Deadline passed!");
 
-  // Step 8: Complete raise using SDK workflow
+  // Step 7: Complete raise
   console.log("\n" + "=".repeat(80));
-  console.log("STEP 8: COMPLETE RAISE (using sdk.workflows.launchpad)");
+  console.log("STEP 7: COMPLETE RAISE");
   console.log("=".repeat(80));
 
   console.log("\n🏛️  Creating DAO and converting specs to Intent...");
-  console.log("   This will:");
-  console.log("   1. Create DAO");
-  console.log(`   2. Set raise.state = STATE_${shouldRaiseSucceed ? "SUCCESSFUL" : "FAILED"}`);
-  console.log(`   3. JIT convert ${shouldRaiseSucceed ? "success" : "failure"}_specs → Intent`);
-  console.log("   4. Share DAO with Intent locked in");
 
   const completeTx = launchpadWorkflow.completeRaise({
-    raiseId,
+    raiseId: raiseRef,
     assetType: testCoins.asset.type,
     stableType: testCoins.stable.type,
   });
@@ -792,6 +480,7 @@ async function main() {
   );
 
   let accountId: string | undefined;
+  let accountRef: ObjectIdOrRef | undefined;
   let poolId: string | undefined;
   let raiseActuallySucceeded = false;
 
@@ -799,15 +488,11 @@ async function main() {
     raiseActuallySucceeded = true;
     console.log("✅ DAO Created & Intent Generated (SUCCESS PATH)!");
     console.log(`   Transaction: ${completeResult.digest}`);
-    console.log("\n🎉 DAO Details:");
-    console.log(JSON.stringify(raiseSuccessEvent.parsedJson, null, 2));
     accountId = raiseSuccessEvent.parsedJson?.account_id;
   } else if (raiseFailedEvent) {
     raiseActuallySucceeded = false;
     console.log("✅ DAO Created & Intent Generated (FAILURE PATH)!");
     console.log(`   Transaction: ${completeResult.digest}`);
-    console.log("\n⚠️ Raise Failed - Executing failure specs:");
-    console.log(JSON.stringify(raiseFailedEvent.parsedJson, null, 2));
     accountId = raiseFailedEvent.parsedJson?.account_id;
   } else {
     throw new Error("Neither RaiseSuccessful nor RaiseFailed event found");
@@ -826,34 +511,35 @@ async function main() {
     throw new Error("Could not find Account ID");
   }
 
-  console.log(`   Account ID: ${accountId}`);
-  console.log("   ✅ JIT conversion complete - Intent ready to execute!");
+  // Get accountRef and update raiseRef
+  accountRef = getObjectRefById(completeResult, accountId, network);
+  raiseRef = getObjectRefById(completeResult, raiseId, network);
 
-  // Step 9: Execute Intent using SDK workflow
+  console.log(`   Account ID: ${accountId}`);
+
+  // On localnet, wait for indexer to catch up before next transaction
+  if (isLocalnet(network)) {
+    console.log("\n⏳ Waiting for indexer to catch up (2s)...");
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  // Step 8: Execute Intent
   console.log("\n" + "=".repeat(80));
   if (raiseActuallySucceeded) {
-    console.log("STEP 9: EXECUTE INTENT (using sdk.workflows.launchpad)");
+    console.log("STEP 8: EXECUTE INTENT (SUCCESS ACTIONS)");
   } else {
-    console.log("STEP 9: EXECUTE INTENT (FAILURE PATH - RETURN CAPS)");
+    console.log("STEP 8: EXECUTE INTENT (FAILURE - RETURN CAPS)");
   }
   console.log("=".repeat(80));
 
-  // Build action types for execution (must match the staged actions ORDER)
   const actionTypes = raiseActuallySucceeded
     ? [
-        // 1. Stable coin vesting stream
         { type: 'create_stream' as const, coinType: testCoins.stable.type },
-        // 2. Mint asset tokens for team
         { type: 'mint' as const, coinType: testCoins.asset.type },
-        // 3. Transfer minted tokens to team (uses transfer_coin for provide_coin pattern)
         { type: 'transfer_coin' as const, coinType: testCoins.asset.type },
-        // 4. Mint asset tokens for vesting deposit
         { type: 'mint' as const, coinType: testCoins.asset.type },
-        // 5. Deposit minted tokens into treasury
         { type: 'deposit' as const, coinType: testCoins.asset.type },
-        // 6. Asset coin vesting stream
         { type: 'create_stream' as const, coinType: testCoins.asset.type },
-        // 7. Create AMM pool
         {
           type: 'create_pool_with_mint' as const,
           assetType: testCoins.asset.type,
@@ -862,9 +548,7 @@ async function main() {
           lpTreasuryCapId: testCoins.lp.treasuryCap,
           lpMetadataId: testCoins.lp.metadata,
         },
-        // 8. Update trading params
         { type: 'update_trading_params' as const },
-        // 9. Update TWAP config
         { type: 'update_twap_config' as const },
       ]
     : [
@@ -873,8 +557,8 @@ async function main() {
       ];
 
   const executeTx = launchpadWorkflow.executeActions({
-    accountId,
-    raiseId,
+    accountId: accountRef!,
+    raiseId: raiseRef,
     assetType: testCoins.asset.type,
     stableType: testCoins.stable.type,
     actionTypes,
@@ -890,28 +574,8 @@ async function main() {
     });
 
     if (raiseActuallySucceeded) {
-      console.log("✅ All 9 actions executed via Intent execution!");
+      console.log("✅ All 9 actions executed!");
       console.log(`   Transaction: ${executeResult.digest}`);
-      console.log("   Actions completed:");
-      console.log("     ✅ 1. Stable coin vesting stream created");
-      console.log("     ✅ 2. Asset tokens minted for team");
-      console.log("     ✅ 3. Minted tokens transferred to team");
-      console.log("     ✅ 4. Asset tokens minted for treasury");
-      console.log("     ✅ 5. Minted tokens deposited to treasury");
-      console.log("     ✅ 6. Asset coin vesting stream created");
-      console.log("     ✅ 7. AMM pool created");
-      console.log("     ✅ 8. Trading params updated");
-      console.log("     ✅ 9. TWAP config updated");
-
-      const streamObjects = executeResult.objectChanges?.filter((c: any) =>
-        c.objectType?.includes("::vault::Stream"),
-      );
-      if (streamObjects && streamObjects.length > 0) {
-        console.log(`   Stream(s) created: ${streamObjects.length}`);
-        streamObjects.forEach((s: any, i: number) => {
-          console.log(`     Stream ${i + 1}: ${s.objectId}`);
-        });
-      }
 
       const poolObject = executeResult.objectChanges?.find((c: any) =>
         c.objectType?.includes("::unified_spot_pool::UnifiedSpotPool"),
@@ -921,38 +585,30 @@ async function main() {
         console.log(`   Pool ID: ${poolId}`);
       }
     } else {
-      console.log("✅ TreasuryCap and Metadata returned via Intent execution!");
+      console.log("✅ TreasuryCap and Metadata returned!");
       console.log(`   Transaction: ${executeResult.digest}`);
-
-      const treasuryCapObject = executeResult.objectChanges?.find((c: any) =>
-        c.objectType?.includes("::coin::TreasuryCap"),
-      );
-      const metadataObject = executeResult.objectChanges?.find((c: any) =>
-        c.objectType?.includes("::coin::CoinMetadata"),
-      );
-
-      if (treasuryCapObject) {
-        console.log(`   TreasuryCap returned: ${treasuryCapObject.objectId}`);
-      }
-      if (metadataObject) {
-        console.log(`   Metadata returned: ${metadataObject.objectId}`);
-      }
     }
   } catch (error: any) {
     console.error("❌ Failed to execute Intent:", error.message);
     throw error;
   }
 
-  // Step 10: Claim tokens (only for successful raises)
+  // Step 9: Claim tokens (only for successful raises)
   if (raiseActuallySucceeded) {
+    // On localnet, wait for indexer to catch up before next transaction
+    if (isLocalnet(network)) {
+      console.log("\n⏳ Waiting for indexer to catch up (2s)...");
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
     console.log("\n" + "=".repeat(80));
-    console.log("STEP 10: CLAIM TOKENS (using sdk.workflows.launchpad)");
+    console.log("STEP 9: CLAIM TOKENS");
     console.log("=".repeat(80));
 
     console.log("\n💰 Claiming contributor tokens...");
 
     const claimTx = launchpadWorkflow.claimTokens(
-      raiseId,
+      raiseRef,
       testCoins.asset.type,
       testCoins.stable.type,
     );
@@ -969,41 +625,40 @@ async function main() {
     console.log(`   Transaction: ${claimResult.digest}`);
   } else {
     console.log("\n" + "=".repeat(80));
-    console.log("SKIPPING STEP 10: RAISE FAILED");
+    console.log("SKIPPING STEP 9: RAISE FAILED");
     console.log("=".repeat(80));
     console.log("\nℹ️  Token claiming is only available for successful raises");
   }
 
   console.log("\n" + "=".repeat(80));
   console.log(
-    `🎉 TWO-OUTCOME SYSTEM TEST COMPLETE (${shouldRaiseSucceed ? "SUCCESS" : "FAILURE"} PATH)! 🎉`,
+    `🎉 LAUNCHPAD TEST COMPLETE (${shouldRaiseSucceed ? "SUCCESS" : "FAILURE"} PATH)! 🎉`,
   );
   console.log("=".repeat(80));
 
   console.log("\n📋 Summary:");
-  console.log(`   ✅ Created raise (using sdk.workflows.launchpad.createRaiseWithActions)`);
-  console.log(`   ✅ Staged success_specs (using sdk.workflows.launchpad.stageActions)`);
-  console.log(`   ✅ Staged failure_specs (using sdk.workflows.launchpad.stageActions)`);
-  console.log(`   ✅ Locked intents (using sdk.workflows.launchpad.lockIntentsAndStart)`);
-  console.log(`   ✅ Contributed (using sdk.workflows.launchpad.contribute)`);
+  console.log(`   ✅ Created raise`);
+  console.log(`   ✅ Staged success_specs`);
+  console.log(`   ✅ Staged failure_specs`);
+  console.log(`   ✅ Locked intents`);
+  console.log(`   ✅ Contributed`);
 
   if (shouldRaiseSucceed) {
     console.log(`   ✅ Raise SUCCEEDED`);
-    console.log(`   ✅ Completed raise (using sdk.workflows.launchpad.completeRaise)`);
-    console.log(`   ✅ Executed Intent (using sdk.workflows.launchpad.executeActions)`);
-    console.log(`   ✅ Claimed tokens (using sdk.workflows.launchpad.claimTokens)`);
+    console.log(`   ✅ Completed raise`);
+    console.log(`   ✅ Executed Intent`);
+    console.log(`   ✅ Claimed tokens`);
   } else {
     console.log(`   ✅ Raise FAILED (as expected)`);
-    console.log(`   ✅ Completed raise (using sdk.workflows.launchpad.completeRaise)`);
-    console.log(`   ✅ Executed Intent → caps returned to creator`);
+    console.log(`   ✅ Completed raise`);
+    console.log(`   ✅ Executed Intent → caps returned`);
   }
 
   console.log(`\n🔗 View raise: https://suiscan.xyz/devnet/object/${raiseId}`);
   console.log(`🔗 View DAO: https://suiscan.xyz/devnet/object/${accountId}`);
 
   // Save DAO info to shared JSON file for proposal test
-  const daoInfoPath = path.join(__dirname, "..", "test-dao-info.json");
-  const daoInfo = {
+  const daoInfo: DaoInfo = {
     accountId: accountId,
     assetType: testCoins.asset.type,
     stableType: testCoins.stable.type,
@@ -1016,16 +671,15 @@ async function main() {
     lpMetadata: testCoins.lp.metadata,
     isStableTreasuryCapShared: testCoins.stable.isSharedTreasuryCap,
     stablePackageId: testCoins.stable.packageId,
-    spotPoolId: poolId || null,
+    spotPoolId: poolId || "",
     raiseId: raiseId,
     timestamp: Date.now(),
-    network: currentNetwork,
+    network: testCoins.network,
     success: shouldRaiseSucceed,
   };
 
-  fs.writeFileSync(daoInfoPath, JSON.stringify(daoInfo, null, 2), "utf-8");
-  console.log(`\n💾 DAO info saved to: ${daoInfoPath}`);
-  console.log(`   For use by proposal E2E test`);
+  saveDaoInfo(daoInfo);
+  logSuccess("DAO info saved to test-dao-info.json");
 }
 
 main()

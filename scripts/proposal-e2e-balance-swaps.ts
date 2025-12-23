@@ -28,87 +28,48 @@
  */
 
 import { Transaction } from "@mysten/sui/transactions";
-import * as fs from "fs";
-import * as path from "path";
 import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
 import { ConditionalBalance } from "../src/protocol/markets/conditional-balance";
 import { SwapCore } from "../src/protocol/markets/swap-core";
-import type {
-  ConditionalCoinSetConfig,
-} from "../src/workflows/types";
+import type { ConditionalCoinSetConfig } from "../src/workflows/types";
 
-type RegistryCoinInfo = {
-  treasuryCapId: string;
-  metadataId: string;
-  coinType: string;
-};
-
-interface ConditionalOutcomeCoinSet {
-  index: number;
-  asset: RegistryCoinInfo;
-  stable: RegistryCoinInfo;
-}
-
-function extractConditionalOutcomes(
-  info: Record<string, any>
-): ConditionalOutcomeCoinSet[] {
-  const outcomeMap = new Map<
-    number,
-    { asset?: RegistryCoinInfo; stable?: RegistryCoinInfo }
-  >();
-
-  for (const [key, value] of Object.entries(info)) {
-    const match = key.match(/^cond(\d+)_(asset|stable)$/);
-    if (!match) continue;
-    const idx = Number(match[1]);
-    if (!outcomeMap.has(idx)) {
-      outcomeMap.set(idx, {});
-    }
-    const entry = outcomeMap.get(idx)!;
-    if (match[2] === "asset") {
-      entry.asset = value as RegistryCoinInfo;
-    } else {
-      entry.stable = value as RegistryCoinInfo;
-    }
-  }
-
-  return Array.from(outcomeMap.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([index, entry]) => {
-      if (!entry.asset || !entry.stable) {
-        throw new Error(
-          `Incomplete conditional coin info for outcome ${index}`
-        );
-      }
-      return { index, asset: entry.asset, stable: entry.stable };
-    });
-}
-
-async function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// Import utilities from centralized test-utils
+import {
+  // Object reference utilities
+  getObjectRef,
+  getObjectRefById,
+  getObjId,
+  isLocalnet,
+  // Timing utilities
+  sleep,
+  TEST_CONFIG,
+  waitForIndexer,
+  waitForTimePeriod,
+  // Fixture loading
+  loadDaoInfo,
+  loadConditionalCoinsInfo,
+  extractConditionalOutcomes,
+  // Constants
+  REJECT_OUTCOME_INDEX,
+  ACCEPT_OUTCOME_INDEX,
+  // Logging
+  logSection,
+  logSuccess,
+  // Types
+  type ObjectIdOrRef,
+  type OwnedObjectRef,
+  type ConditionalOutcomeCoinSet,
+} from "./test-utils";
 
 async function main() {
-  console.log("=".repeat(80));
-  console.log("PROPOSAL E2E TEST - BALANCE-BASED CONDITIONAL SWAPS (SDK WORKFLOW)");
-  console.log("=".repeat(80));
-  console.log();
+  logSection("PROPOSAL E2E TEST - BALANCE-BASED CONDITIONAL SWAPS (SDK WORKFLOW)");
 
   // ============================================================================
   // STEP 0: Load DAO info from launchpad test
   // ============================================================================
   console.log("Step 0: Loading DAO info from previous launchpad test...");
 
-  const daoInfoPath = path.join(__dirname, "..", "test-dao-info.json");
-
-  if (!fs.existsSync(daoInfoPath)) {
-    console.error("No DAO info file found.");
-    console.error("   Please run launchpad E2E test first:");
-    console.error("   npm run launchpad-e2e-two-outcome");
-    process.exit(1);
-  }
-
-  const daoInfo = JSON.parse(fs.readFileSync(daoInfoPath, "utf-8"));
+  const daoInfo = loadDaoInfo();
   const daoAccountId = daoInfo.accountId;
   const assetType = daoInfo.assetType;
   const stableType = daoInfo.stableType;
@@ -117,18 +78,16 @@ async function main() {
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
   const stablePackageId = daoInfo.stablePackageId;
 
-  console.log(`   DAO Account: ${daoAccountId}`);
-  console.log(`   Asset Type: ${assetType}`);
-  console.log(`   Stable Type: ${stableType}`);
-  console.log(`   Spot Pool: ${spotPoolId}`);
-  console.log(`   Shared Treasury Cap: ${isStableTreasuryCapShared}`);
+  logSuccess(`DAO Account: ${daoAccountId}`);
+  logSuccess(`Asset Type: ${assetType}`);
+  logSuccess(`Stable Type: ${stableType}`);
+  logSuccess(`Spot Pool: ${spotPoolId}`);
+  logSuccess(`Shared Treasury Cap: ${isStableTreasuryCapShared}`);
   console.log();
 
   // Load conditional coins deployment info
-  const conditionalCoinsPath = path.join(__dirname, "..", "conditional-coins-info.json");
-  let conditionalCoinsInfo: any = null;
-  if (fs.existsSync(conditionalCoinsPath)) {
-    conditionalCoinsInfo = JSON.parse(fs.readFileSync(conditionalCoinsPath, "utf-8"));
+  let conditionalCoinsInfo = loadConditionalCoinsInfo();
+  if (conditionalCoinsInfo) {
     console.log(`   Conditional Coins Package: ${conditionalCoinsInfo.packageId}`);
     console.log(`   CoinRegistry: ${conditionalCoinsInfo.registryId}`);
     console.log();
@@ -159,12 +118,18 @@ async function main() {
   console.log("Step 1: Initializing SDK...");
   const sdk = await initSDK();
   const activeAddress = getActiveAddress();
+  const network = sdk.network.network;
   console.log(`   Active address: ${activeAddress}`);
+  console.log(`   Network: ${network}`);
   console.log();
 
   // Get package IDs for balance-based swaps
   const marketsCorePackageId = sdk.getPackageId("futarchy_markets_core")!;
   const marketsPrimitivesPackageId = sdk.getPackageId("futarchy_markets_primitives")!;
+
+  // Initialize refs for tracking object versions (important for localnet)
+  let daoAccountRef: OwnedObjectRef | string = daoAccountId;
+  let spotPoolRef: OwnedObjectRef | string = spotPoolId;
 
   // ============================================================================
   // STEP 2: Create proposal with actions (using SDK workflow)
@@ -212,7 +177,7 @@ async function main() {
 
   // Use SDK workflow to create proposal
   const createProposalTx = sdk.workflows.proposal.createProposal({
-    daoAccountId,
+    daoAccountId: daoAccountRef,
     assetType,
     stableType,
     title: "Fund Team Development with Conditional Trading",
@@ -246,6 +211,8 @@ async function main() {
   }
 
   const proposalId = (proposalObject as any).objectId;
+  let proposalRef = getObjectRef(createResult, "proposal::Proposal", network)!;
+  daoAccountRef = getObjectRefById(createResult, daoAccountId, network);
   console.log(`   Proposal created: ${proposalId}`);
   console.log();
 
@@ -257,11 +224,15 @@ async function main() {
   console.log("=".repeat(80));
   console.log();
 
+  const registryId = sdk.sharedObjects.packageRegistry.id;
+
   const addActionsTx = sdk.workflows.proposal.addActionsToOutcome({
-    proposalId,
+    proposalId: proposalRef,
     assetType,
     stableType,
     outcomeIndex: 1, // Accept
+    daoAccountId: daoAccountRef,
+    registryId,
     actions: [
       {
         type: 'create_stream',
@@ -278,9 +249,12 @@ async function main() {
     ],
   });
 
-  await executeTransaction(sdk, addActionsTx.transaction, {
+  const addActionsResult = await executeTransaction(sdk, addActionsTx.transaction, {
     network: "devnet",
+    showObjectChanges: true,
   });
+  proposalRef = getObjectRefById(addActionsResult, proposalId, network);
+  daoAccountRef = getObjectRefById(addActionsResult, daoAccountId, network);
 
   console.log(`   Actions added to Accept outcome!`);
   console.log();
@@ -310,11 +284,11 @@ async function main() {
   }
 
   const advanceToReviewTx = sdk.workflows.proposal.advanceToReview({
-    proposalId,
-    daoAccountId,
+    proposalId: proposalRef,
+    daoAccountId: daoAccountRef,
     assetType,
     stableType,
-    spotPoolId,
+    spotPoolId: spotPoolRef,
     senderAddress: activeAddress,
     conditionalCoinsRegistry,
   });
@@ -334,6 +308,10 @@ async function main() {
   }
 
   const escrowId = (escrowObject as any).objectId;
+  let escrowRef = getObjectRef(advanceResult, "coin_escrow::TokenEscrow", network)!;
+  proposalRef = getObjectRefById(advanceResult, proposalId, network);
+  daoAccountRef = getObjectRefById(advanceResult, daoAccountId, network);
+  spotPoolRef = getObjectRefById(advanceResult, spotPoolId, network);
   console.log(`   Escrow created: ${escrowId}`);
   console.log(`   Proposal state: REVIEW`);
   console.log();
@@ -346,36 +324,36 @@ async function main() {
   console.log("=".repeat(80));
   console.log();
 
-  console.log("   Waiting for review period (30 seconds)...");
-  await sleep(32000); // 32 seconds (30s + buffer)
-  console.log("   Review period ended!");
-  console.log();
+  // Wait for review period (configured in proposal)
+  await waitForTimePeriod(TEST_CONFIG.REVIEW_PERIOD_MS + 2000, { description: "review period" });
 
   console.log("   Advancing to TRADING state (all spot liquidity -> conditional AMMs)...");
 
   const advanceToTradingTx = sdk.workflows.proposal.advanceToTrading({
-    daoAccountId,
-    proposalId,
-    escrowId,
-    spotPoolId,
+    daoAccountId: daoAccountRef,
+    proposalId: proposalRef,
+    escrowId: escrowRef,
+    spotPoolId: spotPoolRef,
     assetType,
     stableType,
   });
 
-  await executeTransaction(sdk, advanceToTradingTx.transaction, {
+  const toTradingResult = await executeTransaction(sdk, advanceToTradingTx.transaction, {
     network: "devnet",
+    showObjectChanges: true,
   });
+  proposalRef = getObjectRefById(toTradingResult, proposalId, network);
+  escrowRef = getObjectRefById(toTradingResult, escrowId, network);
+  daoAccountRef = getObjectRefById(toTradingResult, daoAccountId, network);
+  spotPoolRef = getObjectRefById(toTradingResult, spotPoolId, network);
 
   console.log("   Proposal state: TRADING");
   console.log("   - 100% quantum split complete: all spot liquidity -> conditional AMMs");
   console.log("   - active_proposal_id set: LP add/remove operations now blocked");
   console.log();
 
-  // Wait for review period to elapse (DAO config sets 1 second minimum)
-  console.log("   Waiting 2 seconds for review period to elapse...");
-  await sleep(2000);
-  console.log("   Review period elapsed - trading is now active");
-  console.log();
+  // Wait for indexer on localnet
+  await waitForIndexer(network, { description: "indexer (trading state)" });
 
   // ============================================================================
   // STEP 6: PERFORM SWAPS (Spot + Balance-based Conditional)
@@ -418,9 +396,9 @@ async function main() {
   });
 
   const spotSwapTx = sdk.workflows.proposal.spotSwap({
-    spotPoolId,
-    proposalId,
-    escrowId,
+    spotPoolId: spotPoolRef,
+    proposalId: proposalRef,
+    escrowId: escrowRef,
     assetType,
     stableType,
     direction: 'stable_to_asset',
@@ -430,10 +408,13 @@ async function main() {
     inputCoins: coins1.data.map((c) => c.coinObjectId),
   });
 
-  await executeTransaction(sdk, spotSwapTx.transaction, {
+  const swap1Result = await executeTransaction(sdk, spotSwapTx.transaction, {
     network: "devnet",
     showObjectChanges: true,
   });
+  proposalRef = getObjectRefById(swap1Result, proposalId, network);
+  escrowRef = getObjectRefById(swap1Result, escrowId, network);
+  spotPoolRef = getObjectRefById(swap1Result, spotPoolId, network);
 
   console.log(`   Spot swap complete (${Number(swapAmount1) / 1e9} stable -> asset)`);
   console.log("   Auto-arbitrage executed in background");
@@ -537,27 +518,30 @@ async function main() {
   console.log("=".repeat(80));
   console.log();
 
-  console.log("   Waiting for trading period (60 seconds)...");
-  await sleep(62000); // 62 seconds (60s + buffer)
-  console.log("   Trading period ended!");
-  console.log();
+  // Wait for trading period (configured in proposal)
+  await waitForTimePeriod(TEST_CONFIG.TRADING_PERIOD_MS + 2000, { description: "trading period" });
 
   console.log("   Finalizing proposal...");
   console.log("   - Determining winner via TWAP");
   console.log("   - Auto-recombining winning conditional liquidity -> spot pool");
 
   const finalizeTx = sdk.workflows.proposal.finalizeProposal({
-    daoAccountId,
-    proposalId,
-    escrowId,
-    spotPoolId,
+    daoAccountId: daoAccountRef,
+    proposalId: proposalRef,
+    escrowId: escrowRef,
+    spotPoolId: spotPoolRef,
     assetType,
     stableType,
   });
 
-  await executeTransaction(sdk, finalizeTx.transaction, {
+  const finalizeResult = await executeTransaction(sdk, finalizeTx.transaction, {
     network: "devnet",
+    showObjectChanges: true,
   });
+  proposalRef = getObjectRefById(finalizeResult, proposalId, network);
+  escrowRef = getObjectRefById(finalizeResult, escrowId, network);
+  spotPoolRef = getObjectRefById(finalizeResult, spotPoolId, network);
+  daoAccountRef = getObjectRefById(finalizeResult, daoAccountId, network);
 
   console.log("   Proposal finalized!");
   console.log("   - Winning conditional liquidity auto-recombined back to spot pool");
@@ -567,7 +551,7 @@ async function main() {
 
   // Check winning outcome
   const proposalData = await sdk.client.getObject({
-    id: proposalId,
+    id: getObjId(proposalRef),
     options: { showContent: true },
   });
 
@@ -590,9 +574,9 @@ async function main() {
     console.log("   Executing stream action via PTB executor...");
 
     const executeTx = sdk.workflows.proposal.executeActions({
-      daoAccountId,
-      proposalId,
-      escrowId,
+      daoAccountId: daoAccountRef,
+      proposalId: proposalRef,
+      escrowId: escrowRef,
       assetType,
       stableType,
       actionTypes: [

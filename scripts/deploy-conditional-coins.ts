@@ -30,10 +30,7 @@ interface ConditionalCoinInfo {
 interface ConditionalCoinsDeployment {
   packageId: string;
   registryId: string;
-  cond0_asset: ConditionalCoinInfo;
-  cond0_stable: ConditionalCoinInfo;
-  cond1_asset: ConditionalCoinInfo;
-  cond1_stable: ConditionalCoinInfo;
+  [key: string]: string | ConditionalCoinInfo; // Dynamic cond*_asset, cond*_stable
   timestamp: string;
   network: string;
 }
@@ -159,11 +156,35 @@ async function main() {
   console.log(`✅ Deployed: ${packageId}`);
   console.log();
 
-  // Extract TreasuryCaps and Metadata
+  // Extract TreasuryCaps and Metadata dynamically
   const objectChanges = publishResult.objectChanges || [];
   const caps: Record<string, ConditionalCoinInfo> = {};
 
-  for (const coinName of ["cond0_asset", "cond0_stable", "cond1_asset", "cond1_stable"]) {
+  // Find all cond*_asset and cond*_stable coins dynamically
+  const coinNamePattern = /::cond(\d+)_(asset|stable)::/;
+  const foundCoins = new Set<string>();
+
+  for (const obj of objectChanges) {
+    if (obj.objectType?.includes("TreasuryCap")) {
+      const match = obj.objectType.match(coinNamePattern);
+      if (match) {
+        foundCoins.add(`cond${match[1]}_${match[2]}`);
+      }
+    }
+  }
+
+  // Sort coin names to process in order
+  const coinNames = Array.from(foundCoins).sort((a, b) => {
+    const numA = parseInt(a.match(/cond(\d+)/)?.[1] || "0");
+    const numB = parseInt(b.match(/cond(\d+)/)?.[1] || "0");
+    if (numA !== numB) return numA - numB;
+    return a.includes("asset") ? -1 : 1; // asset before stable
+  });
+
+  console.log(`Found ${coinNames.length} conditional coins`);
+  console.log();
+
+  for (const coinName of coinNames) {
     const treasuryCap = objectChanges.find(
       (obj: any) =>
         obj.objectType?.includes(`::${coinName}::`) && obj.objectType?.includes("TreasuryCap")
@@ -228,10 +249,7 @@ async function main() {
   const deployment: ConditionalCoinsDeployment = {
     packageId,
     registryId,
-    cond0_asset: caps.cond0_asset,
-    cond0_stable: caps.cond0_stable,
-    cond1_asset: caps.cond1_asset,
-    cond1_stable: caps.cond1_stable,
+    ...caps, // Spread all dynamic coin entries
     timestamp: new Date().toISOString(),
     network: "devnet",
   };

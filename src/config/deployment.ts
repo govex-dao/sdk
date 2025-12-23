@@ -17,6 +17,15 @@ import devnetDeployments from "../../deployments-processed/_all-packages-devnet.
 // import testnetDeployments from "../../deployments-processed/_all-packages-testnet.json";
 // import mainnetDeployments from "../../deployments-processed/_all-packages-mainnet.json";
 
+// Localnet deployments - optional, created by: ./deploy_verified.sh --network localnet
+let localnetDeployments: DeploymentConfig | undefined;
+try {
+    // Dynamic import for localnet (may not exist)
+    localnetDeployments = require("../../deployments-processed/_all-packages-localnet.json") as DeploymentConfig;
+} catch {
+    // Localnet deployments not available
+}
+
 /**
  * Map of network to bundled deployment configuration
  */
@@ -24,6 +33,7 @@ const bundledDeployments: Partial<Record<NetworkType, DeploymentConfig>> = {
     devnet: devnetDeployments as DeploymentConfig,
     // testnet: testnetDeployments as DeploymentConfig,
     // mainnet: mainnetDeployments as DeploymentConfig,
+    ...(localnetDeployments && { localnet: localnetDeployments }),
 };
 
 /**

@@ -268,6 +268,24 @@ export const VAULT_ACTIONS: ActionDefinition[] = [
     launchpadSupported: false,
     proposalSupported: true,
   },
+  {
+    id: 'deposit_from_resources',
+    name: 'Deposit From Resources',
+    category: 'vault',
+    package: 'accountActions',
+    stagingModule: 'vault_init_actions',
+    stagingFunction: 'add_deposit_from_resources_spec',
+    executionModule: 'vault',
+    executionFunction: 'do_init_deposit_from_resources',
+    markerType: 'account_actions::vault::VaultDepositFromResources',
+    typeParams: ['CoinType'],
+    params: [
+      { name: 'resourceName', type: 'string', description: 'Name in executable_resources to take coin from' },
+    ],
+    description: 'Deposit coins from executable_resources into temporary_deposits vault (for unknown-amount deposits like LP tokens or swap outputs). Use crank_temporary_to_treasury to move to treasury.',
+    launchpadSupported: true,
+    proposalSupported: true,
+  },
 ];
 
 // ============================================================================
@@ -840,6 +858,7 @@ export const LIQUIDITY_ACTIONS: ActionDefinition[] = [
       { name: 'assetAmount', type: 'u64', description: 'Asset amount to add (will be minted)' },
       { name: 'stableAmount', type: 'u64', description: 'Stable amount from vault' },
       { name: 'feeBps', type: 'u64', description: 'AMM fee in basis points' },
+      { name: 'launchFeeDurationMs', type: 'u64', description: 'Launch fee duration in ms (0 = no launch fee period)' },
     ],
     typeParams: ['AssetType', 'StableType'],
     description: 'Create AMM pool with minted asset and vault stable',

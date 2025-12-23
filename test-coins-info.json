@@ -1,0 +1,25 @@
+{
+  "asset": {
+    "packageId": "0x7d3c7ed4435be6191d3c79f1e325227a6885a862196e7b03afce16ec47ef9d03",
+    "type": "0x7d3c7ed4435be6191d3c79f1e325227a6885a862196e7b03afce16ec47ef9d03::coin::COIN",
+    "treasuryCap": "0xa2ef074c89eb18c8c2b3029b0c9978565a2f8ba4a3b2569bd7b690fec44e94b5",
+    "metadata": "0x96a85504ca7f8273999a977e2062ce7ca07cf59c3f671c9a95b92ff736afff39",
+    "isSharedTreasuryCap": false
+  },
+  "stable": {
+    "packageId": "0xb2dbf5a31ef66526662c0532e9d2315b3770e1f1a8b20e8b8f66a67fe8db6276",
+    "type": "0xb2dbf5a31ef66526662c0532e9d2315b3770e1f1a8b20e8b8f66a67fe8db6276::coin::COIN",
+    "treasuryCap": "0x0858708ece73a9b1e54125239306cd8a05681b96cb40332879030feb4ea77e11",
+    "metadata": "0xb9a1814957ac3225761a8f6da024275d8009f95c6eed757f973632119c532750",
+    "isSharedTreasuryCap": true
+  },
+  "lp": {
+    "packageId": "0xf8c29f4fe58b0f3e14c95d34a66ccfdec474ce118a4066e1b866a96735d78055",
+    "type": "0xf8c29f4fe58b0f3e14c95d34a66ccfdec474ce118a4066e1b866a96735d78055::coin::COIN",
+    "treasuryCap": "0x7e898d183cd6cf2066e57afd8972188e1120d93e7921dd0a85a715608ae8759f",
+    "metadata": "0xa4e31f107b2a80e5d80c2a4882de9896362be4c67a1feb45e5b81c96c6794793",
+    "isSharedTreasuryCap": false
+  },
+  "timestamp": 1766439280799,
+  "network": "devnet"
+}

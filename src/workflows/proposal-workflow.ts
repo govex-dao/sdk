@@ -13,7 +13,7 @@
  * @module workflows/proposal-workflow
  */
 
-import { Transaction } from '@mysten/sui/transactions';
+import { Transaction, Inputs } from '@mysten/sui/transactions';
 import { bcs } from '@mysten/sui/bcs';
 import { SuiClient } from '@mysten/sui/client';
 import {
@@ -27,8 +27,42 @@ import {
   ConditionalSwapConfig,
   ActionConfig,
   WorkflowTransaction,
+  ObjectIdOrRef,
+  isOwnedObjectRef,
+  isTxSharedObjectRef,
 } from './types';
 import { IntentExecutor, IntentExecutorPackages } from './intent-executor';
+
+/**
+ * Helper to convert ObjectIdOrRef to tx.object() input
+ * Uses Inputs.ObjectRef for owned objects and sharedObjectRef for shared objects
+ * to avoid RPC lookups (important for localnet where indexing may lag).
+ */
+function txObject(tx: Transaction, input: ObjectIdOrRef) {
+  if (isTxSharedObjectRef(input)) {
+    const sharedVersion =
+      typeof input.initialSharedVersion === 'string'
+        ? input.initialSharedVersion
+        : String(input.initialSharedVersion);
+    return tx.object(
+      Inputs.SharedObjectRef({
+        objectId: input.objectId,
+        initialSharedVersion: sharedVersion,
+        mutable: input.mutable,
+      })
+    );
+  }
+  if (isOwnedObjectRef(input)) {
+    return tx.object(
+      Inputs.ObjectRef({
+        objectId: input.objectId,
+        version: typeof input.version === 'string' ? input.version : String(input.version),
+        digest: input.digest,
+      })
+    );
+  }
+  return tx.object(input);
+}
 
 /**
  * Package IDs required for proposal workflow
@@ -142,7 +176,7 @@ export class ProposalWorkflow {
       target: `${futarchyMarketsCorePackageId}::proposal::new_premarket`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
-        tx.object(config.daoAccountId),
+        txObject(tx, config.daoAccountId),
         tx.pure.address(config.treasuryAddress),
         tx.pure.string(config.title),
         tx.pure.string(config.introduction),
@@ -204,13 +238,12 @@ export class ProposalWorkflow {
       target: `${futarchyMarketsCorePackageId}::proposal::set_intent_spec_for_outcome`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
-        tx.object(config.proposalId),
+        txObject(tx, config.proposalId),
         tx.pure.u64(config.outcomeIndex),
         specs,
         tx.pure.u64(config.maxActionsPerOutcome || 10),
-        tx.object(config.daoAccountId),    // account for whitelist check
-        tx.object(config.registryId),       // PackageRegistry
-        tx.object(config.accountDepsId),    // Table<address, DepInfo>
+        txObject(tx, config.daoAccountId),    // account for whitelist check
+        txObject(tx, config.registryId),       // PackageRegistry
       ],
     });
 
@@ -277,6 +310,7 @@ export class ProposalWorkflow {
             tx.pure.u64(action.assetAmount),
             tx.pure.u64(action.stableAmount),
             tx.pure.u64(action.feeBps),
+            tx.pure.u64(action.launchFeeDurationMs ?? 0n),
           ],
         });
         break;
@@ -557,7 +591,7 @@ export class ProposalWorkflow {
       target: `${futarchyMarketsCorePackageId}::proposal::create_escrow_for_market`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
-        tx.object(config.proposalId),
+        txObject(tx, config.proposalId),
         tx.sharedObjectRef({
           objectId: clockId,
           initialSharedVersion: 1,
@@ -577,12 +611,12 @@ export class ProposalWorkflow {
           target: `${futarchyMarketsCorePackageId}::proposal::add_conditional_coin_via_account`,
           typeArguments: [config.assetType, config.stableType, caps.assetType!],
           arguments: [
-            tx.object(config.proposalId),
+            txObject(tx, config.proposalId),
             tx.pure.u64(coinSet.outcomeIndex),
             tx.pure.bool(true), // is_asset
             caps.asset[0], // treasury cap
             caps.asset[1], // metadata
-            tx.object(config.daoAccountId),
+            txObject(tx, config.daoAccountId),
             tx.pure.string('ASSET'),
             tx.pure.string('STABLE'),
           ],
@@ -593,12 +627,12 @@ export class ProposalWorkflow {
           target: `${futarchyMarketsCorePackageId}::proposal::add_conditional_coin_via_account`,
           typeArguments: [config.assetType, config.stableType, caps.stableType!],
           arguments: [
-            tx.object(config.proposalId),
+            txObject(tx, config.proposalId),
             tx.pure.u64(coinSet.outcomeIndex),
             tx.pure.bool(false), // is_asset
             caps.stable[0], // treasury cap
             caps.stable[1], // metadata
-            tx.object(config.daoAccountId),
+            txObject(tx, config.daoAccountId),
             tx.pure.string('ASSET'),
             tx.pure.string('STABLE'),
           ],
@@ -614,7 +648,7 @@ export class ProposalWorkflow {
             caps.stableType!,
           ],
           arguments: [
-            tx.object(config.proposalId),
+            txObject(tx, config.proposalId),
             escrow,
             tx.pure.u64(coinSet.outcomeIndex),
           ],
@@ -627,9 +661,9 @@ export class ProposalWorkflow {
       target: `${futarchyMarketsCorePackageId}::proposal::create_conditional_amm_pools`,
       typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
-        tx.object(config.proposalId),
+        txObject(tx, config.proposalId),
         escrow,
-        tx.object(config.spotPoolId),
+        txObject(tx, config.spotPoolId),
         tx.sharedObjectRef({
           objectId: clockId,
           initialSharedVersion: 1,
@@ -669,7 +703,7 @@ export class ProposalWorkflow {
       target: `${futarchyMarketsCorePackageId}::proposal::initialize_market_fields`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
-        tx.object(config.proposalId),
+        txObject(tx, config.proposalId),
         marketStateId,
         escrowId,
         timestamp,
@@ -711,10 +745,10 @@ export class ProposalWorkflow {
       target: `${futarchyGovernancePackageId}::proposal_lifecycle::advance_proposal_state`,
       typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
-        tx.object(config.daoAccountId),
-        tx.object(config.proposalId),
-        tx.object(config.escrowId),
-        tx.object(config.spotPoolId),
+        txObject(tx, config.daoAccountId),
+        txObject(tx, config.proposalId),
+        txObject(tx, config.escrowId),
+        txObject(tx, config.spotPoolId),
         tx.sharedObjectRef({
           objectId: clockId,
           initialSharedVersion: 1,
@@ -773,9 +807,9 @@ export class ProposalWorkflow {
       target: swapTarget,
       typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
-        tx.object(config.spotPoolId),
-        tx.object(config.proposalId || '0x0'), // Empty if no active proposal
-        tx.object(config.escrowId || '0x0'), // Empty if no active proposal
+        txObject(tx, config.spotPoolId),
+        config.proposalId ? txObject(tx, config.proposalId) : tx.object('0x0'), // Empty if no active proposal
+        config.escrowId ? txObject(tx, config.escrowId) : tx.object('0x0'), // Empty if no active proposal
         inputCoin,
         tx.pure.u64(config.minAmountOut),
         tx.pure.address(config.recipient),
@@ -843,7 +877,7 @@ export class ProposalWorkflow {
     let splitProgress = tx.moveCall({
       target: `${futarchyMarketsPrimitivesPackageId}::coin_escrow::start_split_stable_progress`,
       typeArguments: [config.assetType, config.stableType],
-      arguments: [tx.object(config.escrowId), stableCoin],
+      arguments: [txObject(tx, config.escrowId), stableCoin],
     });
 
     // Split stable across all outcomes
@@ -863,7 +897,7 @@ export class ProposalWorkflow {
         ],
         arguments: [
           splitProgress,
-          tx.object(config.escrowId),
+          txObject(tx, config.escrowId),
           tx.pure.u8(outcome.outcomeIndex),
         ],
       });
@@ -877,21 +911,21 @@ export class ProposalWorkflow {
     tx.moveCall({
       target: `${futarchyMarketsPrimitivesPackageId}::coin_escrow::finish_split_stable_progress`,
       typeArguments: [config.assetType, config.stableType],
-      arguments: [splitProgress, tx.object(config.escrowId)],
+      arguments: [splitProgress, txObject(tx, config.escrowId)],
     });
 
     // Begin swap session
     const session = tx.moveCall({
       target: `${futarchyMarketsCorePackageId}::swap_core::begin_swap_session`,
       typeArguments: [config.assetType, config.stableType],
-      arguments: [tx.object(config.escrowId)],
+      arguments: [txObject(tx, config.escrowId)],
     });
 
     // Begin conditional swaps batch
     const batch = tx.moveCall({
       target: `${futarchyMarketsOperationsPackageId}::swap_entry::begin_conditional_swaps`,
       typeArguments: [config.assetType, config.stableType],
-      arguments: [tx.object(config.escrowId)],
+      arguments: [txObject(tx, config.escrowId)],
     });
 
     // Find the target outcome coin types
@@ -913,7 +947,7 @@ export class ProposalWorkflow {
       arguments: [
         batch,
         session,
-        tx.object(config.escrowId),
+        txObject(tx, config.escrowId),
         tx.pure.u8(config.outcomeIndex),
         condStableInput,
         tx.pure.bool(config.direction === 'asset_to_stable'),
@@ -935,9 +969,9 @@ export class ProposalWorkflow {
       typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
         updatedBatch,
-        tx.object(config.spotPoolId),
-        tx.object(config.proposalId),
-        tx.object(config.escrowId),
+        txObject(tx, config.spotPoolId),
+        txObject(tx, config.proposalId),
+        txObject(tx, config.escrowId),
         session,
         tx.pure.address(config.recipient),
         tx.sharedObjectRef({
@@ -984,17 +1018,14 @@ export class ProposalWorkflow {
     const clockId = config.clockId || '0x6';
 
     const { futarchyGovernancePackageId } = this.packages;
-    const { packageRegistryId } = this.sharedObjects;
 
     tx.moveCall({
-      target: `${futarchyGovernancePackageId}::proposal_lifecycle::finalize_proposal_with_spot_pool`,
+      target: `${futarchyGovernancePackageId}::proposal_lifecycle::end_trading_and_start_execution_window`,
       typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
-        tx.object(config.daoAccountId),
-        tx.object(packageRegistryId),
-        tx.object(config.proposalId),
-        tx.object(config.escrowId),
-        tx.object(config.spotPoolId),
+        txObject(tx, config.proposalId),
+        txObject(tx, config.escrowId),
+        txObject(tx, config.spotPoolId),
         tx.sharedObjectRef({
           objectId: clockId,
           initialSharedVersion: 1,
@@ -1058,8 +1089,8 @@ export class ProposalWorkflow {
    * Redeem winning conditional tokens for underlying assets
    */
   redeemConditionalTokens(
-    proposalId: string,
-    escrowId: string,
+    proposalId: ObjectIdOrRef,
+    escrowId: ObjectIdOrRef,
     assetType: string,
     stableType: string,
     conditionalCoinId: string,
@@ -1082,8 +1113,8 @@ export class ProposalWorkflow {
       target: redeemTarget,
       typeArguments: [assetType, stableType, conditionalCoinType],
       arguments: [
-        tx.object(proposalId),
-        tx.object(escrowId),
+        txObject(tx, proposalId),
+        txObject(tx, escrowId),
         tx.object(conditionalCoinId),
         tx.pure.u64(outcomeIndex),
         tx.sharedObjectRef({

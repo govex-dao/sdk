@@ -426,6 +426,100 @@ export class PackageRegistryAdminOperations {
         return tx;
     }
 
+    // ============================================================================
+    // SPONSORSHIP AUTHORIZATION
+    // ============================================================================
+
+    /**
+     * Add a package to the sponsorship-authorized list
+     * Authorized packages can create SponsorshipAuth for proposal sponsorship
+     * Use this to authorize futarchy_governance to sponsor proposals
+     *
+     * @param packageAdminCapId - PackageAdminCap object ID
+     * @param packageAddr - Package address to authorize
+     * @returns Transaction for adding sponsorship authorization
+     *
+     * @example
+     * ```typescript
+     * // Authorize futarchy_governance for sponsorship
+     * const tx = registryOps.addSponsorshipAuthorizedPackage(adminCapId, governancePackageId);
+     * ```
+     */
+    addSponsorshipAuthorizedPackage(
+        packageAdminCapId: string,
+        packageAddr: string
+    ): Transaction {
+        const builder = new BaseTransactionBuilder(this.client);
+        const tx = builder.getTransaction();
+
+        const target = TransactionUtils.buildTarget(
+            this.protocolPackageId,
+            "package_registry",
+            "add_sponsorship_authorized_package"
+        );
+
+        tx.moveCall({
+            target,
+            arguments: [
+                tx.sharedObjectRef({
+                    objectId: this.registryObjectId,
+                    initialSharedVersion: this.registryInitialSharedVersion,
+                    mutable: true,
+                }),
+                tx.object(packageAdminCapId),
+                tx.pure.address(packageAddr),
+            ],
+        });
+
+        return tx;
+    }
+
+    /**
+     * Remove a package from the sponsorship-authorized list
+     *
+     * @param packageAdminCapId - PackageAdminCap object ID
+     * @param packageAddr - Package address to remove from authorized list
+     * @returns Transaction for removing sponsorship authorization
+     *
+     * @example
+     * ```typescript
+     * // Remove sponsorship authorization
+     * const tx = registryOps.removeSponsorshipAuthorizedPackage(adminCapId, packageAddr);
+     * ```
+     */
+    removeSponsorshipAuthorizedPackage(
+        packageAdminCapId: string,
+        packageAddr: string
+    ): Transaction {
+        const builder = new BaseTransactionBuilder(this.client);
+        const tx = builder.getTransaction();
+
+        const target = TransactionUtils.buildTarget(
+            this.protocolPackageId,
+            "package_registry",
+            "remove_sponsorship_authorized_package"
+        );
+
+        tx.moveCall({
+            target,
+            arguments: [
+                tx.sharedObjectRef({
+                    objectId: this.registryObjectId,
+                    initialSharedVersion: this.registryInitialSharedVersion,
+                    mutable: true,
+                }),
+                tx.object(packageAdminCapId),
+                tx.pure.address(packageAddr),
+            ],
+        });
+
+        return tx;
+    }
+
+    // ============================================================================
+    // FEE WITHDRAWAL
+    // ============================================================================
+
     /**
      * Withdraw fees from the treasury
      * Returns Coin<SUI> to the caller's address
