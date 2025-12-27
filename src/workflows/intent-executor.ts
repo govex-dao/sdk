@@ -414,7 +414,7 @@ export class IntentExecutor {
         break;
 
       case 'deposit_from_resources':
-        // Deposits coin from executable_resources directly into treasury vault
+        // Deposits coin from executable_resources into specified vault
         tx.moveCall({
           target: `${accountActionsPackageId}::vault::do_init_deposit_from_resources`,
           typeArguments: [configType, outcomeType, action.coinType, witnessType],

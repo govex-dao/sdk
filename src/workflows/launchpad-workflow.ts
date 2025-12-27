@@ -545,11 +545,11 @@ export class LaunchpadWorkflow {
         break;
 
       case 'deposit_from_resources':
-        // Deposit coins from executable_resources directly into treasury vault
+        // Deposit coins from executable_resources into specified vault
         tx.moveCall({
           target: `${accountActionsPackageId}::vault_init_actions::add_deposit_from_resources_spec`,
           typeArguments: [getCoinType(action.coinType, config.assetType)],
-          arguments: [builder, tx.pure.string(action.resourceName)],
+          arguments: [builder, tx.pure.string(action.vaultName), tx.pure.string(action.resourceName)],
         });
         break;
 

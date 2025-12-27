@@ -50,4 +50,4 @@ deployments-processed
 # Empty placeholder dirs
 .gen/
 lib/
-types/
+/types/

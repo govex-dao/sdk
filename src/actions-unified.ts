@@ -243,19 +243,21 @@ export class VaultActions {
   /**
    * Add a deposit from resources action spec
    *
-   * Deposits coins from executable_resources directly into treasury vault.
+   * Deposits coins from executable_resources into specified vault.
    * Amount = exactly what prior action produced (deterministic).
    *
+   * @param vaultName - The target vault name
    * @param resourceName - The name of the coin resource in executable_resources
    */
   addDepositFromResources(
     tx: Transaction,
     builder: ReturnType<Transaction['moveCall']>,
+    vaultName: string,
     resourceName: string
   ): void {
     tx.moveCall({
       target: `${this.packages.accountActionsPackageId}::vault_init_actions::add_deposit_from_resources_spec`,
-      arguments: [builder, tx.pure.string(resourceName)],
+      arguments: [builder, tx.pure.string(vaultName), tx.pure.string(resourceName)],
     });
   }
 

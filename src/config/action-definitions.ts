@@ -280,9 +280,10 @@ export const VAULT_ACTIONS: ActionDefinition[] = [
     markerType: 'account_actions::vault::VaultDepositFromResources',
     typeParams: ['CoinType'],
     params: [
+      { name: 'vaultName', type: 'string', description: 'Target vault name' },
       { name: 'resourceName', type: 'string', description: 'Name in executable_resources to take coin from' },
     ],
-    description: 'Deposit coins from executable_resources directly into treasury vault. Amount = exactly what prior action produced (deterministic).',
+    description: 'Deposit coins from executable_resources into specified vault. Amount = exactly what prior action produced (deterministic).',
     launchpadSupported: true,
     proposalSupported: true,
   },
