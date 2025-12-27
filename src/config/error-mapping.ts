@@ -228,6 +228,21 @@ export const MOVE_ERROR_CODES: Record<string, Record<number, string>> = {
     5: 'Invalid fee parameters',
   },
 
+  'futarchy_markets_primitives::coin_escrow': {
+    100: 'Outcome not finalized - cannot determine winner',
+    101: 'Escrow not solvent - insufficient backing for winning outcome',
+    102: 'Outcome index out of bounds',
+    103: 'Allocation underflow - attempting to decrement below zero',
+    104: 'Allocation overflow - amount would exceed max u64',
+  },
+
+  'futarchy_markets_primitives::market_state': {
+    0: 'Market not in trading state',
+    1: 'Market already finalized',
+    2: 'Invalid outcome index',
+    3: 'Trading period not ended',
+  },
+
   // =========================================================================
   // LAUNCHPAD ERRORS
   // =========================================================================

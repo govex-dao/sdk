@@ -86,13 +86,8 @@ async function main() {
   const feeAmount = 10_000_000n;
   const mintFeeTx = new Transaction();
 
-  const treasuryCapArg = isStableTreasuryCapShared
-    ? mintFeeTx.sharedObjectRef({
-        objectId: stableTreasuryCap,
-        initialSharedVersion: 1,
-        mutable: true,
-      })
-    : mintFeeTx.object(stableTreasuryCap);
+  // Always use tx.object() - SDK resolves shared/owned automatically
+  const treasuryCapArg = mintFeeTx.object(stableTreasuryCap);
 
   const feeCoin = mintFeeTx.moveCall({
     target: "0x2::coin::mint",
@@ -104,6 +99,13 @@ async function main() {
   await executeTransaction(sdk, mintFeeTx, { network: "devnet" });
   logSuccess(`Minted ${feeAmount} stable for fees`);
   console.log();
+
+  // Get fee coins after minting
+  const feeCoins = await sdk.client.getCoins({
+    owner: activeAddress,
+    coinType: stableType,
+  });
+  const feeCoinIds = feeCoins.data.map((c) => c.coinObjectId);
 
   // ============================================================================
   // STEP 2: Create proposal
@@ -119,17 +121,11 @@ async function main() {
     metadata: JSON.stringify({ test: "sponsorship" }),
     outcomeMessages: ["Reject", "Accept with sponsorship"],
     outcomeDetails: ["Do nothing", "Execute if sponsored"],
+    proposer: activeAddress,
+    treasuryAddress: activeAddress,
+    usedQuota: false,
+    feeCoins: feeCoinIds,
     feeAmount,
-    conditionalCoinsRegistry: {
-      registryId: conditionalCoinsInfo.registryId,
-      coinSets: conditionalOutcomes.map((outcome) => ({
-        outcomeIndex: outcome.index,
-        assetCoinType: outcome.asset.coinType,
-        assetCapId: outcome.asset.treasuryCapId,
-        stableCoinType: outcome.stable.coinType,
-        stableCapId: outcome.stable.treasuryCapId,
-      })),
-    },
   });
 
   const createResult = await executeTransaction(sdk, createTx.transaction, {

@@ -2278,6 +2278,32 @@ export class FutarchyConfig {
   }
 
   /**
+   * Set fee in asset token flag
+   * If true, proposal fees are paid in AssetType (DAO token).
+   * If false (default), proposal fees are paid in StableType.
+   *
+   * @param tx - Transaction
+   * @param config - Configuration
+   */
+  static setFeeInAssetToken(
+    tx: Transaction,
+    config: {
+      futarchyCorePackageId: string;
+      futarchyConfig: ReturnType<Transaction['moveCall']>;
+      feeInAsset: boolean;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.futarchyCorePackageId,
+        'futarchy_config',
+        'set_fee_in_asset_token'
+      ),
+      arguments: [config.futarchyConfig, tx.pure.bool(config.feeInAsset)],
+    });
+  }
+
+  /**
    * Set accept new proposals flag
    *
    * @param tx - Transaction

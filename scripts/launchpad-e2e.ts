@@ -214,6 +214,11 @@ async function main() {
       startDelay: 0n,
       threshold: 0n,
     },
+    // === 10. UPDATE GOVERNANCE (for multi-outcome testing) ===
+    {
+      type: 'update_governance' as const,
+      maxOutcomes: 10n, // Allow up to 10 outcomes (default is 2)
+    },
   ];
 
   // Define failure actions
@@ -304,7 +309,7 @@ async function main() {
   console.log("STEP 2: STAGE SUCCESS INIT ACTIONS");
   console.log("=".repeat(80));
 
-  console.log("\n📋 Staging SUCCESS actions (9 total)...");
+  console.log(`\n📋 Staging SUCCESS actions (${successActions.length} total)...`);
 
   const stageSuccessResult = await executeTransaction(
     sdk,
@@ -321,7 +326,7 @@ async function main() {
   raiseRef = getObjectRefById(stageSuccessResult, raiseId, network);
   creatorCapRef = getObjectRefById(stageSuccessResult, creatorCapId, network);
 
-  console.log("✅ All 9 SUCCESS actions staged!");
+  console.log(`✅ All ${successActions.length} SUCCESS actions staged!`);
   console.log(`   Transaction: ${stageSuccessResult.digest}`);
 
   // Step 3: Stage FAILURE init actions
@@ -550,6 +555,7 @@ async function main() {
         },
         { type: 'update_trading_params' as const },
         { type: 'update_twap_config' as const },
+        { type: 'update_governance' as const },
       ]
     : [
         { type: 'return_treasury_cap' as const, coinType: testCoins.asset.type },
@@ -574,7 +580,7 @@ async function main() {
     });
 
     if (raiseActuallySucceeded) {
-      console.log("✅ All 9 actions executed!");
+      console.log(`✅ All ${actionTypes.length} actions executed!`);
       console.log(`   Transaction: ${executeResult.digest}`);
 
       const poolObject = executeResult.objectChanges?.find((c: any) =>

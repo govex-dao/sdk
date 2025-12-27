@@ -243,9 +243,8 @@ export class VaultActions {
   /**
    * Add a deposit from resources action spec
    *
-   * Deposits coins from executable_resources into the "temporary_deposits" vault.
-   * The vault is hardcoded for security - prevents manipulation attacks with unknown-amount deposits.
-   * Use `crankTemporaryToTreasury` to move funds to treasury afterward (permissionless).
+   * Deposits coins from executable_resources directly into treasury vault.
+   * Amount = exactly what prior action produced (deterministic).
    *
    * @param resourceName - The name of the coin resource in executable_resources
    */
@@ -260,47 +259,6 @@ export class VaultActions {
     });
   }
 
-  /**
-   * Permissionless crank: move coins from temporary_deposits to treasury
-   *
-   * ANYONE can call this function - it's completely permissionless.
-   * This is safe because:
-   * 1. Only moves coins FROM temporary_deposits TO treasury (one direction)
-   * 2. Both vaults belong to the same Account
-   * 3. No value leaves the DAO - just internal reallocation
-   *
-   * Use case: After a proposal executes actions that deposit LP tokens or swap outputs
-   * to temporary_deposits, anyone can crank them to treasury.
-   *
-   * @param accountId - The DAO Account ID
-   * @param registryId - The PackageRegistry ID
-   * @param registryInitialVersion - The PackageRegistry initial shared version
-   * @param coinType - The coin type to crank
-   * @param configType - The Config type (e.g., FutarchyConfig)
-   */
-  crankTemporaryToTreasury(
-    tx: Transaction,
-    config: {
-      accountId: string;
-      registryId: string;
-      registryInitialVersion: number;
-      coinType: string;
-      configType: string;
-    }
-  ): void {
-    tx.moveCall({
-      target: `${this.packages.accountActionsPackageId}::vault::crank_temporary_to_treasury`,
-      typeArguments: [config.configType, config.coinType],
-      arguments: [
-        tx.object(config.accountId),
-        tx.sharedObjectRef({
-          objectId: config.registryId,
-          initialSharedVersion: config.registryInitialVersion,
-          mutable: false,
-        }),
-      ],
-    });
-  }
 }
 
 /**

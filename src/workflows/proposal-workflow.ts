@@ -1053,8 +1053,10 @@ export class ProposalWorkflow {
       accountId: config.daoAccountId,
       proposalId: config.proposalId,
       escrowId: config.escrowId,
+      spotPoolId: config.spotPoolId,
       assetType: config.assetType,
       stableType: config.stableType,
+      lpType: config.lpType,
       clockId: config.clockId,
       actions: config.actionTypes.map((at) => {
         switch (at.type) {

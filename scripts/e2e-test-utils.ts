@@ -76,13 +76,8 @@ export async function mintStableTokens(
 ): Promise<void> {
   const tx = new Transaction();
 
-  const treasuryCapArg = isShared
-    ? tx.sharedObjectRef({
-        objectId: stableTreasuryCap,
-        initialSharedVersion: 1,
-        mutable: true,
-      })
-    : tx.object(stableTreasuryCap);
+  // Always use tx.object() - SDK resolves shared/owned automatically
+  const treasuryCapArg = tx.object(stableTreasuryCap);
 
   const mintedCoin = tx.moveCall({
     target: "0x2::coin::mint",

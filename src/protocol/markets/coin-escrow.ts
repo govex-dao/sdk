@@ -1,12 +1,21 @@
 /**
  * Coin Escrow Operations
  *
- * Escrow system for conditional tokens. Manages:
+ * Escrow system for conditional tokens with per-outcome allocation tracking.
+ *
+ * Manages:
  * - Minting conditional tokens by depositing spot coins
  * - Burning conditional tokens to withdraw spot coins
  * - Split operations (spot -> conditional)
  * - Recombine operations (conditional -> spot)
  * - Supply tracking for all conditional coin types
+ * - Per-outcome escrow allocation tracking
+ *
+ * Key Invariant:
+ *   outcome_escrowed[i] == supply[i] + wrapped[i] for each token type per outcome
+ *
+ * This invariant ensures solvency - the escrow always holds enough backing
+ * to pay out winners after market finalization.
  *
  * @module coin-escrow
  */
@@ -578,6 +587,136 @@ export class CoinEscrow {
         marketsPackageId,
         'coin_escrow',
         'caps_registered_count'
+      ),
+      typeArguments: [assetType, stableType],
+      arguments: [tx.object(escrowId)],
+    });
+  }
+
+  // ============================================================================
+  // Per-Outcome Escrow Allocation Queries
+  // ============================================================================
+
+  /**
+   * Get escrowed asset amount for a specific outcome
+   *
+   * Returns the total asset allocation for the given outcome.
+   * This equals supply[outcome] + wrapped[outcome] for asset type.
+   *
+   * @param tx - Transaction
+   * @param marketsPackageId - Package ID
+   * @param assetType - Asset coin type
+   * @param stableType - Stable coin type
+   * @param escrowId - TokenEscrow object ID
+   * @param outcomeIndex - Outcome index (0-based)
+   * @returns Escrowed asset amount (u64)
+   */
+  static getOutcomeEscrowedAsset(
+    tx: Transaction,
+    marketsPackageId: string,
+    assetType: string,
+    stableType: string,
+    escrowId: string,
+    outcomeIndex: number
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        marketsPackageId,
+        'coin_escrow',
+        'get_outcome_escrowed_asset'
+      ),
+      typeArguments: [assetType, stableType],
+      arguments: [tx.object(escrowId), tx.pure.u64(outcomeIndex)],
+    });
+  }
+
+  /**
+   * Get escrowed stable amount for a specific outcome
+   *
+   * Returns the total stable allocation for the given outcome.
+   * This equals supply[outcome] + wrapped[outcome] for stable type.
+   *
+   * @param tx - Transaction
+   * @param marketsPackageId - Package ID
+   * @param assetType - Asset coin type
+   * @param stableType - Stable coin type
+   * @param escrowId - TokenEscrow object ID
+   * @param outcomeIndex - Outcome index (0-based)
+   * @returns Escrowed stable amount (u64)
+   */
+  static getOutcomeEscrowedStable(
+    tx: Transaction,
+    marketsPackageId: string,
+    assetType: string,
+    stableType: string,
+    escrowId: string,
+    outcomeIndex: number
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        marketsPackageId,
+        'coin_escrow',
+        'get_outcome_escrowed_stable'
+      ),
+      typeArguments: [assetType, stableType],
+      arguments: [tx.object(escrowId), tx.pure.u64(outcomeIndex)],
+    });
+  }
+
+  /**
+   * Get all escrowed asset amounts for all outcomes
+   *
+   * Returns vector of asset allocations for each outcome.
+   *
+   * @param tx - Transaction
+   * @param marketsPackageId - Package ID
+   * @param assetType - Asset coin type
+   * @param stableType - Stable coin type
+   * @param escrowId - TokenEscrow object ID
+   * @returns Vector of escrowed asset amounts
+   */
+  static getAllOutcomeEscrowedAsset(
+    tx: Transaction,
+    marketsPackageId: string,
+    assetType: string,
+    stableType: string,
+    escrowId: string
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        marketsPackageId,
+        'coin_escrow',
+        'get_all_outcome_escrowed_asset'
+      ),
+      typeArguments: [assetType, stableType],
+      arguments: [tx.object(escrowId)],
+    });
+  }
+
+  /**
+   * Get all escrowed stable amounts for all outcomes
+   *
+   * Returns vector of stable allocations for each outcome.
+   *
+   * @param tx - Transaction
+   * @param marketsPackageId - Package ID
+   * @param assetType - Asset coin type
+   * @param stableType - Stable coin type
+   * @param escrowId - TokenEscrow object ID
+   * @returns Vector of escrowed stable amounts
+   */
+  static getAllOutcomeEscrowedStable(
+    tx: Transaction,
+    marketsPackageId: string,
+    assetType: string,
+    stableType: string,
+    escrowId: string
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        marketsPackageId,
+        'coin_escrow',
+        'get_all_outcome_escrowed_stable'
       ),
       typeArguments: [assetType, stableType],
       arguments: [tx.object(escrowId)],

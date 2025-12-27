@@ -118,6 +118,58 @@ export class Proposal {
     });
   }
 
+  /**
+   * Create a new PREMARKET proposal with fee paid in AssetType (DAO token).
+   * Use this when the DAO has configured fee_in_asset_token = true.
+   * This reduces friction for proposers who hold the DAO token.
+   */
+  static newPremarketWithAssetFee(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+      protocolPackageId: string;
+      assetType: string;
+      stableType: string;
+      daoAccountId: string;
+      treasuryAddress: string;
+      title: string;
+      introductionDetails: string;
+      metadata: string;
+      outcomeMessages: string[];
+      outcomeDetails: string[];
+      proposer: string;
+      usedQuota: boolean;
+      feePayment: ReturnType<Transaction['moveCall']> | ReturnType<Transaction['splitCoins']>; // Coin<AssetType> for proposal fee
+      intentSpecForYes?: ReturnType<Transaction['moveCall']>;
+      clock?: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    const intentSpec = config.intentSpecForYes || tx.moveCall({
+      target: '0x1::option::none',
+      typeArguments: [`vector<${config.protocolPackageId}::intents::ActionSpec>`],
+      arguments: [],
+    });
+
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'new_premarket_with_asset_fee'),
+      typeArguments: [config.assetType, config.stableType],
+      arguments: [
+        tx.object(config.daoAccountId),
+        tx.pure.address(config.treasuryAddress),
+        tx.pure.string(config.title),
+        tx.pure.string(config.introductionDetails),
+        tx.pure.string(config.metadata),
+        tx.pure.vector('string', config.outcomeMessages),
+        tx.pure.vector('string', config.outcomeDetails),
+        tx.pure.address(config.proposer),
+        tx.pure.bool(config.usedQuota),
+        config.feePayment,
+        intentSpec,
+        tx.object(config.clock || '0x6'),
+      ],
+    });
+  }
+
   static createEscrowForMarket(
     tx: Transaction,
     config: {

@@ -222,8 +222,8 @@ export class IntentExecutor {
     config: IntentExecutionConfig,
     clockId: string
   ): WorkflowTransaction {
-    if (!config.proposalId || !config.escrowId) {
-      throw new Error('proposalId and escrowId are required for proposal intent execution');
+    if (!config.proposalId || !config.escrowId || !config.spotPoolId || !config.lpType) {
+      throw new Error('proposalId, escrowId, spotPoolId, and lpType are required for proposal intent execution');
     }
 
     const {
@@ -267,14 +267,16 @@ export class IntentExecutor {
       });
     }
 
-    // 3. Finalize execution
+    // 3. Finalize execution (use wrapper that accesses market_state through escrow)
     tx.moveCall({
-      target: `${futarchyGovernancePackageId}::ptb_executor::finalize_execution`,
-      typeArguments: [config.assetType, config.stableType],
+      target: `${futarchyGovernancePackageId}::ptb_executor::finalize_execution_success_with_escrow`,
+      typeArguments: [config.assetType, config.stableType, config.lpType!],
       arguments: [
         txObject(tx, config.accountId),
         tx.object(packageRegistryId),
         txObject(tx, config.proposalId!),
+        txObject(tx, config.spotPoolId!),
+        txObject(tx, config.escrowId!),
         executable,
         tx.object(clockId),
       ],
@@ -412,8 +414,7 @@ export class IntentExecutor {
         break;
 
       case 'deposit_from_resources':
-        // Deposits coin from executable_resources into "temporary_deposits" vault
-        // The vault is hardcoded for security - prevents manipulation attacks
+        // Deposits coin from executable_resources directly into treasury vault
         tx.moveCall({
           target: `${accountActionsPackageId}::vault::do_init_deposit_from_resources`,
           typeArguments: [configType, outcomeType, action.coinType, witnessType],

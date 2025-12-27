@@ -82,13 +82,8 @@ async function main() {
   const feeAmount = 10_000_000n;
   const mintFeeTx = new Transaction();
 
-  const treasuryCapArg = isStableTreasuryCapShared
-    ? mintFeeTx.sharedObjectRef({
-        objectId: stableTreasuryCap,
-        initialSharedVersion: 1,
-        mutable: true,
-      })
-    : mintFeeTx.object(stableTreasuryCap);
+  // Always use tx.object() - SDK resolves shared/owned automatically
+  const treasuryCapArg = mintFeeTx.object(stableTreasuryCap);
 
   const feeCoin = mintFeeTx.moveCall({
     target: "0x2::coin::mint",
@@ -100,6 +95,13 @@ async function main() {
   await executeTransaction(sdk, mintFeeTx, { network: "devnet" });
   logSuccess(`Minted ${feeAmount} stable for fees`);
   console.log();
+
+  // Get fee coins after minting
+  const feeCoins = await sdk.client.getCoins({
+    owner: activeAddress,
+    coinType: stableType,
+  });
+  const feeCoinIds = feeCoins.data.map((c) => c.coinObjectId);
 
   // ============================================================================
   // STEP 2: Create proposal with memo action
@@ -115,17 +117,11 @@ async function main() {
     metadata: JSON.stringify({ test: "memo-action" }),
     outcomeMessages: ["Reject", "Accept and emit memo"],
     outcomeDetails: ["Do nothing", "Emit a memo event"],
+    proposer: activeAddress,
+    treasuryAddress: activeAddress,
+    usedQuota: false,
+    feeCoins: feeCoinIds,
     feeAmount,
-    conditionalCoinsRegistry: {
-      registryId: conditionalCoinsInfo.registryId,
-      coinSets: conditionalOutcomes.map((outcome) => ({
-        outcomeIndex: outcome.index,
-        assetCoinType: outcome.asset.coinType,
-        assetCapId: outcome.asset.treasuryCapId,
-        stableCoinType: outcome.stable.coinType,
-        stableCapId: outcome.stable.treasuryCapId,
-      })),
-    },
   });
 
   const createResult = await executeTransaction(sdk, createTx.transaction, {
@@ -201,6 +197,7 @@ async function main() {
       obj.type === "created" && obj.objectType?.includes("TokenEscrow")
   );
   const escrowId = (escrowObject as any)?.objectId;
+
   logSuccess(`Advanced to REVIEW. Escrow: ${escrowId}`);
 
   // Wait for review period
@@ -222,13 +219,8 @@ async function main() {
   // Mint and swap for ACCEPT tokens
   const tradeAmount = 100_000_000n;
   const mintTradeTx = new Transaction();
-  const tradeCapArg = isStableTreasuryCapShared
-    ? mintTradeTx.sharedObjectRef({
-        objectId: stableTreasuryCap,
-        initialSharedVersion: 1,
-        mutable: true,
-      })
-    : mintTradeTx.object(stableTreasuryCap);
+  // Always use tx.object() - SDK resolves shared/owned automatically
+  const tradeCapArg = mintTradeTx.object(stableTreasuryCap);
   const tradeCoin = mintTradeTx.moveCall({
     target: "0x2::coin::mint",
     typeArguments: [stableType],
@@ -237,9 +229,19 @@ async function main() {
   mintTradeTx.transferObjects([tradeCoin], mintTradeTx.pure.address(activeAddress));
   await executeTransaction(sdk, mintTradeTx, { network: "devnet" });
 
-  const acceptOutcome = conditionalOutcomes.find(
-    (o) => o.index === ACCEPT_OUTCOME_INDEX
-  )!;
+  // Get stable coins for trading
+  const tradeCoins = await sdk.client.getCoins({
+    owner: activeAddress,
+    coinType: stableType,
+  });
+  const tradeCoinIds = tradeCoins.data.map((c) => c.coinObjectId);
+
+  // Build allOutcomeCoins from conditionalOutcomes
+  const allOutcomeCoins = conditionalOutcomes.map((outcome) => ({
+    outcomeIndex: outcome.index,
+    assetCoinType: outcome.asset.coinType,
+    stableCoinType: outcome.stable.coinType,
+  }));
 
   const swapTx = proposalWorkflow.conditionalSwap({
     proposalId,
@@ -249,10 +251,12 @@ async function main() {
     stableType,
     lpType,
     outcomeIndex: ACCEPT_OUTCOME_INDEX,
-    assetConditionalType: acceptOutcome.asset.coinType,
-    stableConditionalType: acceptOutcome.stable.coinType,
     direction: "stable_to_asset",
-    stableAmount: tradeAmount,
+    amountIn: tradeAmount,
+    minAmountOut: 0n,
+    recipient: activeAddress,
+    allOutcomeCoins,
+    stableCoins: tradeCoinIds,
   });
 
   await executeTransaction(sdk, swapTx.transaction, { network: "devnet" });
@@ -282,10 +286,11 @@ async function main() {
     showEvents: true,
   });
 
+  // Look for ExecutionWindowStarted event which contains market_winner
   const finalizeEvent = finalizeResult.events?.find((e: any) =>
-    e.type.includes("ProposalFinalized")
+    e.type.includes("ExecutionWindowStarted")
   );
-  const winningOutcome = finalizeEvent?.parsedJson?.winning_outcome;
+  const winningOutcome = finalizeEvent?.parsedJson?.market_winner;
 
   logSuccess(`Proposal finalized with winner: ${winningOutcome}`);
 
@@ -306,8 +311,10 @@ async function main() {
     daoAccountId,
     proposalId,
     escrowId,
+    spotPoolId,
     assetType,
     stableType,
+    lpType,
     actionTypes: [{ type: "memo" }],
   });
 

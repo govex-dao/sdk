@@ -394,6 +394,28 @@ export class LaunchpadWorkflow {
         });
         break;
 
+      case 'update_governance':
+        tx.moveCall({
+          target: `${futarchyActionsPackageId}::futarchy_config_init_actions::add_update_governance_spec`,
+          arguments: [
+            builder,
+            tx.pure.option('u64', action.maxOutcomes ? Number(action.maxOutcomes) : null),
+            tx.pure.option('u64', action.maxActionsPerOutcome ? Number(action.maxActionsPerOutcome) : null),
+            tx.pure.option('u64', action.requiredBondAmount ? Number(action.requiredBondAmount) : null),
+            tx.pure.option('u64', action.maxIntentsPerOutcome ? Number(action.maxIntentsPerOutcome) : null),
+            tx.pure.option('u64', action.proposalIntentExpiryMs ? Number(action.proposalIntentExpiryMs) : null),
+            tx.pure.option('u64', action.optimisticChallengeFee ? Number(action.optimisticChallengeFee) : null),
+            tx.pure.option('u64', action.optimisticChallengePeriodMs ? Number(action.optimisticChallengePeriodMs) : null),
+            tx.pure.option('u64', action.proposalCreationFee ? Number(action.proposalCreationFee) : null),
+            tx.pure.option('u64', action.proposalFeePerOutcome ? Number(action.proposalFeePerOutcome) : null),
+            tx.pure.option('bool', action.feeInAssetToken ?? null),
+            tx.pure.option('bool', action.acceptNewProposals ?? null),
+            tx.pure.option('bool', action.enablePremarketReservationLock ?? null),
+            tx.pure.option('bool', action.showProposalDetails ?? null),
+          ],
+        });
+        break;
+
       case 'mint':
         // Mint tokens and store in executable_resources for subsequent actions
         tx.moveCall({
@@ -523,8 +545,7 @@ export class LaunchpadWorkflow {
         break;
 
       case 'deposit_from_resources':
-        // Deposit coins from executable_resources into temporary_deposits vault
-        // Use crank_temporary_to_treasury to move to treasury afterward
+        // Deposit coins from executable_resources directly into treasury vault
         tx.moveCall({
           target: `${accountActionsPackageId}::vault_init_actions::add_deposit_from_resources_spec`,
           typeArguments: [getCoinType(action.coinType, config.assetType)],
@@ -739,6 +760,8 @@ export class LaunchpadWorkflow {
             return { action: 'update_trading_params' as const };
           case 'update_twap_config':
             return { action: 'update_twap_config' as const };
+          case 'update_governance':
+            return { action: 'update_governance' as const };
           case 'return_treasury_cap':
             return { action: 'return_treasury_cap' as const, coinType: at.coinType };
           case 'return_metadata':

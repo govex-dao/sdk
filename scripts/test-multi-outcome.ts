@@ -110,13 +110,8 @@ async function main() {
   const feeAmount = baseFee + perOutcomeFee * BigInt(NUM_OUTCOMES - 2);
 
   const mintFeeTx = new Transaction();
-  const treasuryCapArg = isStableTreasuryCapShared
-    ? mintFeeTx.sharedObjectRef({
-        objectId: stableTreasuryCap,
-        initialSharedVersion: 1,
-        mutable: true,
-      })
-    : mintFeeTx.object(stableTreasuryCap);
+  // Always use tx.object() - SDK resolves shared/owned automatically
+  const treasuryCapArg = mintFeeTx.object(stableTreasuryCap);
 
   const feeCoin = mintFeeTx.moveCall({
     target: "0x2::coin::mint",
@@ -128,6 +123,13 @@ async function main() {
   await executeTransaction(sdk, mintFeeTx, { network: "devnet" });
   logSuccess(`Minted ${feeAmount} stable for fees`);
   console.log();
+
+  // Get fee coins after minting
+  const feeCoins = await sdk.client.getCoins({
+    owner: activeAddress,
+    coinType: stableType,
+  });
+  const feeCoinIds = feeCoins.data.map((c) => c.coinObjectId);
 
   // ============================================================================
   // STEP 2: Create proposal with N outcomes
@@ -151,6 +153,10 @@ async function main() {
     metadata: JSON.stringify({ test: "multi-outcome", numOutcomes: NUM_OUTCOMES }),
     outcomeMessages,
     outcomeDetails,
+    proposer: activeAddress,
+    treasuryAddress: activeAddress,
+    usedQuota: false,
+    feeCoins: feeCoinIds,
     feeAmount,
     conditionalCoinsRegistry: {
       registryId: conditionalCoinsInfo.registryId,
@@ -266,23 +272,27 @@ async function main() {
   const tradeAmountPerOutcome = 50_000_000n;
   const totalTradeAmount = tradeAmountPerOutcome * BigInt(NUM_OUTCOMES);
 
+  // Mint extra for the intended winner (3x for winner = 2 extra)
+  const actualTradeAmount = totalTradeAmount + tradeAmountPerOutcome * 2n;
   const mintTradeTx = new Transaction();
-  const tradeCapArg = isStableTreasuryCapShared
-    ? mintTradeTx.sharedObjectRef({
-        objectId: stableTreasuryCap,
-        initialSharedVersion: 1,
-        mutable: true,
-      })
-    : mintTradeTx.object(stableTreasuryCap);
+  // Always use tx.object() - SDK resolves shared/owned automatically
+  const tradeCapArg = mintTradeTx.object(stableTreasuryCap);
 
   const tradeCoin = mintTradeTx.moveCall({
     target: "0x2::coin::mint",
     typeArguments: [stableType],
-    arguments: [tradeCapArg, mintTradeTx.pure.u64(totalTradeAmount)],
+    arguments: [tradeCapArg, mintTradeTx.pure.u64(actualTradeAmount)],
   });
   mintTradeTx.transferObjects([tradeCoin], mintTradeTx.pure.address(activeAddress));
   await executeTransaction(sdk, mintTradeTx, { network: "devnet" });
-  logSuccess(`Minted ${totalTradeAmount} stable for trading`);
+  logSuccess(`Minted ${actualTradeAmount} stable for trading`);
+
+  // Build allOutcomeCoins from outcomes
+  const allOutcomeCoins = outcomes.map((outcome) => ({
+    outcomeIndex: outcome.index,
+    assetCoinType: outcome.asset.coinType,
+    stableCoinType: outcome.stable.coinType,
+  }));
 
   // Pick a winner - buy MORE tokens for this outcome
   const INTENDED_WINNER = Math.floor(NUM_OUTCOMES / 2); // Middle outcome
@@ -297,6 +307,13 @@ async function main() {
         ? tradeAmountPerOutcome * 3n // 3x for winner
         : tradeAmountPerOutcome;
 
+    // Get fresh coins before each swap
+    const tradeCoins = await sdk.client.getCoins({
+      owner: activeAddress,
+      coinType: stableType,
+    });
+    const tradeCoinIds = tradeCoins.data.map((c) => c.coinObjectId);
+
     const swapTx = proposalWorkflow.conditionalSwap({
       proposalId,
       escrowId,
@@ -305,10 +322,12 @@ async function main() {
       stableType,
       lpType,
       outcomeIndex: i,
-      assetConditionalType: outcome.asset.coinType,
-      stableConditionalType: outcome.stable.coinType,
       direction: "stable_to_asset",
-      stableAmount: amount,
+      amountIn: amount,
+      minAmountOut: 0n,
+      recipient: activeAddress,
+      allOutcomeCoins,
+      stableCoins: tradeCoinIds,
     });
 
     const swapResult = await executeTransaction(sdk, swapTx.transaction, {
@@ -364,10 +383,11 @@ async function main() {
     showEvents: true,
   });
 
+  // Look for ExecutionWindowStarted event which contains market_winner
   const finalizeEvent = finalizeResult.events?.find((e: any) =>
-    e.type.includes("ProposalFinalized")
+    e.type.includes("ExecutionWindowStarted")
   );
-  const winningOutcome = Number(finalizeEvent?.parsedJson?.winning_outcome ?? -1);
+  const winningOutcome = Number(finalizeEvent?.parsedJson?.market_winner ?? -1);
 
   logSuccess(`Proposal finalized!`);
   console.log(`   Winning outcome: ${winningOutcome}`);
@@ -394,8 +414,10 @@ async function main() {
       daoAccountId,
       proposalId,
       escrowId,
+      spotPoolId,
       assetType,
       stableType,
+      lpType,
       actionTypes: [{ type: "memo" }],
     });
 

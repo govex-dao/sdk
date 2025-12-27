@@ -622,17 +622,17 @@ export class MarketState {
   // ============================================================================
 
   /**
-   * Copy market ID (for queries)
+   * Copy proposal ID (for queries)
    *
-   * Returns owned copy instead of reference.
+   * Returns owned copy of the proposal ID that created this market.
    */
-  static copyMarketId(
+  static copyProposalId(
     tx: Transaction,
     marketsPackageId: string,
     marketState: ReturnType<Transaction['moveCall']>
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
-      target: TransactionUtils.buildTarget(marketsPackageId, 'market_state', 'copy_market_id'),
+      target: TransactionUtils.buildTarget(marketsPackageId, 'market_state', 'copy_proposal_id'),
       arguments: [marketState],
     });
   }

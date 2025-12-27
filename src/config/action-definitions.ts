@@ -282,7 +282,7 @@ export const VAULT_ACTIONS: ActionDefinition[] = [
     params: [
       { name: 'resourceName', type: 'string', description: 'Name in executable_resources to take coin from' },
     ],
-    description: 'Deposit coins from executable_resources into temporary_deposits vault (for unknown-amount deposits like LP tokens or swap outputs). Use crank_temporary_to_treasury to move to treasury.',
+    description: 'Deposit coins from executable_resources directly into treasury vault. Amount = exactly what prior action produced (deterministic).',
     launchpadSupported: true,
     proposalSupported: true,
   },
@@ -718,6 +718,12 @@ export const CONFIG_ACTIONS: ActionDefinition[] = [
       },
       { name: 'proposalCreationFee', type: 'option<u64>', description: 'Proposal creation fee', optional: true },
       { name: 'proposalFeePerOutcome', type: 'option<u64>', description: 'Fee per outcome', optional: true },
+      {
+        name: 'feeInAssetToken',
+        type: 'option<bool>',
+        description: 'If true, fees paid in AssetType; if false, fees paid in StableType',
+        optional: true,
+      },
       { name: 'acceptNewProposals', type: 'option<bool>', description: 'Accept new proposals', optional: true },
       {
         name: 'enablePremarketReservationLock',

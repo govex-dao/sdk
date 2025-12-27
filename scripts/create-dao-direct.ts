@@ -328,6 +328,27 @@ async function main() {
     ],
   });
 
+  // 10. add_update_governance_spec - Set max_outcomes to 10 for multi-outcome testing
+  createDaoTx.moveCall({
+    target: `${futarchyActionsPackageId}::futarchy_config_init_actions::add_update_governance_spec`,
+    arguments: [
+      builder,
+      createDaoTx.pure.option("u64", 10), // max_outcomes (default is 2, set to 10)
+      createDaoTx.pure.option("u64", null), // max_actions_per_outcome
+      createDaoTx.pure.option("u64", null), // required_bond_amount
+      createDaoTx.pure.option("u64", null), // max_intents_per_outcome
+      createDaoTx.pure.option("u64", null), // proposal_intent_expiry_ms
+      createDaoTx.pure.option("u64", null), // optimistic_challenge_fee
+      createDaoTx.pure.option("u64", null), // optimistic_challenge_period_ms
+      createDaoTx.pure.option("u64", null), // proposal_creation_fee
+      createDaoTx.pure.option("u64", null), // proposal_fee_per_outcome
+      createDaoTx.pure.option("bool", null), // fee_in_asset_token
+      createDaoTx.pure.option("bool", null), // accept_new_proposals
+      createDaoTx.pure.option("bool", null), // enable_premarket_reservation_lock
+      createDaoTx.pure.option("bool", null), // show_proposal_details
+    ],
+  });
+
   // Convert builder to vector<ActionSpec>
   const initSpecs = createDaoTx.moveCall({
     target: `${accountActionsPackageId}::action_spec_builder::into_vector`,
@@ -694,6 +715,29 @@ async function main() {
   console.log("   9. update_twap_config...");
   executeTx.moveCall({
     target: `${futarchyActionsPackageId}::config_actions::do_update_twap_config`,
+    typeArguments: [outcomeType, witnessType],
+    arguments: [
+      executable,
+      executeTx.object(accountId),
+      executeTx.sharedObjectRef({
+        objectId: registryObj.id,
+        initialSharedVersion: registryObj.version,
+        mutable: true,
+      }),
+      versionWitness,
+      intentWitness,
+      executeTx.sharedObjectRef({
+        objectId: "0x6",
+        initialSharedVersion: 1,
+        mutable: false,
+      }),
+    ],
+  });
+
+  // Action 10: Update Governance (set max_outcomes to 10)
+  console.log("   10. update_governance (max_outcomes=10)...");
+  executeTx.moveCall({
+    target: `${futarchyActionsPackageId}::config_actions::do_update_governance`,
     typeArguments: [outcomeType, witnessType],
     arguments: [
       executable,

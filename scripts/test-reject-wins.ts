@@ -90,13 +90,8 @@ async function main() {
   const feeAmount = 10_000_000n; // 10 stable
   const mintFeeTx = new Transaction();
 
-  const treasuryCapArg = isStableTreasuryCapShared
-    ? mintFeeTx.sharedObjectRef({
-        objectId: stableTreasuryCap,
-        initialSharedVersion: 1,
-        mutable: true,
-      })
-    : mintFeeTx.object(stableTreasuryCap);
+  // Always use tx.object() - SDK resolves shared/owned automatically
+  const treasuryCapArg = mintFeeTx.object(stableTreasuryCap);
 
   const feeCoin = mintFeeTx.moveCall({
     target: "0x2::coin::mint",
@@ -108,6 +103,13 @@ async function main() {
   await executeTransaction(sdk, mintFeeTx, { network: "devnet" });
   logSuccess(`Minted ${feeAmount} stable for fees`);
   console.log();
+
+  // Get fee coins after minting
+  const feeCoins = await sdk.client.getCoins({
+    owner: activeAddress,
+    coinType: stableType,
+  });
+  const feeCoinIds = feeCoins.data.map((c) => c.coinObjectId);
 
   // ============================================================================
   // STEP 2: Create proposal with memo action on Accept
@@ -123,6 +125,10 @@ async function main() {
     metadata: JSON.stringify({ test: "reject-wins" }),
     outcomeMessages: ["Reject this proposal", "Accept this proposal"],
     outcomeDetails: ["Do nothing", "Execute memo action"],
+    proposer: activeAddress,
+    treasuryAddress: activeAddress,
+    usedQuota: false,
+    feeCoins: feeCoinIds,
     feeAmount: feeAmount,
     conditionalCoinsRegistry: {
       registryId: conditionalCoinsInfo.registryId,
@@ -236,13 +242,8 @@ async function main() {
   const tradeAmount = 100_000_000n; // 100 stable
   const mintTradeTx = new Transaction();
 
-  const tradeCapArg = isStableTreasuryCapShared
-    ? mintTradeTx.sharedObjectRef({
-        objectId: stableTreasuryCap,
-        initialSharedVersion: 1,
-        mutable: true,
-      })
-    : mintTradeTx.object(stableTreasuryCap);
+  // Always use tx.object() - SDK resolves shared/owned automatically
+  const tradeCapArg = mintTradeTx.object(stableTreasuryCap);
 
   const tradeCoin = mintTradeTx.moveCall({
     target: "0x2::coin::mint",
@@ -256,6 +257,13 @@ async function main() {
 
   await executeTransaction(sdk, mintTradeTx, { network: "devnet" });
   logSuccess(`Minted ${tradeAmount} stable for trading`);
+
+  // Get stable coins for trading
+  const tradeCoins = await sdk.client.getCoins({
+    owner: activeAddress,
+    coinType: stableType,
+  });
+  const tradeCoinIds = tradeCoins.data.map((c) => c.coinObjectId);
   console.log();
 
   // ============================================================================
@@ -271,6 +279,13 @@ async function main() {
     throw new Error("Reject outcome not found in conditional coins");
   }
 
+  // Build allOutcomeCoins from conditionalOutcomes
+  const allOutcomeCoins = conditionalOutcomes.map((outcome) => ({
+    outcomeIndex: outcome.index,
+    assetCoinType: outcome.asset.coinType,
+    stableCoinType: outcome.stable.coinType,
+  }));
+
   // Create swap to buy REJECT asset tokens
   const swapTx = proposalWorkflow.conditionalSwap({
     proposalId,
@@ -280,10 +295,12 @@ async function main() {
     stableType,
     lpType,
     outcomeIndex: REJECT_OUTCOME_INDEX,
-    assetConditionalType: rejectOutcome.asset.coinType,
-    stableConditionalType: rejectOutcome.stable.coinType,
     direction: "stable_to_asset", // Buy reject-asset tokens
-    stableAmount: tradeAmount,
+    amountIn: tradeAmount,
+    minAmountOut: 0n,
+    recipient: activeAddress,
+    allOutcomeCoins,
+    stableCoins: tradeCoinIds,
   });
 
   const swapResult = await executeTransaction(sdk, swapTx.transaction, {
@@ -338,9 +355,10 @@ async function main() {
     showEvents: true,
   });
 
-  // Check winning outcome from events
+  // Check winning outcome from ProposalMarketFinalized event
+  // (ExecutionWindowStarted is only emitted when Accept wins)
   const finalizeEvent = finalizeResult.events?.find((e: any) =>
-    e.type.includes("ProposalFinalized")
+    e.type.includes("ProposalMarketFinalized")
   );
   const winningOutcome = finalizeEvent?.parsedJson?.winning_outcome;
 
@@ -376,16 +394,17 @@ async function main() {
   for (const token of allConditionalTokens.filter(
     (t) => t.outcomeIndex === REJECT_OUTCOME_INDEX
   )) {
-    const redeemTx = proposalWorkflow.redeemConditionalTokens({
+    const redeemTx = proposalWorkflow.redeemConditionalTokens(
       proposalId,
       escrowId,
       assetType,
       stableType,
-      conditionalCoinType: token.coinType,
-      conditionalCoinIds: [token.coinId],
-      outcomeIndex: token.outcomeIndex,
-      isAsset: token.isAsset,
-    });
+      token.coinId,
+      token.coinType,
+      token.outcomeIndex,
+      token.isAsset,
+      activeAddress
+    );
 
     await executeTransaction(sdk, redeemTx.transaction, { network: "devnet" });
     logSuccess(`Redeemed REJECT token: ${token.coinId}`);

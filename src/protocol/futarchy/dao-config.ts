@@ -138,6 +138,7 @@ export class DaoConfig {
    *   maxActionsPerOutcome: 10n,
    *   proposalCreationFee: 500_000n, // 0.5 tokens
    *   proposalFeePerOutcome: 1_000_000n, // 1.0 tokens
+   *   feeInAssetToken: false, // false = StableType, true = AssetType
    *   acceptNewProposals: true,
    *   maxIntentsPerOutcome: 10n,
    *   proposalIntentExpiryMs: 86_400_000n, // 24 hours
@@ -154,6 +155,7 @@ export class DaoConfig {
       maxActionsPerOutcome: bigint;
       proposalCreationFee: bigint;
       proposalFeePerOutcome: bigint;
+      feeInAssetToken: boolean;
       acceptNewProposals: boolean;
       maxIntentsPerOutcome: bigint;
       proposalIntentExpiryMs: bigint;
@@ -172,6 +174,7 @@ export class DaoConfig {
         tx.pure.u64(config.maxActionsPerOutcome),
         tx.pure.u64(config.proposalCreationFee),
         tx.pure.u64(config.proposalFeePerOutcome),
+        tx.pure.bool(config.feeInAssetToken),
         tx.pure.bool(config.acceptNewProposals),
         tx.pure.u64(config.maxIntentsPerOutcome),
         tx.pure.u64(config.proposalIntentExpiryMs),
@@ -951,6 +954,32 @@ export class DaoConfig {
         config.futarchyCorePackageId,
         'dao_config',
         'proposal_fee_per_outcome'
+      ),
+      arguments: [config.governanceConfig],
+    });
+  }
+
+  /**
+   * Get fee in asset token flag
+   * If true, proposal fees should be paid in AssetType (DAO token).
+   * If false (default), proposal fees should be paid in StableType.
+   *
+   * @param tx - Transaction
+   * @param config - Configuration
+   * @returns Fee in asset token (bool)
+   */
+  static feeInAssetToken(
+    tx: Transaction,
+    config: {
+      futarchyCorePackageId: string;
+      governanceConfig: ReturnType<Transaction['moveCall']>;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.futarchyCorePackageId,
+        'dao_config',
+        'fee_in_asset_token'
       ),
       arguments: [config.governanceConfig],
     });
