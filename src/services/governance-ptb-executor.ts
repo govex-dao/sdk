@@ -5,9 +5,14 @@
  * with execution-required finalization.
  *
  * The frontend composes a programmable transaction that:
- * 1. Calls `begin_execution` to receive the governance executable hot potato.
+ * 1. Calls `begin_execution(proposal, spot_pool, escrow)` which:
+ *    - Validates state and execution window
+ *    - Finalizes market state and proposal (sets FINALIZED)
+ *    - Restores quantum LP to spot pool (clears active_proposal_id)
+ *    - Returns executable hot potato
  * 2. Invokes the relevant `do_init_*` action functions in order.
- * 3. Calls `finalize_execution_success` to confirm, finalize proposal, and emit events.
+ *    Actions execute on a "normal" spot pool (no active proposal blocking).
+ * 3. Calls `finalize_execution_success(escrow)` to confirm, emit events, and refund proposer.
  *
  * CRITICAL: Execution must succeed for accept outcomes to win.
  * - If execution succeeds: market_winner becomes actual winner
@@ -33,32 +38,33 @@ import { TransactionUtils } from './transaction';
  * const tx = new Transaction();
  *
  * // Step 1: Begin execution (requires AWAITING_EXECUTION state)
- * const [executable, intentKey] = GovernancePTBExecutor.beginExecution(tx, {
+ * // This also finalizes the proposal and restores quantum LP to spot pool
+ * const executable = GovernancePTBExecutor.beginExecution(tx, {
  *   governancePackageId,
  *   daoId,
  *   proposalId,
- *   marketStateId,
+ *   spotPoolId,
+ *   escrowId,
  *   registryId,
  *   assetType,
  *   stableType,
+ *   lpType,
  * });
  *
  * // Step 2: Execute actions (custom logic here)
  * // The executable hot potato allows you to call do_init_* functions
  * // from account_actions package
+ * // NOTE: Spot pool is now "normal" - no active proposal blocking
  *
- * // Step 3: Finalize execution (confirms success and finalizes proposal)
+ * // Step 3: Finalize execution (confirms success and emits events)
  * GovernancePTBExecutor.finalizeExecutionSuccess(tx, {
  *   governancePackageId,
  *   daoId,
  *   proposalId,
  *   escrowId,
- *   marketStateId,
- *   spotPoolId,
  *   registryId,
  *   assetType,
  *   stableType,
- *   lpType,
  * }, executable);
  * ```
  */
@@ -69,6 +75,13 @@ export class GovernancePTBExecutor {
    * Creates an Executable hot potato that must be consumed by finalizeExecutionSuccess.
    * Between begin and finalize, you can call do_init_* actions.
    *
+   * CRITICAL: This function does the following BEFORE returning the Executable:
+   * - Validates state and execution window
+   * - Finalizes market state and proposal (sets FINALIZED)
+   * - Restores quantum LP to spot pool (clears active_proposal_id)
+   *
+   * This means actions execute on a "normal" spot pool with no active proposal.
+   *
    * Requirements:
    * - Proposal must be in AWAITING_EXECUTION state
    * - Market winner must be an accept outcome (> 0)
@@ -76,20 +89,22 @@ export class GovernancePTBExecutor {
    *
    * @param tx - Transaction to add the call to
    * @param config - Execution configuration
-   * @returns TransactionArgument tuple [Executable, intent_key: String]
+   * @returns TransactionArgument for Executable hot potato
    *
    * @example
    * ```typescript
    * const tx = new Transaction();
    *
-   * const [executable, intentKey] = GovernancePTBExecutor.beginExecution(tx, {
+   * const executable = GovernancePTBExecutor.beginExecution(tx, {
    *   governancePackageId,
    *   daoId,
    *   proposalId,
-   *   marketStateId,
+   *   spotPoolId,
+   *   escrowId,
    *   registryId,
    *   assetType,
    *   stableType,
+   *   lpType,
    *   clock: '0x6',
    * });
    * ```
@@ -100,68 +115,12 @@ export class GovernancePTBExecutor {
       governancePackageId: string;
       daoId: string;
       proposalId: string;
-      marketStateId: string;
-      registryId: string;
-      assetType: string;
-      stableType: string;
-      clock?: string;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.governancePackageId,
-        'ptb_executor',
-        'begin_execution'
-      ),
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        tx.object(config.daoId), // account
-        tx.object(config.registryId), // registry
-        tx.object(config.proposalId), // proposal
-        tx.object(config.marketStateId), // market_state
-        tx.object(config.clock || '0x6'), // clock
-      ],
-    });
-  }
-
-  /**
-   * Begin execution using escrow reference (alternative to beginExecution)
-   *
-   * This variant extracts MarketState from the TokenEscrow internally,
-   * avoiding object reference conflicts in complex PTBs where you already
-   * have the escrow reference.
-   *
-   * @param tx - Transaction to add the call to
-   * @param config - Execution configuration with escrowId instead of marketStateId
-   * @returns TransactionArgument for Executable hot potato
-   *
-   * @example
-   * ```typescript
-   * const tx = new Transaction();
-   *
-   * // Use when you have escrow reference and want to avoid PTB reference issues
-   * const executable = GovernancePTBExecutor.beginExecutionWithEscrow(tx, {
-   *   governancePackageId,
-   *   daoId,
-   *   proposalId,
-   *   escrowId,
-   *   registryId,
-   *   assetType,
-   *   stableType,
-   *   clock: '0x6',
-   * });
-   * ```
-   */
-  static beginExecutionWithEscrow(
-    tx: Transaction,
-    config: {
-      governancePackageId: string;
-      daoId: string;
-      proposalId: string;
+      spotPoolId: string;
       escrowId: string;
       registryId: string;
       assetType: string;
       stableType: string;
+      lpType: string;
       clock?: string;
     }
   ): ReturnType<Transaction['moveCall']> {
@@ -171,11 +130,12 @@ export class GovernancePTBExecutor {
         'ptb_executor',
         'begin_execution'
       ),
-      typeArguments: [config.assetType, config.stableType],
+      typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
         tx.object(config.daoId), // account
         tx.object(config.registryId), // registry
         tx.object(config.proposalId), // proposal
+        tx.object(config.spotPoolId), // spot_pool
         tx.object(config.escrowId), // escrow
         tx.object(config.clock || '0x6'), // clock
       ],
@@ -186,8 +146,10 @@ export class GovernancePTBExecutor {
    * Finalize execution success (Step 3 of 3)
    *
    * Consumes the Executable hot potato, confirms all actions were executed,
-   * and finalizes the proposal with the market winner as actual winner.
-   * Emits ProposalExecutionSucceeded and ProposalMarketFinalized events.
+   * cancels losing outcome intents, emits events, and refunds proposer fee.
+   *
+   * NOTE: Market state finalization and proposal state transition happen in
+   * beginExecution(), not here. This function only confirms and cleans up.
    *
    * @param tx - Transaction to add the call to
    * @param config - Execution configuration
@@ -203,12 +165,9 @@ export class GovernancePTBExecutor {
    *   daoId,
    *   proposalId,
    *   escrowId,
-   *   marketStateId,
-   *   spotPoolId,
    *   registryId,
    *   assetType,
    *   stableType,
-   *   lpType,
    *   clock: '0x6',
    * }, executable);
    * ```
@@ -220,12 +179,9 @@ export class GovernancePTBExecutor {
       daoId: string;
       proposalId: string;
       escrowId: string;
-      marketStateId: string;
-      spotPoolId: string;
       registryId: string;
       assetType: string;
       stableType: string;
-      lpType: string;
       clock?: string;
     },
     executable: ReturnType<Transaction['moveCall']>
@@ -236,14 +192,12 @@ export class GovernancePTBExecutor {
         'ptb_executor',
         'finalize_execution_success'
       ),
-      typeArguments: [config.assetType, config.stableType, config.lpType],
+      typeArguments: [config.assetType, config.stableType],
       arguments: [
         tx.object(config.daoId), // account
         tx.object(config.registryId), // registry
         tx.object(config.proposalId), // proposal
         tx.object(config.escrowId), // escrow
-        tx.object(config.marketStateId), // market_state
-        tx.object(config.spotPoolId), // spot_pool
         executable, // executable
         tx.object(config.clock || '0x6'), // clock
       ],
@@ -311,42 +265,4 @@ export class GovernancePTBExecutor {
     });
   }
 
-  /**
-   * @deprecated Use finalizeExecutionSuccess instead.
-   *
-   * The old finalize_execution function is replaced by finalize_execution_success
-   * in the execution-required finalization model.
-   */
-  static finalizeExecution(
-    tx: Transaction,
-    config: {
-      governancePackageId: string;
-      daoId: string;
-      proposalId: string;
-      registryId: string;
-      assetType: string;
-      stableType: string;
-      clock?: string;
-    },
-    executable: ReturnType<Transaction['moveCall']>
-  ): void {
-    console.warn(
-      'GovernancePTBExecutor.finalizeExecution is deprecated. Use finalizeExecutionSuccess instead.'
-    );
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.governancePackageId,
-        'ptb_executor',
-        'finalize_execution'
-      ),
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        tx.object(config.daoId), // account
-        tx.object(config.registryId), // registry
-        tx.object(config.proposalId), // proposal
-        executable, // executable
-        tx.object(config.clock || '0x6'), // clock
-      ],
-    });
-  }
 }

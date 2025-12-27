@@ -216,6 +216,12 @@ export class IntentExecutor {
 
   /**
    * Execute proposal actions
+   *
+   * NOTE: begin_execution now does the following BEFORE returning the Executable:
+   * - Finalizes market state and proposal (sets FINALIZED)
+   * - Restores quantum LP to spot pool (clears active_proposal_id)
+   *
+   * This means actions execute on a "normal" spot pool with no active proposal blocking.
    */
   private executeProposalIntent(
     tx: Transaction,
@@ -233,14 +239,15 @@ export class IntentExecutor {
       packageRegistryId,
     } = this.packages;
 
-    // 1. Begin execution
+    // 1. Begin execution (also finalizes proposal and restores quantum LP)
     const executable = tx.moveCall({
       target: `${futarchyGovernancePackageId}::ptb_executor::begin_execution`,
-      typeArguments: [config.assetType, config.stableType],
+      typeArguments: [config.assetType, config.stableType, config.lpType!],
       arguments: [
         txObject(tx, config.accountId),
         tx.object(packageRegistryId),
         txObject(tx, config.proposalId!),
+        txObject(tx, config.spotPoolId!),
         txObject(tx, config.escrowId!),
         tx.object(clockId),
       ],
@@ -257,7 +264,7 @@ export class IntentExecutor {
       arguments: [],
     });
 
-    // 2. Execute each action in order
+    // 2. Execute each action in order (spot pool is now "normal")
     for (const action of config.actions) {
       this.executeAction(tx, executable, versionWitness, governanceWitness, config, action, {
         configType: `${futarchyCorePackageId}::futarchy_config::FutarchyConfig`,
@@ -267,15 +274,14 @@ export class IntentExecutor {
       });
     }
 
-    // 3. Finalize execution and refund proposer fee
+    // 3. Finalize execution (confirm, emit events, refund proposer fee)
     tx.moveCall({
       target: `${futarchyGovernancePackageId}::ptb_executor::finalize_execution_success`,
-      typeArguments: [config.assetType, config.stableType, config.lpType!],
+      typeArguments: [config.assetType, config.stableType],
       arguments: [
         txObject(tx, config.accountId),
         tx.object(packageRegistryId),
         txObject(tx, config.proposalId!),
-        txObject(tx, config.spotPoolId!),
         txObject(tx, config.escrowId!),
         executable,
         tx.object(clockId),
@@ -908,7 +914,7 @@ export class IntentExecutor {
       // NOTE: The following actions use ResourceRequest pattern and are NOT supported
       // in launchpad/proposal execution. They require separate PTB flows with fulfill_*:
       // - add_liquidity
-      // - remove_liquidity
+      // - remove_liquidity_to_resources
       // - swap
 
       // =========================================================================

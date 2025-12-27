@@ -231,10 +231,11 @@ export interface AddLiquidityActionConfig {
 }
 
 /**
- * Remove liquidity from pool
+ * Remove liquidity from pool to executable_resources
+ * Outputs asset/stable coins for chaining to subsequent actions
  */
-export interface RemoveLiquidityActionConfig {
-  type: 'remove_liquidity';
+export interface RemoveLiquidityToResourcesActionConfig {
+  type: 'remove_liquidity_to_resources';
   /** Asset coin type (required for type-safe staging) */
   assetType?: string;
   /** Stable coin type (required for type-safe staging) */
@@ -247,10 +248,12 @@ export interface RemoveLiquidityActionConfig {
   minAssetOut: bigint;
   /** Minimum stable out */
   minStableOut: bigint;
-  /** Asset vault name */
-  assetVaultName: string;
-  /** Stable vault name */
-  stableVaultName: string;
+  /** Resource name for LP coin input (from prior VaultSpend) */
+  lpResourceName: string;
+  /** Resource name for asset coin output */
+  assetOutputName: string;
+  /** Resource name for stable coin output */
+  stableOutputName: string;
 }
 
 /**

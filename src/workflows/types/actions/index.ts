@@ -47,7 +47,7 @@ export type {
   SetQuotasActionConfig,
   CreatePoolWithMintActionConfig,
   AddLiquidityActionConfig,
-  RemoveLiquidityActionConfig,
+  RemoveLiquidityToResourcesActionConfig,
   SwapActionConfig,
   CreateDissolutionCapabilityActionConfig,
 } from './futarchy';
@@ -122,7 +122,7 @@ import type {
   SetQuotasActionConfig,
   CreatePoolWithMintActionConfig,
   AddLiquidityActionConfig,
-  RemoveLiquidityActionConfig,
+  RemoveLiquidityToResourcesActionConfig,
   SwapActionConfig,
   CreateDissolutionCapabilityActionConfig,
 } from './futarchy';
@@ -204,7 +204,7 @@ export type ActionConfig =
   // Futarchy Liquidity
   | CreatePoolWithMintActionConfig
   | AddLiquidityActionConfig
-  | RemoveLiquidityActionConfig
+  | RemoveLiquidityToResourcesActionConfig
   | SwapActionConfig
   // Futarchy Dissolution
   | CreateDissolutionCapabilityActionConfig

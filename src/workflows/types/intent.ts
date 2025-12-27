@@ -87,7 +87,7 @@ export type IntentActionConfig =
   // Futarchy Liquidity Actions
   | { action: 'create_pool_with_mint'; assetType: string; stableType: string; lpType: string; lpTreasuryCapId: string; lpMetadataId: string }
   | { action: 'add_liquidity'; assetType: string; stableType: string }
-  | { action: 'remove_liquidity'; assetType: string; stableType: string }
+  | { action: 'remove_liquidity_to_resources'; assetType: string; stableType: string; lpType: string }
   | { action: 'swap'; assetType: string; stableType: string }
   // Futarchy Dissolution Actions
   | { action: 'create_dissolution_capability'; assetType: string }
