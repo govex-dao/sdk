@@ -233,9 +233,9 @@ export class IntentExecutor {
       packageRegistryId,
     } = this.packages;
 
-    // 1. Begin execution with escrow
+    // 1. Begin execution
     const executable = tx.moveCall({
-      target: `${futarchyGovernancePackageId}::ptb_executor::begin_execution_with_escrow`,
+      target: `${futarchyGovernancePackageId}::ptb_executor::begin_execution`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
         txObject(tx, config.accountId),
@@ -267,9 +267,9 @@ export class IntentExecutor {
       });
     }
 
-    // 3. Finalize execution (use wrapper that accesses market_state through escrow)
+    // 3. Finalize execution and refund proposer fee
     tx.moveCall({
-      target: `${futarchyGovernancePackageId}::ptb_executor::finalize_execution_success_with_escrow`,
+      target: `${futarchyGovernancePackageId}::ptb_executor::finalize_execution_success`,
       typeArguments: [config.assetType, config.stableType, config.lpType!],
       arguments: [
         txObject(tx, config.accountId),

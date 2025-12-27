@@ -169,7 +169,7 @@ export class GovernancePTBExecutor {
       target: TransactionUtils.buildTarget(
         config.governancePackageId,
         'ptb_executor',
-        'begin_execution_with_escrow'
+        'begin_execution'
       ),
       typeArguments: [config.assetType, config.stableType],
       arguments: [
