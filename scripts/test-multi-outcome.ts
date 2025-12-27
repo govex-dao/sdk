@@ -446,16 +446,17 @@ async function main() {
 
   for (const token of winningTokens) {
     try {
-      const redeemTx = proposalWorkflow.redeemConditionalTokens({
+      const redeemTx = proposalWorkflow.redeemConditionalTokens(
         proposalId,
         escrowId,
         assetType,
         stableType,
-        conditionalCoinType: token.coinType,
-        conditionalCoinIds: [token.coinId],
-        outcomeIndex: token.outcomeIndex,
-        isAsset: token.isAsset,
-      });
+        token.coinId,
+        token.coinType,
+        token.outcomeIndex,
+        token.isAsset,
+        activeAddress
+      );
 
       await executeTransaction(sdk, redeemTx.transaction, { network: "devnet" });
       logSuccess(`Redeemed winning token: ${token.coinId.substring(0, 16)}...`);
@@ -474,16 +475,17 @@ async function main() {
   for (const token of losingTokens.slice(0, 2)) {
     // Test first 2 losers
     try {
-      const redeemTx = proposalWorkflow.redeemConditionalTokens({
+      const redeemTx = proposalWorkflow.redeemConditionalTokens(
         proposalId,
         escrowId,
         assetType,
         stableType,
-        conditionalCoinType: token.coinType,
-        conditionalCoinIds: [token.coinId],
-        outcomeIndex: token.outcomeIndex,
-        isAsset: token.isAsset,
-      });
+        token.coinId,
+        token.coinType,
+        token.outcomeIndex,
+        token.isAsset,
+        activeAddress
+      );
 
       await executeTransaction(sdk, redeemTx.transaction, {
         network: "devnet",

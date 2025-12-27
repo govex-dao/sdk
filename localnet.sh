@@ -636,7 +636,9 @@ EOF
 # Track test results
 TESTS_PASSED=0
 TESTS_FAILED=0
-FAILED_TESTS=""
+declare -a FAILED_TEST_NAMES=()
+declare -a FAILED_TEST_LOGS=()
+TEST_LOGS_DIR="$LOG_DIR/tests"
 
 # One-time protocol initialization (package registration, fee exemptions)
 run_protocol_init() {
@@ -684,40 +686,143 @@ run_test() {
   local test_name="$1"
   local npm_script="$2"
   local num_outcomes="${3:-2}"  # Default to 2 outcomes
+  local test_log="$TEST_LOGS_DIR/${test_name}.log"
+  local setup_failed=false
+  local test_failed=false
 
   log_section "TEST: $test_name"
+  log_info "Log: $test_log"
+
+  # Ensure test logs directory exists
+  mkdir -p "$TEST_LOGS_DIR"
+
+  # Start fresh log file with header
+  {
+    echo "================================================================================"
+    echo "TEST: $test_name"
+    echo "Started: $(date)"
+    echo "Outcomes: $num_outcomes"
+    echo "================================================================================"
+    echo ""
+  } > "$test_log"
 
   # Setup: fresh coins + DAO + conditional coins
   log_info "Setting up fresh DAO for test..."
   cd "$SDK_DIR"
 
-  npm run create-test-coins || { log_error "Failed to create test coins"; return 1; }
-  npm run launchpad-e2e-two-outcome || { log_error "Failed to create DAO"; return 1; }
+  {
+    echo "--- STEP: create-test-coins ---"
+    if ! npm run create-test-coins 2>&1; then
+      echo "❌ FAILED: create-test-coins"
+      setup_failed=true
+    else
+      echo "✅ create-test-coins complete"
+    fi
+    echo ""
+  } >> "$test_log" 2>&1
 
-  # Generate conditional coins for specified number of outcomes
-  if [[ "$num_outcomes" != "2" ]]; then
-    log_info "Generating $num_outcomes-outcome conditional coins..."
-    npx tsx scripts/generate-conditional-coins.ts "$num_outcomes" || { log_error "Failed to generate conditional coins"; return 1; }
+  if [[ "$setup_failed" == "true" ]]; then
+    log_error "Failed to create test coins (see $test_log)"
+    ((TESTS_FAILED++))
+    FAILED_TEST_NAMES+=("$test_name")
+    FAILED_TEST_LOGS+=("$test_log")
+    return 1
   fi
 
-  npm run deploy-conditional-coins || { log_error "Failed to deploy conditional coins"; return 1; }
+  {
+    echo "--- STEP: launchpad-e2e-two-outcome ---"
+    if ! npm run launchpad-e2e-two-outcome 2>&1; then
+      echo "❌ FAILED: launchpad-e2e-two-outcome"
+      setup_failed=true
+    else
+      echo "✅ launchpad-e2e-two-outcome complete"
+    fi
+    echo ""
+  } >> "$test_log" 2>&1
+
+  if [[ "$setup_failed" == "true" ]]; then
+    log_error "Failed to create DAO (see $test_log)"
+    ((TESTS_FAILED++))
+    FAILED_TEST_NAMES+=("$test_name")
+    FAILED_TEST_LOGS+=("$test_log")
+    return 1
+  fi
+
+  # Always generate conditional coins for the specified number of outcomes
+  # This ensures we have the correct number (not leftover from a previous test)
+  log_info "Generating $num_outcomes-outcome conditional coins..."
+  {
+    echo "--- STEP: generate-conditional-coins ($num_outcomes outcomes) ---"
+    if ! npx tsx scripts/generate-conditional-coins.ts "$num_outcomes" 2>&1; then
+      echo "❌ FAILED: generate-conditional-coins"
+      setup_failed=true
+    else
+      echo "✅ generate-conditional-coins complete"
+    fi
+    echo ""
+  } >> "$test_log" 2>&1
+
+  if [[ "$setup_failed" == "true" ]]; then
+    log_error "Failed to generate conditional coins (see $test_log)"
+    ((TESTS_FAILED++))
+    FAILED_TEST_NAMES+=("$test_name")
+    FAILED_TEST_LOGS+=("$test_log")
+    return 1
+  fi
+
+  {
+    echo "--- STEP: deploy-conditional-coins ---"
+    if ! npm run deploy-conditional-coins 2>&1; then
+      echo "❌ FAILED: deploy-conditional-coins"
+      setup_failed=true
+    else
+      echo "✅ deploy-conditional-coins complete"
+    fi
+    echo ""
+  } >> "$test_log" 2>&1
+
+  if [[ "$setup_failed" == "true" ]]; then
+    log_error "Failed to deploy conditional coins (see $test_log)"
+    ((TESTS_FAILED++))
+    FAILED_TEST_NAMES+=("$test_name")
+    FAILED_TEST_LOGS+=("$test_log")
+    return 1
+  fi
 
   # Wait for indexer to catch up with new objects
-  # 5 seconds should be enough for localnet indexer to process recent transactions
   log_info "Waiting for indexer to sync (5s)..."
   sleep 5
 
-  # Run the test
+  # Run the actual test
   log_info "Running test: $test_name"
-  if npm run "$npm_script"; then
+  {
+    echo "================================================================================"
+    echo "RUNNING TEST: $npm_script"
+    echo "================================================================================"
+    echo ""
+    if ! npm run "$npm_script" 2>&1; then
+      echo ""
+      echo "❌ TEST FAILED: $test_name"
+      test_failed=true
+    else
+      echo ""
+      echo "✅ TEST PASSED: $test_name"
+    fi
+    echo ""
+    echo "Finished: $(date)"
+  } >> "$test_log" 2>&1
+
+  if [[ "$test_failed" == "true" ]]; then
+    log_error "FAILED: $test_name"
+    log_info "  └─ Log: $test_log"
+    ((TESTS_FAILED++))
+    FAILED_TEST_NAMES+=("$test_name")
+    FAILED_TEST_LOGS+=("$test_log")
+    return 1
+  else
     log_success "PASSED: $test_name"
     ((TESTS_PASSED++))
     return 0
-  else
-    log_error "FAILED: $test_name"
-    ((TESTS_FAILED++))
-    FAILED_TESTS="$FAILED_TESTS\n  - $test_name"
-    return 1
   fi
 }
 
@@ -740,16 +845,22 @@ run_all_e2e() {
   # Reset test counters
   TESTS_PASSED=0
   TESTS_FAILED=0
-  FAILED_TESTS=""
+  FAILED_TEST_NAMES=()
+  FAILED_TEST_LOGS=()
 
   log_section "E2E TEST SUITE"
   log_info "Running all E2E tests with fresh DAO per test"
+  log_info "Test logs: $TEST_LOGS_DIR/"
 
   # Clean stale test data files to prevent object ID mismatches
   log_info "Cleaning stale test data files..."
   rm -f "$SDK_DIR/test-dao-info.json" 2>/dev/null || true
   rm -f "$SDK_DIR/conditional-coins-info.json" 2>/dev/null || true
   rm -f "$SDK_DIR/test-coins-info.json" 2>/dev/null || true
+
+  # Clean old test logs
+  rm -rf "$TEST_LOGS_DIR" 2>/dev/null || true
+  mkdir -p "$TEST_LOGS_DIR"
 
   # One-time protocol initialization
   run_protocol_init
@@ -771,11 +882,34 @@ run_all_e2e() {
 
   # Summary
   log_section "TEST SUMMARY"
-  echo -e "  Passed:  ${GREEN}${TESTS_PASSED}${NC}"
-  echo -e "  Failed:  ${RED}${TESTS_FAILED}${NC}"
+  echo ""
+  echo -e "  ${GREEN}Passed:${NC}  ${TESTS_PASSED}"
+  echo -e "  ${RED}Failed:${NC}  ${TESTS_FAILED}"
+  echo ""
 
   if [ "$TESTS_FAILED" -gt 0 ]; then
-    echo -e "${RED}Failed tests:${FAILED_TESTS}${NC}"
+    echo -e "${RED}┌─────────────────────────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${RED}│ FAILED TESTS                                                                │${NC}"
+    echo -e "${RED}├─────────────────────────────────────────────────────────────────────────────┤${NC}"
+    for i in "${!FAILED_TEST_NAMES[@]}"; do
+      local name="${FAILED_TEST_NAMES[$i]}"
+      local log="${FAILED_TEST_LOGS[$i]}"
+      echo -e "${RED}│${NC} ❌ ${YELLOW}${name}${NC}"
+      echo -e "${RED}│${NC}    Log: ${CYAN}${log}${NC}"
+      echo -e "${RED}│${NC}    Last 10 lines:"
+      # Show last 10 lines of the log, indented
+      tail -10 "$log" 2>/dev/null | while IFS= read -r line; do
+        echo -e "${RED}│${NC}      ${line}"
+      done
+      echo -e "${RED}│${NC}"
+    done
+    echo -e "${RED}└─────────────────────────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    echo -e "${YELLOW}To view full logs:${NC}"
+    for i in "${!FAILED_TEST_LOGS[@]}"; do
+      echo -e "  cat ${FAILED_TEST_LOGS[$i]}"
+    done
+    echo ""
     log_error "E2E Test Suite FAILED"
   else
     log_success "All E2E tests passed!"
@@ -828,10 +962,12 @@ show_status() {
 main() {
   local do_deploy=false
   local do_e2e=false
+  local do_tests_only=false
   local do_stop=false
   local do_clean=false
   local do_restart=false
   local do_fresh=false
+  local single_test=""
 
   # Parse arguments
   while [[ $# -gt 0 ]]; do
@@ -865,6 +1001,15 @@ main() {
         do_e2e=true
         shift
         ;;
+      --tests-only|--tests)
+        do_tests_only=true
+        shift
+        ;;
+      --test)
+        do_tests_only=true
+        single_test="$2"
+        shift 2
+        ;;
       --help|-h)
         cat << EOF
 Govex Localnet Manager
@@ -875,12 +1020,17 @@ Options:
   (none)      Start localnet, database, and indexer
   --deploy    Also deploy packages after starting
   --e2e       Deploy and run all E2E tests (fresh DAO per test)
+  --tests-only Run E2E tests only (skip deploy, assumes already deployed)
+  --test NAME Run a single test by name (e.g., --test memo-action)
   --stop      Stop all processes
   --clean     Stop processes and clean logs/pids
   --restart   Soft restart (clean + start)
   --fresh     HARD RESET: nuke ~/.sui, db, deployments, .env - total fresh start
   --status    Show status of all processes
   --help      Show this help
+
+Available tests for --test:
+  proposal-with-swaps, reject-wins, memo-action, sponsorship, multi-outcome
 
 E2E Test Flow (per test):
   1. create-test-coins        # Fresh TASSET/TSTABLE/LP coins
@@ -895,13 +1045,23 @@ Tests run by --e2e:
   - sponsorship (2 outcomes)
   - multi-outcome (3 outcomes)
 
+Logs:
+  Service logs:  $LOG_DIR/
+  Test logs:     $LOG_DIR/tests/<test-name>.log
+
+  Each test captures full output (setup + test) to its own log file.
+  Failed tests show last 10 lines and full log path in summary.
+
 Examples:
-  $0                 # Start everything
-  $0 --deploy        # Start + deploy packages
-  $0 --e2e           # Start + deploy + run all E2E tests
-  $0 --restart --e2e # Soft restart with E2E
-  $0 --fresh --e2e   # HARD RESET then full E2E (recommended for clean slate)
-  $0 --stop          # Stop everything
+  $0                        # Start everything
+  $0 --deploy               # Start + deploy packages
+  $0 --e2e                  # Start + deploy + run all E2E tests
+  $0 --tests-only           # Re-run all E2E tests (no deploy)
+  $0 --test memo-action     # Run single test (no deploy)
+  $0 --test multi-outcome   # Run multi-outcome test
+  $0 --restart --e2e        # Soft restart with E2E
+  $0 --fresh --e2e          # HARD RESET then full E2E (recommended for clean slate)
+  $0 --stop                 # Stop everything
 EOF
         exit 0
         ;;
@@ -925,6 +1085,83 @@ EOF
     stop_all
     clean_data
     CLEANUP_DONE=true
+    exit 0
+  fi
+
+  # Handle --tests-only or --test (run tests without starting services)
+  if [[ "$do_tests_only" == true ]]; then
+    # Disable exit trap
+    trap - EXIT
+
+    # Verify localnet is running
+    local sui_pid=$(get_pid "sui-localnet")
+    if ! is_running "$sui_pid"; then
+      log_error "Sui localnet is not running. Start it first with: ./localnet.sh --deploy"
+      exit 1
+    fi
+
+    if [[ -n "$single_test" ]]; then
+      # Run single test
+      log_section "Running Single Test: $single_test"
+
+      # Map test name to npm script and outcomes
+      local npm_script=""
+      local num_outcomes=2
+      case "$single_test" in
+        proposal-with-swaps)
+          npm_script="test:proposal-with-swaps"
+          ;;
+        reject-wins)
+          npm_script="test:reject-wins"
+          ;;
+        memo-action)
+          npm_script="test:memo-action"
+          ;;
+        sponsorship)
+          npm_script="test:sponsorship"
+          ;;
+        multi-outcome)
+          npm_script="test:multi-outcome"
+          num_outcomes=3
+          ;;
+        *)
+          log_error "Unknown test: $single_test"
+          echo "Available tests: proposal-with-swaps, reject-wins, memo-action, sponsorship, multi-outcome"
+          exit 1
+          ;;
+      esac
+
+      # Reset counters
+      TESTS_PASSED=0
+      TESTS_FAILED=0
+      FAILED_TEST_NAMES=()
+      FAILED_TEST_LOGS=()
+
+      # Clean old test logs
+      rm -rf "$TEST_LOGS_DIR" 2>/dev/null || true
+      mkdir -p "$TEST_LOGS_DIR"
+
+      # Run protocol init if needed
+      run_protocol_init
+
+      # Run the single test
+      run_test "$single_test" "$npm_script" "$num_outcomes" || true
+
+      # Show summary
+      log_section "TEST RESULT"
+      if [ "$TESTS_FAILED" -gt 0 ]; then
+        echo -e "${RED}FAILED${NC}: $single_test"
+        echo -e "Log: ${CYAN}${FAILED_TEST_LOGS[0]}${NC}"
+        echo ""
+        echo "Last 20 lines:"
+        tail -20 "${FAILED_TEST_LOGS[0]}" 2>/dev/null
+      else
+        echo -e "${GREEN}PASSED${NC}: $single_test"
+      fi
+    else
+      # Run all tests
+      run_all_e2e
+    fi
     exit 0
   fi
 
