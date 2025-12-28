@@ -582,6 +582,68 @@ export const ACCESS_CONTROL_ACTIONS: ActionDefinition[] = [
 ];
 
 // ============================================================================
+// ACCOUNT ACTIONS - CONFIG (per-account dependencies)
+// ============================================================================
+
+export const ACCOUNT_CONFIG_ACTIONS: ActionDefinition[] = [
+  {
+    id: 'set_authorization_level',
+    name: 'Set Authorization Level',
+    category: 'config',
+    package: 'accountActions',
+    stagingModule: 'config_init_actions',
+    stagingFunction: 'add_set_authorization_level_spec',
+    executionModule: 'config',
+    executionFunction: 'do_set_authorization_level',
+    markerType: 'account_protocol::config::ConfigSetAuthorizationLevel',
+    params: [
+      {
+        name: 'level',
+        type: 'u8',
+        description: 'Authorization level (0=GLOBAL_ONLY, 1=WHITELIST, 2=PERMISSIVE)',
+      },
+    ],
+    description: 'Set authorization level for action package validation',
+    launchpadSupported: false,
+    proposalSupported: true,
+  },
+  {
+    id: 'add_dep',
+    name: 'Add Dependency',
+    category: 'config',
+    package: 'accountActions',
+    stagingModule: 'config_init_actions',
+    stagingFunction: 'add_add_dep_spec',
+    executionModule: 'config',
+    executionFunction: 'do_add_dep',
+    markerType: 'account_protocol::config::ConfigAddDep',
+    params: [
+      { name: 'addr', type: 'address', description: 'Package address' },
+      { name: 'name', type: 'string', description: 'Package name' },
+      { name: 'version', type: 'u64', description: 'Package version' },
+    ],
+    description: 'Add a package to the per-account whitelist',
+    launchpadSupported: false,
+    proposalSupported: true,
+  },
+  {
+    id: 'remove_dep',
+    name: 'Remove Dependency',
+    category: 'config',
+    package: 'accountActions',
+    stagingModule: 'config_init_actions',
+    stagingFunction: 'add_remove_dep_spec',
+    executionModule: 'config',
+    executionFunction: 'do_remove_dep',
+    markerType: 'account_protocol::config::ConfigRemoveDep',
+    params: [{ name: 'addr', type: 'address', description: 'Package address to remove' }],
+    description: 'Remove a package from the per-account whitelist',
+    launchpadSupported: false,
+    proposalSupported: true,
+  },
+];
+
+// ============================================================================
 // FUTARCHY ACTIONS - CONFIG
 // ============================================================================
 
@@ -1376,6 +1438,7 @@ export const ALL_ACTIONS: ActionDefinition[] = [
   ...MEMO_ACTIONS,
   ...PACKAGE_UPGRADE_ACTIONS,
   ...ACCESS_CONTROL_ACTIONS,
+  ...ACCOUNT_CONFIG_ACTIONS,
   ...CONFIG_ACTIONS,
   ...QUOTA_ACTIONS,
   ...LIQUIDITY_ACTIONS,

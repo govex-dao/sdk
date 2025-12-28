@@ -1320,3 +1320,133 @@ export class Account {
     });
   }
 }
+
+/**
+ * Authorization levels for action package validation
+ */
+export enum AuthorizationLevel {
+  /** Only packages in the global registry are allowed. Checked at staging time. */
+  GLOBAL_ONLY = 0,
+  /** Global registry OR per-account whitelist. Checked at execution time only,
+   * allowing DAOs to add a new package and execute actions from it in the same proposal. */
+  WHITELIST = 1,
+  /** Any package is allowed - no checks at staging or execution. */
+  PERMISSIVE = 2,
+}
+
+/**
+ * Helper class for working with Deps (dependencies/authorization) in the protocol
+ */
+export class Deps {
+  /**
+   * Create a new Deps struct with default authorization level (GLOBAL_ONLY)
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The package registry object
+   * @returns The new Deps object
+   */
+  static new(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: string | ReturnType<Transaction['moveCall']>
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'deps', 'new'),
+      arguments: [typeof registry === 'string' ? tx.object(registry) : registry],
+    });
+  }
+
+  /**
+   * Create a new Deps struct with a specific authorization level
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The package registry object
+   * @param level - The authorization level (0=GLOBAL_ONLY, 1=WHITELIST, 2=PERMISSIVE)
+   * @returns The new Deps object
+   */
+  static newWithLevel(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: string | ReturnType<Transaction['moveCall']>,
+    level: AuthorizationLevel
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'deps', 'new_with_level'),
+      arguments: [
+        typeof registry === 'string' ? tx.object(registry) : registry,
+        tx.pure.u8(level),
+      ],
+    });
+  }
+
+  /**
+   * Get the authorization level from a Deps struct
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param deps - The deps object
+   * @returns The authorization level (u8)
+   */
+  static authorizationLevel(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    deps: ReturnType<Transaction['moveCall']>
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'deps', 'authorization_level'),
+      arguments: [deps],
+    });
+  }
+
+  /**
+   * Set the authorization level on a Deps struct (package-only in Move, used via governance action)
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param deps - The deps object (mutable)
+   * @param level - The new authorization level
+   */
+  static setAuthorizationLevel(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    deps: ReturnType<Transaction['moveCall']>,
+    level: AuthorizationLevel
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'deps', 'set_authorization_level'),
+      arguments: [deps, tx.pure.u8(level)],
+    });
+  }
+
+  /**
+   * Check if a package is authorized based on the authorization level
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param deps - The deps object
+   * @param registry - The package registry object
+   * @param accountDeps - The per-account deps table
+   * @param packageAddr - The package address to check
+   * @returns Boolean indicating if authorized
+   */
+  static isPackageAuthorized(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    deps: ReturnType<Transaction['moveCall']>,
+    registry: string | ReturnType<Transaction['moveCall']>,
+    accountDeps: ReturnType<Transaction['moveCall']>,
+    packageAddr: string
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'deps', 'is_package_authorized'),
+      arguments: [
+        deps,
+        typeof registry === 'string' ? tx.object(registry) : registry,
+        accountDeps,
+        tx.pure.address(packageAddr),
+      ],
+    });
+  }
+
+  // Authorization level constants
+  static readonly AUTH_LEVEL_GLOBAL_ONLY = AuthorizationLevel.GLOBAL_ONLY;
+  static readonly AUTH_LEVEL_WHITELIST = AuthorizationLevel.WHITELIST;
+  static readonly AUTH_LEVEL_PERMISSIVE = AuthorizationLevel.PERMISSIVE;
+}

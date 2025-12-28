@@ -44,9 +44,8 @@ export interface CreateProposalConfig extends WorkflowBaseConfig {
 /**
  * Configuration for adding actions to a proposal outcome
  *
- * SECURITY: Action packages are validated against the whitelist at staging time.
- * This prevents attacks where a proposal could enable unverified packages and
- * execute malicious actions.
+ * SECURITY: Action packages are validated based on the account's authorization level.
+ * See AuthorizationLevel enum for details on when checks occur.
  */
 export interface AddProposalActionsConfig extends WorkflowBaseConfig {
   /** Proposal object ID or full ObjectRef */

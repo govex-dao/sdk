@@ -1294,9 +1294,10 @@ export class Proposal {
   /**
    * Set intent spec for an outcome with whitelist validation
    *
-   * SECURITY: Validates ALL action types are from authorized packages at STAGING time.
-   * This prevents attacks where a proposal could toggle unverified_allowed and then
-   * execute malicious actions.
+   * SECURITY: Validates ALL action types are from authorized packages based on authorization level:
+   * - Level 0 (GLOBAL_ONLY): All action packages must be in global registry (checked at staging)
+   * - Level 1 (WHITELIST): Any action can be staged, but must be in global OR account whitelist at execution
+   * - Level 2 (PERMISSIVE): No checks at staging or execution
    *
    * @param tx - Transaction
    * @param config - Configuration including whitelist validation parameters
