@@ -52,6 +52,8 @@ async function main() {
   const spotPoolId = daoInfo.spotPoolId;
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
+  const baseAssetMetadataId = daoInfo.assetMetadata;
+  const baseStableMetadataId = daoInfo.stableMetadata;
 
   logSuccess(`DAO Account: ${daoAccountId}`);
 
@@ -108,11 +110,12 @@ async function main() {
   const feeCoinIds = feeCoins.data.map((c) => c.coinObjectId);
 
   // ============================================================================
-  // STEP 2: Create proposal
+  // STEP 2: Create and initialize proposal atomically
   // ============================================================================
-  logStep(2, "CREATE PROPOSAL");
+  logStep(2, "CREATE AND INITIALIZE PROPOSAL (atomic)");
 
-  const createTx = proposalWorkflow.createProposal({
+  const createTx = proposalWorkflow.createAndInitializeProposal({
+    // CreateProposalConfig
     daoAccountId,
     assetType,
     stableType,
@@ -126,6 +129,23 @@ async function main() {
     usedQuota: false,
     feeCoins: feeCoinIds,
     feeAmount,
+    registryId,
+    // AdvanceToReviewConfig
+    lpType,
+    spotPoolId,
+    senderAddress: activeAddress,
+    baseAssetMetadataId,
+    baseStableMetadataId,
+    conditionalCoinsRegistry: {
+      registryId: conditionalCoinsInfo.registryId,
+      coinSets: conditionalOutcomes.map((outcome) => ({
+        outcomeIndex: outcome.index,
+        assetCoinType: outcome.asset.coinType,
+        assetCapId: outcome.asset.treasuryCapId,
+        stableCoinType: outcome.stable.coinType,
+        stableCapId: outcome.stable.treasuryCapId,
+      })),
+    },
   });
 
   const createResult = await executeTransaction(sdk, createTx.transaction, {
@@ -137,7 +157,7 @@ async function main() {
     (obj: any) => obj.type === "created" && obj.objectType?.includes("Proposal")
   );
   const proposalId = (proposalObject as any)?.objectId;
-  logSuccess(`Proposal created: ${proposalId}`);
+  logSuccess(`Proposal created and initialized: ${proposalId}`);
   console.log();
 
   // ============================================================================
@@ -273,7 +293,7 @@ async function main() {
   // ============================================================================
   logSection("TEST COMPLETED");
   console.log("Summary:");
-  console.log("  - Created test proposal");
+  console.log("  - Created and initialized test proposal atomically");
   console.log(`  - Validated sponsor_proposal fails when disabled: ${sponsorshipFailed ? "YES" : "NO"}`);
   console.log(`  - Validated sponsor_proposal_to_zero fails when disabled: ${sponsorZeroFailed ? "YES" : "NO"}`);
   console.log("  - Documented how to enable sponsorship");

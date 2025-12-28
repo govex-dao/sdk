@@ -74,6 +74,8 @@ async function main() {
   const spotPoolId = daoInfo.spotPoolId;
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
+  const baseAssetMetadataId = daoInfo.assetMetadata;
+  const baseStableMetadataId = daoInfo.stableMetadata;
 
   logSuccess(`DAO Account: ${daoAccountId}`);
 
@@ -125,11 +127,13 @@ async function main() {
   const feeCoinIds = feeCoins.data.map((c) => c.coinObjectId);
 
   // ============================================================================
-  // STEP 2: Create proposal with stream action
+  // STEP 2: Create and initialize proposal atomically with stream action
   // ============================================================================
-  logStep(2, "CREATE PROPOSAL");
+  logStep(2, "CREATE AND INITIALIZE PROPOSAL (atomic, with stream action)");
 
-  const createTx = proposalWorkflow.createProposal({
+  const now = Date.now();
+  const createTx = proposalWorkflow.createAndInitializeProposal({
+    // CreateProposalConfig
     daoAccountId,
     assetType,
     stableType,
@@ -143,6 +147,32 @@ async function main() {
     usedQuota: false,
     feeCoins: feeCoinIds,
     feeAmount: feeAmount,
+    // Actions to add before finalization
+    outcomeActions: [
+      {
+        outcomeIndex: ACCEPT_OUTCOME_INDEX,
+        actions: [
+          {
+            type: "create_stream",
+            coinType: stableType,
+            vaultName: "treasury",
+            beneficiary: activeAddress,
+            amountPerIteration: BigInt(1_000_000),
+            startTime: BigInt(now + 3600000),
+            iterationsTotal: BigInt(10),
+            iterationPeriodMs: BigInt(86400000),
+            maxPerWithdrawal: BigInt(1_000_000),
+          },
+        ],
+      },
+    ],
+    registryId,
+    // AdvanceToReviewConfig
+    lpType,
+    spotPoolId,
+    senderAddress: activeAddress,
+    baseAssetMetadataId,
+    baseStableMetadataId,
     conditionalCoinsRegistry: {
       registryId: conditionalCoinsInfo.registryId,
       coinSets: conditionalOutcomes.map((outcome) => ({
@@ -164,77 +194,22 @@ async function main() {
     (obj: any) => obj.type === "created" && obj.objectType?.includes("Proposal")
   );
   const proposalId = (proposalObject as any)?.objectId;
-  logSuccess(`Proposal created: ${proposalId}`);
-  console.log();
 
-  // ============================================================================
-  // STEP 3: Add stream action to Accept
-  // ============================================================================
-  logStep(3, "ADD STREAM ACTION TO ACCEPT");
-
-  const now = Date.now();
-  const addActionsTx = proposalWorkflow.addActionsToOutcome({
-    proposalId,
-    assetType,
-    stableType,
-    outcomeIndex: ACCEPT_OUTCOME_INDEX,
-    daoAccountId,
-    registryId,
-    actions: [
-      {
-        type: "create_stream",
-        coinType: stableType,
-        vaultName: "treasury",
-        beneficiary: activeAddress,
-        amountPerIteration: BigInt(1_000_000),
-        startTime: BigInt(now + 3600000),
-        iterationsTotal: BigInt(10),
-        iterationPeriodMs: BigInt(86400000),
-        maxPerWithdrawal: BigInt(1_000_000),
-      },
-    ],
-  });
-
-  await executeTransaction(sdk, addActionsTx.transaction, { network: "devnet" });
-  logSuccess("Stream action added to Accept outcome");
-  console.log();
-
-  // ============================================================================
-  // STEP 4: Advance to TRADING and buy ACCEPT tokens
-  // ============================================================================
-  logStep(4, "ADVANCE TO TRADING AND BUY ACCEPT TOKENS");
-
-  const advanceTx = proposalWorkflow.advanceToReview({
-    daoAccountId,
-    proposalId,
-    assetType,
-    stableType,
-    lpType,
-    spotPoolId,
-    senderAddress: activeAddress,
-    conditionalCoinsRegistry: {
-      registryId: conditionalCoinsInfo.registryId,
-      coinSets: conditionalOutcomes.map((outcome) => ({
-        outcomeIndex: outcome.index,
-        assetCoinType: outcome.asset.coinType,
-        assetCapId: outcome.asset.treasuryCapId,
-        stableCoinType: outcome.stable.coinType,
-        stableCapId: outcome.stable.treasuryCapId,
-      })),
-    },
-  });
-
-  const advanceResult = await executeTransaction(sdk, advanceTx.transaction, {
-    network: "devnet",
-    showObjectChanges: true,
-  });
-
-  const escrowObject = advanceResult.objectChanges?.find(
+  const escrowObject = createResult.objectChanges?.find(
     (obj: any) =>
       obj.type === "created" && obj.objectType?.includes("TokenEscrow")
   );
   const escrowId = (escrowObject as any)?.objectId;
-  logSuccess(`Advanced to REVIEW. Escrow: ${escrowId}`);
+
+  logSuccess(`Proposal created and initialized atomically`);
+  logSuccess(`  Proposal: ${proposalId}`);
+  logSuccess(`  Escrow: ${escrowId}`);
+  console.log();
+
+  // ============================================================================
+  // STEP 3: Advance to TRADING
+  // ============================================================================
+  logStep(3, "ADVANCE TO TRADING STATE");
 
   // Wait for review period
   await waitForTimePeriod(TEST_CONFIG.REVIEW_PERIOD_MS + 2000, { description: "review period" });
@@ -251,6 +226,12 @@ async function main() {
 
   await executeTransaction(sdk, toTradingTx.transaction, { network: "devnet" });
   logSuccess("Advanced to TRADING state");
+  console.log();
+
+  // ============================================================================
+  // STEP 4: Buy ACCEPT tokens
+  // ============================================================================
+  logStep(4, "BUY ACCEPT TOKENS");
 
   // Mint and swap for ACCEPT tokens
   const tradeAmount = 100_000_000n;

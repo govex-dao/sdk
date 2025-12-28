@@ -373,33 +373,69 @@ async function main() {
   const sdk = initSDK();
   const network = "devnet";
 
-  // Create proposal
-  logStep(1, "CREATE PROPOSAL");
-  const createTx = sdk.workflows.proposal.createProposal({
+  // Create and initialize proposal atomically
+  logStep(1, "CREATE AND INITIALIZE PROPOSAL");
+  const createTx = sdk.workflows.proposal.createAndInitializeProposal({
+    // CreateProposalConfig
     daoAccountId: daoInfo.accountId,
     assetType: daoInfo.assetType,
     stableType: daoInfo.stableType,
     title: "Test Proposal",
-    // ...
+    introduction: "Test description",
+    metadata: JSON.stringify({ test: true }),
+    outcomeMessages: ["Reject", "Accept"],
+    outcomeDetails: ["Do nothing", "Execute actions"],
+    proposer: activeAddress,
+    treasuryAddress: activeAddress,
+    usedQuota: false,
+    feeCoins: feeCoinIds,
+    feeAmount: 10_000_000n,
+    // Optional: actions to add before finalization
+    outcomeActions: [{
+      outcomeIndex: ACCEPT_OUTCOME_INDEX,
+      actions: [{ type: "memo", message: "Executed!" }],
+    }],
+    registryId,
+    // AdvanceToReviewConfig
+    lpType: daoInfo.lpType,
+    spotPoolId: daoInfo.spotPoolId,
+    senderAddress: activeAddress,
+    baseAssetMetadataId: daoInfo.assetMetadata,
+    baseStableMetadataId: daoInfo.stableMetadata,
+    conditionalCoinsRegistry: {
+      registryId: conditionalCoins.registryId,
+      coinSets: outcomes.map((o) => ({
+        outcomeIndex: o.index,
+        assetCoinType: o.asset.coinType,
+        assetCapId: o.asset.treasuryCapId,
+        stableCoinType: o.stable.coinType,
+        stableCapId: o.stable.treasuryCapId,
+      })),
+    },
   });
 
   const result = await executeTransaction(sdk, createTx.transaction, { network });
-  const proposalId = /* extract from result */;
-  logSuccess(`Proposal: ${proposalId}`);
+  const proposalId = /* extract from result.objectChanges */;
+  const escrowId = /* extract from result.objectChanges */;
+  logSuccess(`Proposal: ${proposalId}, Escrow: ${escrowId}`);
 
   // Wait for indexer
   await waitForIndexer(network, { description: "proposal indexing" });
 
-  // Advance to trading
+  // Wait for review period then advance to trading
   logStep(2, "ADVANCE TO TRADING");
-  // ... advance transactions ...
-
-  // Wait for review period
   await waitForTimePeriod(TEST_CONFIG.REVIEW_PERIOD_MS + 2000, {
     description: "review period"
   });
 
-  // Continue with test...
+  const tradingTx = sdk.workflows.proposal.advanceToTrading({
+    proposalId, escrowId, daoAccountId: daoInfo.accountId,
+    spotPoolId: daoInfo.spotPoolId, assetType: daoInfo.assetType,
+    stableType: daoInfo.stableType, lpType: daoInfo.lpType,
+  });
+  await executeTransaction(sdk, tradingTx.transaction, { network });
+
+  // Continue with trading, finalization, etc...
 }
 
 main().catch((error) => {
@@ -437,3 +473,36 @@ npx tsx scripts/validate-deployments.ts --network testnet
 4. **Use logging utilities** for consistent output
 5. **Validate deployments** before running tests
 6. **Check network** when timing matters (localnet is faster)
+7. **Use `createAndInitializeProposal`** for atomic proposal creation (combines create + add actions + initialize)
+
+## Proposal Lifecycle (New Atomic Pattern)
+
+The SDK now uses an atomic proposal creation pattern that combines multiple steps into a single transaction:
+
+```
+OLD FLOW (deprecated):
+  createProposal() → addActionsToOutcome() → advanceToReview()
+  (3 separate transactions)
+
+NEW FLOW:
+  createAndInitializeProposal() → advanceToTrading() → ...
+  (1 transaction for creation, then normal flow)
+```
+
+### Proposal States
+
+| State | Description | Sponsorship Allowed |
+|-------|-------------|---------------------|
+| PREMARKET | Initial state (only during atomic creation) | ✅ Yes |
+| REVIEW | After initialization, waiting for review period | ✅ Yes |
+| TRADING | Active trading period | ✅ Only before TWAP delay |
+| FINALIZED | Proposal completed | ❌ No |
+
+### Sponsorship Timing
+
+Sponsorship can be applied in PREMARKET, REVIEW, or early TRADING states:
+- **PREMARKET/REVIEW**: Always allowed
+- **TRADING**: Only before `trading_start + twap_start_delay`
+- **FINALIZED**: Never allowed
+
+This means the atomic `createAndInitializeProposal` flow (which creates proposals in REVIEW state) is fully compatible with sponsorship.

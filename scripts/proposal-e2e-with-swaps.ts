@@ -72,6 +72,8 @@ async function main() {
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
   const stablePackageId = daoInfo.stablePackageId;
+  const baseAssetMetadataId = daoInfo.assetMetadata;
+  const baseStableMetadataId = daoInfo.stableMetadata;
 
   logSuccess(`DAO Account: ${daoAccountId}`);
   logSuccess(`Asset Type: ${assetType}`);
@@ -164,10 +166,10 @@ async function main() {
   console.log();
 
   // ============================================================================
-  // STEP 2: Create proposal with actions using SDK workflow
+  // STEP 2: Create and initialize proposal atomically with actions
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 2: CREATE PROPOSAL WITH ACTIONS (using sdk.workflows.proposal)");
+  console.log("STEP 2: CREATE AND INITIALIZE PROPOSAL (atomic, with stream action)");
   console.log("=".repeat(80));
   console.log();
 
@@ -217,8 +219,23 @@ async function main() {
   });
   const feeCoinIds = feeCoins.data.map((c) => c.coinObjectId);
 
-  // Create proposal using SDK workflow
-  const createTx = proposalWorkflow.createProposal({
+  // Build conditional coin registry config
+  const conditionalCoinsRegistry = conditionalCoinsInfo && conditionalOutcomes.length > 0
+    ? {
+        registryId: conditionalCoinsInfo.registryId,
+        coinSets: conditionalOutcomes.map((outcome) => ({
+          outcomeIndex: outcome.index,
+          assetCoinType: outcome.asset.coinType,
+          assetCapId: outcome.asset.treasuryCapId,
+          stableCoinType: outcome.stable.coinType,
+          stableCapId: outcome.stable.treasuryCapId,
+        })),
+      }
+    : undefined;
+
+  // Create and initialize proposal atomically using SDK workflow
+  const createTx = proposalWorkflow.createAndInitializeProposal({
+    // CreateProposalConfig
     daoAccountId,
     assetType,
     stableType,
@@ -235,9 +252,36 @@ async function main() {
     usedQuota: false,
     feeCoins: feeCoinIds,
     feeAmount: proposalFeeAmount,
+    // Actions to add before finalization
+    outcomeActions: [
+      {
+        outcomeIndex: ACCEPT_OUTCOME_INDEX,
+        actions: [
+          {
+            type: 'create_stream',
+            coinType: stableType,
+            vaultName: 'treasury',
+            beneficiary: activeAddress,
+            amountPerIteration: BigInt(streamAmountPerIteration),
+            startTime: streamStart,
+            iterationsTotal: streamIterations,
+            iterationPeriodMs: streamIterationPeriod,
+            maxPerWithdrawal: BigInt(streamAmountPerIteration),
+          },
+        ],
+      },
+    ],
+    registryId: registryId as any,
+    // AdvanceToReviewConfig
+    lpType,
+    spotPoolId: spotPoolRef,
+    senderAddress: activeAddress,
+    baseAssetMetadataId,
+    baseStableMetadataId,
+    conditionalCoinsRegistry,
   });
 
-  console.log("📤 Creating proposal...");
+  console.log("📤 Creating proposal and escrow atomically...");
   const createResult = await executeTransaction(sdk, createTx.transaction, {
     network: "devnet",
     showObjectChanges: true,
@@ -254,90 +298,8 @@ async function main() {
 
   const proposalId = (proposalObject as any).objectId;
   let proposalRef = getObjectRef(createResult, "proposal::Proposal", network)!;
-  console.log(`✅ Proposal created: ${proposalId}`);
-  console.log();
 
-  // Wait for indexer on localnet
-  await waitForIndexer(network, { description: "indexer (proposal creation)" });
-
-  // ============================================================================
-  // STEP 3: Add actions to Accept outcome using SDK workflow
-  // ============================================================================
-  console.log("📝 Adding stream action to Accept outcome (using sdk.workflows.proposal)...");
-
-  const addActionsTx = proposalWorkflow.addActionsToOutcome({
-    proposalId: proposalRef,
-    assetType,
-    stableType,
-    outcomeIndex: ACCEPT_OUTCOME_INDEX,
-    daoAccountId: daoAccountRef,
-    registryId,
-    actions: [
-      {
-        type: 'create_stream',
-        coinType: stableType, // Specify stable coin for the stream
-        vaultName: 'treasury',
-        beneficiary: activeAddress,
-        amountPerIteration: BigInt(streamAmountPerIteration),
-        startTime: streamStart,
-        iterationsTotal: streamIterations,
-        iterationPeriodMs: streamIterationPeriod,
-        maxPerWithdrawal: BigInt(streamAmountPerIteration),
-        // Note: All streams are always cancellable by DAO governance
-      },
-    ],
-  });
-
-  const addActionsResult = await executeTransaction(sdk, addActionsTx.transaction, { network: "devnet", showObjectChanges: true });
-  // Update refs after transaction
-  proposalRef = getObjectRefById(addActionsResult, proposalId, network);
-  daoAccountRef = getObjectRefById(addActionsResult, daoAccountId, network);
-  console.log(`✅ Actions added to Accept outcome!`);
-  console.log();
-
-  // Wait for indexer on localnet
-  await waitForIndexer(network, { description: "indexer (actions added)" });
-
-  // ============================================================================
-  // STEP 4: Advance to REVIEW state
-  // ============================================================================
-  console.log("=".repeat(80));
-  console.log("STEP 4: ADVANCE TO REVIEW STATE (using sdk.workflows.proposal)");
-  console.log("=".repeat(80));
-  console.log();
-
-  // Build conditional coin registry config for advance to review
-  const conditionalCoinsRegistry = conditionalCoinsInfo && conditionalOutcomes.length > 0
-    ? {
-        registryId: conditionalCoinsInfo.registryId,
-        coinSets: conditionalOutcomes.map((outcome) => ({
-          outcomeIndex: outcome.index,
-          assetCoinType: outcome.asset.coinType,
-          assetCapId: outcome.asset.treasuryCapId,
-          stableCoinType: outcome.stable.coinType,
-          stableCapId: outcome.stable.treasuryCapId,
-        })),
-      }
-    : undefined;
-
-  const advanceTx = proposalWorkflow.advanceToReview({
-    proposalId: proposalRef,
-    daoAccountId: daoAccountRef,
-    assetType,
-    stableType,
-    lpType,
-    spotPoolId: spotPoolRef,
-    senderAddress: activeAddress,
-    conditionalCoinsRegistry,
-  });
-
-  console.log("📤 Creating escrow and advancing to REVIEW...");
-  const advanceResult = await executeTransaction(sdk, advanceTx.transaction, {
-    network: "devnet",
-    showObjectChanges: true,
-  });
-
-  const escrowObject = advanceResult.objectChanges?.find(
+  const escrowObject = createResult.objectChanges?.find(
     (obj: any) => obj.objectType?.includes("::coin_escrow::TokenEscrow")
   );
 
@@ -347,23 +309,26 @@ async function main() {
   }
 
   const escrowId = (escrowObject as any).objectId;
-  let escrowRef = getObjectRef(advanceResult, "coin_escrow::TokenEscrow", network)!;
+  let escrowRef = getObjectRef(createResult, "coin_escrow::TokenEscrow", network)!;
   // Update other refs after this transaction
-  proposalRef = getObjectRefById(advanceResult, proposalId, network);
-  daoAccountRef = getObjectRefById(advanceResult, daoAccountId, network);
-  spotPoolRef = getObjectRefById(advanceResult, spotPoolId, network);
-  console.log(`✅ Escrow created: ${escrowId}`);
-  console.log(`✅ Proposal state: REVIEW`);
+  daoAccountRef = getObjectRefById(createResult, daoAccountId, network);
+  spotPoolRef = getObjectRefById(createResult, spotPoolId, network);
+
+  console.log(`✅ Proposal created and initialized atomically`);
+  console.log(`   Proposal: ${proposalId}`);
+  console.log(`   Escrow: ${escrowId}`);
+  console.log(`   Actions: Stream action added to Accept outcome`);
+  console.log(`   State: REVIEW`);
   console.log();
 
   // Wait for indexer on localnet
-  await waitForIndexer(network, { description: "indexer (escrow created)" });
+  await waitForIndexer(network, { description: "indexer (proposal + escrow created)" });
 
   // ============================================================================
-  // STEP 5: Advance to TRADING state
+  // STEP 3: Advance to TRADING state
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 5: ADVANCE TO TRADING STATE (using sdk.workflows.proposal)");
+  console.log("STEP 3: ADVANCE TO TRADING STATE (using sdk.workflows.proposal)");
   console.log("=".repeat(80));
   console.log();
 
@@ -398,10 +363,10 @@ async function main() {
   await waitForIndexer(network, { description: "indexer (trading state)" });
 
   // ============================================================================
-  // STEP 6: PERFORM SWAPS (Multi-User with Comprehensive Token Tracking)
+  // STEP 4: PERFORM SWAPS (Multi-User with Comprehensive Token Tracking)
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 6: PERFORM SWAPS TO INFLUENCE OUTCOME (Multi-User Testing)");
+  console.log("STEP 4: PERFORM SWAPS TO INFLUENCE OUTCOME (Multi-User Testing)");
   console.log("=".repeat(80));
   console.log();
 
@@ -605,10 +570,10 @@ async function main() {
   }
 
   // ============================================================================
-  // STEP 7: Wait for trading period and finalize
+  // STEP 5: Wait for trading period and finalize
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 7: FINALIZE PROPOSAL (using sdk.workflows.proposal)");
+  console.log("STEP 5: FINALIZE PROPOSAL (using sdk.workflows.proposal)");
   console.log("=".repeat(80));
   console.log();
 
@@ -653,11 +618,11 @@ async function main() {
   const acceptWon = winningOutcome === 1 || winningOutcome === "1";
 
   // ============================================================================
-  // STEP 8: Execute actions (if Accept won)
+  // STEP 6: Execute actions (if Accept won)
   // ============================================================================
   if (acceptWon) {
     console.log("=".repeat(80));
-    console.log("STEP 8: EXECUTE ACTIONS (using sdk.workflows.proposal)");
+    console.log("STEP 6: EXECUTE ACTIONS (using sdk.workflows.proposal)");
     console.log("=".repeat(80));
     console.log();
 
@@ -667,8 +632,10 @@ async function main() {
       daoAccountId: daoAccountRef,
       proposalId: proposalRef,
       escrowId: escrowRef,
+      spotPoolId: spotPoolRef,
       assetType,
       stableType,
+      lpType,
       actionTypes: [
         { type: 'create_stream', coinType: stableType },
       ],
@@ -698,10 +665,10 @@ async function main() {
   }
 
   // ============================================================================
-  // STEP 9: Redeem ALL winning conditional tokens
+  // STEP 7: Redeem ALL winning conditional tokens
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 9: REDEEM WINNING CONDITIONAL TOKENS (Comprehensive)");
+  console.log("STEP 7: REDEEM WINNING CONDITIONAL TOKENS (Comprehensive)");
   console.log("=".repeat(80));
   console.log();
 
@@ -838,9 +805,8 @@ async function main() {
   console.log();
 
   console.log("📋 Summary:");
-  console.log("  ✅ Created proposal with actions (using sdk.workflows.proposal.createProposal)");
-  console.log("  ✅ Added actions to outcome (using sdk.workflows.proposal.addActionsToOutcome)");
-  console.log("  ✅ Advanced to REVIEW (using sdk.workflows.proposal.advanceToReview)");
+  console.log("  ✅ Created and initialized proposal atomically (using sdk.workflows.proposal.createAndInitializeProposal)");
+  console.log("  ✅ Actions added during atomic creation");
   console.log("  ✅ Advanced to TRADING (using sdk.workflows.proposal.advanceToTrading)");
   console.log("  ✅ 100% quantum split: spot pool → conditional AMMs");
   console.log("  ✅ Performed spot swap (using sdk.workflows.proposal.spotSwap)");

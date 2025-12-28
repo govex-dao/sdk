@@ -73,10 +73,13 @@ async function main() {
   const daoAccountId = daoInfo.accountId;
   const assetType = daoInfo.assetType;
   const stableType = daoInfo.stableType;
+  const lpType = daoInfo.lpType;
   const spotPoolId = daoInfo.spotPoolId;
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
   const stablePackageId = daoInfo.stablePackageId;
+  const baseAssetMetadataId = daoInfo.assetMetadata;
+  const baseStableMetadataId = daoInfo.stableMetadata;
 
   logSuccess(`DAO Account: ${daoAccountId}`);
   logSuccess(`Asset Type: ${assetType}`);
@@ -132,10 +135,10 @@ async function main() {
   let spotPoolRef: OwnedObjectRef | string = spotPoolId;
 
   // ============================================================================
-  // STEP 2: Create proposal with actions (using SDK workflow)
+  // STEP 2: Create and initialize proposal atomically with actions
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 2: CREATE PROPOSAL WITH ACTIONS (using sdk.workflows.proposal)");
+  console.log("STEP 2: CREATE AND INITIALIZE PROPOSAL (atomic, with stream action)");
   console.log("=".repeat(80));
   console.log();
 
@@ -175,97 +178,7 @@ async function main() {
     coinType: stableType,
   });
 
-  // Use SDK workflow to create proposal
-  const createProposalTx = sdk.workflows.proposal.createProposal({
-    daoAccountId: daoAccountRef,
-    assetType,
-    stableType,
-    title: "Fund Team Development with Conditional Trading",
-    introduction: "This proposal will test swaps and demonstrate winning outcome execution",
-    metadata: JSON.stringify({ category: "test", impact: "high" }),
-    outcomeMessages: ["Reject", "Accept"],
-    outcomeDetails: [
-      "Reject: Do nothing (status quo)",
-      "Accept: Execute stream + allow trading"
-    ],
-    proposer: activeAddress,
-    treasuryAddress: activeAddress,
-    usedQuota: false,
-    feeCoins: feeCoins.data.map((c) => c.coinObjectId),
-    feeAmount: proposalFeeAmount,
-  });
-
-  console.log("   Creating proposal...");
-  const createResult = await executeTransaction(sdk, createProposalTx.transaction, {
-    network: "devnet",
-    showObjectChanges: true,
-  });
-
-  const proposalObject = createResult.objectChanges?.find(
-    (obj: any) => obj.type === "created" && obj.objectType?.includes("proposal::Proposal")
-  );
-
-  if (!proposalObject) {
-    console.error("Failed to create proposal");
-    process.exit(1);
-  }
-
-  const proposalId = (proposalObject as any).objectId;
-  let proposalRef = getObjectRef(createResult, "proposal::Proposal", network)!;
-  daoAccountRef = getObjectRefById(createResult, daoAccountId, network);
-  console.log(`   Proposal created: ${proposalId}`);
-  console.log();
-
-  // ============================================================================
-  // STEP 3: Add actions to Accept outcome (using SDK workflow)
-  // ============================================================================
-  console.log("=".repeat(80));
-  console.log("STEP 3: ADD ACTIONS TO ACCEPT OUTCOME (using sdk.workflows.proposal)");
-  console.log("=".repeat(80));
-  console.log();
-
   const registryId = sdk.sharedObjects.packageRegistry.id;
-
-  const addActionsTx = sdk.workflows.proposal.addActionsToOutcome({
-    proposalId: proposalRef,
-    assetType,
-    stableType,
-    outcomeIndex: 1, // Accept
-    daoAccountId: daoAccountRef,
-    registryId,
-    actions: [
-      {
-        type: 'create_stream',
-        coinType: stableType, // Specify stable coin for the stream
-        vaultName: 'treasury',
-        beneficiary: activeAddress,
-        amountPerIteration: BigInt(streamAmountPerIteration),
-        startTime: streamStart,
-        iterationsTotal: streamIterations,
-        iterationPeriodMs: streamIterationPeriod,
-        maxPerWithdrawal: BigInt(streamAmountPerIteration),
-        // Note: All streams are always cancellable by DAO governance
-      },
-    ],
-  });
-
-  const addActionsResult = await executeTransaction(sdk, addActionsTx.transaction, {
-    network: "devnet",
-    showObjectChanges: true,
-  });
-  proposalRef = getObjectRefById(addActionsResult, proposalId, network);
-  daoAccountRef = getObjectRefById(addActionsResult, daoAccountId, network);
-
-  console.log(`   Actions added to Accept outcome!`);
-  console.log();
-
-  // ============================================================================
-  // STEP 4: Advance PREMARKET -> REVIEW (using SDK workflow)
-  // ============================================================================
-  console.log("=".repeat(80));
-  console.log("STEP 4: ADVANCE TO REVIEW STATE (using sdk.workflows.proposal)");
-  console.log("=".repeat(80));
-  console.log();
 
   // Build conditional coins registry config if available
   let conditionalCoinsRegistry: { registryId: string; coinSets: ConditionalCoinSetConfig[] } | undefined;
@@ -283,22 +196,73 @@ async function main() {
     console.log(`   Taking ${conditionalOutcomes.length * 2} conditional coins from registry...`);
   }
 
-  const advanceToReviewTx = sdk.workflows.proposal.advanceToReview({
-    proposalId: proposalRef,
+  // Use SDK workflow to create and initialize proposal atomically
+  const createProposalTx = sdk.workflows.proposal.createAndInitializeProposal({
+    // CreateProposalConfig
     daoAccountId: daoAccountRef,
     assetType,
     stableType,
+    title: "Fund Team Development with Conditional Trading",
+    introduction: "This proposal will test swaps and demonstrate winning outcome execution",
+    metadata: JSON.stringify({ category: "test", impact: "high" }),
+    outcomeMessages: ["Reject", "Accept"],
+    outcomeDetails: [
+      "Reject: Do nothing (status quo)",
+      "Accept: Execute stream + allow trading"
+    ],
+    proposer: activeAddress,
+    treasuryAddress: activeAddress,
+    usedQuota: false,
+    feeCoins: feeCoins.data.map((c) => c.coinObjectId),
+    feeAmount: proposalFeeAmount,
+    // Actions to add before finalization
+    outcomeActions: [
+      {
+        outcomeIndex: ACCEPT_OUTCOME_INDEX,
+        actions: [
+          {
+            type: 'create_stream',
+            coinType: stableType,
+            vaultName: 'treasury',
+            beneficiary: activeAddress,
+            amountPerIteration: BigInt(streamAmountPerIteration),
+            startTime: streamStart,
+            iterationsTotal: streamIterations,
+            iterationPeriodMs: streamIterationPeriod,
+            maxPerWithdrawal: BigInt(streamAmountPerIteration),
+          },
+        ],
+      },
+    ],
+    registryId,
+    // AdvanceToReviewConfig
+    lpType,
     spotPoolId: spotPoolRef,
     senderAddress: activeAddress,
+    baseAssetMetadataId,
+    baseStableMetadataId,
     conditionalCoinsRegistry,
   });
 
-  const advanceResult = await executeTransaction(sdk, advanceToReviewTx.transaction, {
+  console.log("   Creating proposal and escrow atomically...");
+  const createResult = await executeTransaction(sdk, createProposalTx.transaction, {
     network: "devnet",
     showObjectChanges: true,
   });
 
-  const escrowObject = advanceResult.objectChanges?.find(
+  const proposalObject = createResult.objectChanges?.find(
+    (obj: any) => obj.type === "created" && obj.objectType?.includes("proposal::Proposal")
+  );
+
+  if (!proposalObject) {
+    console.error("Failed to create proposal");
+    process.exit(1);
+  }
+
+  const proposalId = (proposalObject as any).objectId;
+  let proposalRef = getObjectRef(createResult, "proposal::Proposal", network)!;
+
+  const escrowObject = createResult.objectChanges?.find(
     (obj: any) => obj.objectType?.includes("::coin_escrow::TokenEscrow")
   );
 
@@ -308,19 +272,22 @@ async function main() {
   }
 
   const escrowId = (escrowObject as any).objectId;
-  let escrowRef = getObjectRef(advanceResult, "coin_escrow::TokenEscrow", network)!;
-  proposalRef = getObjectRefById(advanceResult, proposalId, network);
-  daoAccountRef = getObjectRefById(advanceResult, daoAccountId, network);
-  spotPoolRef = getObjectRefById(advanceResult, spotPoolId, network);
-  console.log(`   Escrow created: ${escrowId}`);
-  console.log(`   Proposal state: REVIEW`);
+  let escrowRef = getObjectRef(createResult, "coin_escrow::TokenEscrow", network)!;
+  daoAccountRef = getObjectRefById(createResult, daoAccountId, network);
+  spotPoolRef = getObjectRefById(createResult, spotPoolId, network);
+
+  console.log(`   Proposal created and initialized atomically`);
+  console.log(`   Proposal: ${proposalId}`);
+  console.log(`   Escrow: ${escrowId}`);
+  console.log(`   Actions: Stream action added to Accept outcome`);
+  console.log(`   State: REVIEW`);
   console.log();
 
   // ============================================================================
-  // STEP 5: Wait for review period and advance to TRADING (using SDK workflow)
+  // STEP 3: Wait for review period and advance to TRADING (using SDK workflow)
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 5: ADVANCE TO TRADING STATE (using sdk.workflows.proposal)");
+  console.log("STEP 3: ADVANCE TO TRADING STATE (using sdk.workflows.proposal)");
   console.log("=".repeat(80));
   console.log();
 
@@ -336,6 +303,7 @@ async function main() {
     spotPoolId: spotPoolRef,
     assetType,
     stableType,
+    lpType,
   });
 
   const toTradingResult = await executeTransaction(sdk, advanceToTradingTx.transaction, {
@@ -356,10 +324,10 @@ async function main() {
   await waitForIndexer(network, { description: "indexer (trading state)" });
 
   // ============================================================================
-  // STEP 6: PERFORM SWAPS (Spot + Balance-based Conditional)
+  // STEP 4: PERFORM SWAPS (Spot + Balance-based Conditional)
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 6: PERFORM SWAPS TO INFLUENCE OUTCOME");
+  console.log("STEP 4: PERFORM SWAPS TO INFLUENCE OUTCOME");
   console.log("=".repeat(80));
   console.log();
 
@@ -401,6 +369,7 @@ async function main() {
     escrowId: escrowRef,
     assetType,
     stableType,
+    lpType,
     direction: 'stable_to_asset',
     amountIn: swapAmount1,
     minAmountOut: 0n,
@@ -511,10 +480,10 @@ async function main() {
   console.log();
 
   // ============================================================================
-  // STEP 7: Wait for trading period and finalize (using SDK workflow)
+  // STEP 5: Wait for trading period and finalize (using SDK workflow)
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 7: FINALIZE PROPOSAL (using sdk.workflows.proposal)");
+  console.log("STEP 5: FINALIZE PROPOSAL (using sdk.workflows.proposal)");
   console.log("=".repeat(80));
   console.log();
 
@@ -532,6 +501,7 @@ async function main() {
     spotPoolId: spotPoolRef,
     assetType,
     stableType,
+    lpType,
   });
 
   const finalizeResult = await executeTransaction(sdk, finalizeTx.transaction, {
@@ -564,10 +534,10 @@ async function main() {
 
   if (acceptWon) {
     // ============================================================================
-    // STEP 8: Execute actions (using SDK workflow)
+    // STEP 6: Execute actions (using SDK workflow)
     // ============================================================================
     console.log("=".repeat(80));
-    console.log("STEP 8: EXECUTE ACTIONS (using sdk.workflows.proposal)");
+    console.log("STEP 6: EXECUTE ACTIONS (using sdk.workflows.proposal)");
     console.log("=".repeat(80));
     console.log();
 
@@ -577,8 +547,10 @@ async function main() {
       daoAccountId: daoAccountRef,
       proposalId: proposalRef,
       escrowId: escrowRef,
+      spotPoolId: spotPoolRef,
       assetType,
       stableType,
+      lpType,
       actionTypes: [
         { type: 'create_stream', coinType: stableType },
       ],
@@ -608,10 +580,10 @@ async function main() {
   }
 
   // ============================================================================
-  // STEP 9: Withdraw winning conditional tokens
+  // STEP 7: Withdraw winning conditional tokens
   // ============================================================================
   console.log("=".repeat(80));
-  console.log("STEP 9: WITHDRAW WINNING CONDITIONAL TOKENS");
+  console.log("STEP 7: WITHDRAW WINNING CONDITIONAL TOKENS");
   console.log("=".repeat(80));
   console.log();
 
@@ -628,9 +600,8 @@ async function main() {
   console.log();
 
   console.log("Summary:");
-  console.log("  - Created proposal (using sdk.workflows.proposal.createProposal)");
-  console.log("  - Added actions (using sdk.workflows.proposal.addActionsToOutcome)");
-  console.log("  - Advanced to REVIEW (using sdk.workflows.proposal.advanceToReview)");
+  console.log("  - Created and initialized proposal atomically (using sdk.workflows.proposal.createAndInitializeProposal)");
+  console.log("  - Actions added during atomic creation");
   console.log("  - Advanced to TRADING (using sdk.workflows.proposal.advanceToTrading)");
   console.log("  - 100% quantum split: spot pool -> conditional AMMs");
   console.log("  - Performed spot swap (using sdk.workflows.proposal.spotSwap)");

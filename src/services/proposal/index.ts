@@ -125,10 +125,16 @@ export class ProposalService {
   // ============================================================================
 
   /**
-   * Create a new governance proposal
+   * Create and initialize a proposal atomically
+   *
+   * This combines proposal creation and initialization into a single atomic operation.
+   * The proposal and escrow are created, conditional coins registered, AMM pools created,
+   * and both objects shared - all in one transaction.
+   *
+   * @param config - Configuration including all details for proposal and conditional coins
    */
-  createProposal(config: CreateProposalConfig): WorkflowTransaction {
-    return this.workflow.createProposal(config);
+  createAndInitializeProposal(config: CreateProposalConfig & AdvanceToReviewConfig): WorkflowTransaction {
+    return this.workflow.createAndInitializeProposal(config);
   }
 
   /**
@@ -136,14 +142,6 @@ export class ProposalService {
    */
   addActionsToOutcome(config: AddProposalActionsConfig): WorkflowTransaction {
     return this.workflow.addActionsToOutcome(config);
-  }
-
-  /**
-   * Advance proposal to REVIEW state
-   * Creates escrow, registers conditional coins, and advances state
-   */
-  advanceToReview(config: AdvanceToReviewConfig): WorkflowTransaction {
-    return this.workflow.advanceToReview(config);
   }
 
   /**

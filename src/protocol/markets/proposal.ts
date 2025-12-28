@@ -59,71 +59,40 @@ export class Proposal {
   }
 
   // ============================================================================
-  // Creation Functions
+  // Creation Functions - Atomic Proposal Pattern
   // ============================================================================
+  //
+  // The atomic proposal creation pattern ensures proposals are created with all
+  // conditional coins in a single transaction, preventing incomplete proposals.
+  //
+  // Flow:
+  // 1. beginProposal() → returns [Proposal, TokenEscrow] (both unshared)
+  // 2. addOutcomeCoins() or addOutcomeCoins10() → registers coins with escrow
+  // 3. finalizeProposal() → validates completeness, creates AMM pools, shares both
+  //
+  // Example PTB for 2 outcomes:
+  //   const [proposal, escrow] = Proposal.beginProposal(tx, {...});
+  //   Proposal.addOutcomeCoins(tx, { proposal, escrow, outcomeIndex: 0, ... });
+  //   Proposal.addOutcomeCoins(tx, { proposal, escrow, outcomeIndex: 1, ... });
+  //   Proposal.finalizeProposal(tx, { proposal, escrow, ... });
+  //
+  // Example PTB for 10 outcomes (optimized):
+  //   const [proposal, escrow] = Proposal.beginProposal(tx, {...});
+  //   Proposal.addOutcomeCoins10(tx, { proposal, escrow, startOutcomeIndex: 0, ... });
+  //   Proposal.finalizeProposal(tx, { proposal, escrow, ... });
 
   /**
-   * Create a PREMARKET proposal without market/escrow/liquidity.
-   * ALL governance parameters (review period, trading period, fees, TWAP config, etc.)
-   * are now read from DAO config stored in the dao_account.
+   * Begin creating a proposal atomically. Returns UNSHARED proposal and escrow.
+   * Must call addOutcomeCoins/addOutcomeCoins10 to register all conditional coins,
+   * then finalizeProposal to validate and share.
    *
-   * SECURITY NOTE: This prevents governance bypass attacks where callers could
-   * previously control critical parameters like review periods and fee rates.
+   * Fee type is determined by DAO config (fee_in_asset_token):
+   * - If fee_in_asset_token = false: pass stableFee, assetFee should be zero coin
+   * - If fee_in_asset_token = true: pass assetFee, stableFee should be zero coin
+   *
+   * @returns [Proposal, TokenEscrow] - both unshared, must call finalizeProposal
    */
-  static newPremarket(
-    tx: Transaction,
-    config: {
-      marketsCorePackageId: string;
-      protocolPackageId: string; // For ActionSpec type
-      assetType: string;
-      stableType: string;
-      daoAccountId: string; // ALL governance config read from here
-      treasuryAddress: string;
-      title: string;
-      introductionDetails: string;
-      metadata: string;
-      outcomeMessages: string[];
-      outcomeDetails: string[];
-      proposer: string;
-      usedQuota: boolean;
-      feePayment: ReturnType<Transaction['moveCall']> | ReturnType<Transaction['splitCoins']>; // Coin<StableType> for proposal fee
-      intentSpecForYes?: ReturnType<Transaction['moveCall']>; // Option<vector<ActionSpec>>
-      clock?: string;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    // Create Option::None for intent_spec_for_yes if not provided
-    const intentSpec = config.intentSpecForYes || tx.moveCall({
-      target: '0x1::option::none',
-      typeArguments: [`vector<${config.protocolPackageId}::intents::ActionSpec>`],
-      arguments: [],
-    });
-
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'new_premarket'),
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        tx.object(config.daoAccountId),
-        tx.pure.address(config.treasuryAddress),
-        tx.pure.string(config.title),
-        tx.pure.string(config.introductionDetails),
-        tx.pure.string(config.metadata),
-        tx.pure.vector('string', config.outcomeMessages),
-        tx.pure.vector('string', config.outcomeDetails),
-        tx.pure.address(config.proposer),
-        tx.pure.bool(config.usedQuota),
-        config.feePayment,
-        intentSpec,
-        tx.object(config.clock || '0x6'),
-      ],
-    });
-  }
-
-  /**
-   * Create a new PREMARKET proposal with fee paid in AssetType (DAO token).
-   * Use this when the DAO has configured fee_in_asset_token = true.
-   * This reduces friction for proposers who hold the DAO token.
-   */
-  static newPremarketWithAssetFee(
+  static beginProposal(
     tx: Transaction,
     config: {
       marketsCorePackageId: string;
@@ -139,7 +108,8 @@ export class Proposal {
       outcomeDetails: string[];
       proposer: string;
       usedQuota: boolean;
-      feePayment: ReturnType<Transaction['moveCall']> | ReturnType<Transaction['splitCoins']>; // Coin<AssetType> for proposal fee
+      stableFee: ReturnType<Transaction['moveCall']> | ReturnType<Transaction['splitCoins']>; // Coin<StableType>
+      assetFee: ReturnType<Transaction['moveCall']> | ReturnType<Transaction['splitCoins']>; // Coin<AssetType>
       intentSpecForYes?: ReturnType<Transaction['moveCall']>;
       clock?: string;
     }
@@ -151,7 +121,7 @@ export class Proposal {
     });
 
     return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'new_premarket_with_asset_fee'),
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'begin_proposal'),
       typeArguments: [config.assetType, config.stableType],
       arguments: [
         tx.object(config.daoAccountId),
@@ -163,187 +133,233 @@ export class Proposal {
         tx.pure.vector('string', config.outcomeDetails),
         tx.pure.address(config.proposer),
         tx.pure.bool(config.usedQuota),
-        config.feePayment,
+        config.stableFee,
+        config.assetFee,
         intentSpec,
         tx.object(config.clock || '0x6'),
       ],
     });
   }
 
-  static createEscrowForMarket(
+  /**
+   * Add one outcome's conditional coins (asset + stable pair).
+   * Validates blank metadata, updates with DAO naming, registers caps with escrow.
+   *
+   * Must be called once per outcome before finalizeProposal.
+   * For proposals with many outcomes, use addOutcomeCoins10 for efficiency.
+   */
+  static addOutcomeCoins(
     tx: Transaction,
     config: {
       marketsCorePackageId: string;
       assetType: string;
       stableType: string;
+      assetCondCoinType: string;
+      stableCondCoinType: string;
       proposal: ReturnType<Transaction['moveCall']>;
-      clock?: string;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'create_escrow_for_market'),
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [config.proposal, tx.object(config.clock || '0x6')],
-    });
-  }
-
-  static registerOutcomeCapsWithEscrow(
-    tx: Transaction,
-    config: {
-      marketsCorePackageId: string;
-      assetType: string;
-      stableType: string;
-      assetConditionalCoin: string;
-      stableConditionalCoin: string;
-      proposal: ReturnType<Transaction['moveCall']>;
+      escrow: ReturnType<Transaction['moveCall']>;
+      outcomeIndex: number;
       assetTreasuryCap: ReturnType<Transaction['moveCall']>;
-      stableTreasuryCap: ReturnType<Transaction['moveCall']>;
       assetMetadata: ReturnType<Transaction['moveCall']>;
+      stableTreasuryCap: ReturnType<Transaction['moveCall']>;
       stableMetadata: ReturnType<Transaction['moveCall']>;
-      outcomeIdx: bigint;
+      daoConfig: ReturnType<Transaction['moveCall']> | string;
+      baseAssetMetadata: ReturnType<Transaction['moveCall']> | string;
+      baseStableMetadata: ReturnType<Transaction['moveCall']> | string;
     }
   ): void {
     tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'register_outcome_caps_with_escrow'),
-      typeArguments: [config.assetType, config.stableType, config.assetConditionalCoin, config.stableConditionalCoin],
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'add_outcome_coins'),
+      typeArguments: [
+        config.assetType,
+        config.stableType,
+        config.assetCondCoinType,
+        config.stableCondCoinType,
+      ],
       arguments: [
         config.proposal,
+        config.escrow,
+        tx.pure.u64(config.outcomeIndex),
         config.assetTreasuryCap,
-        config.stableTreasuryCap,
         config.assetMetadata,
+        config.stableTreasuryCap,
         config.stableMetadata,
-        tx.pure.u64(config.outcomeIdx),
+        typeof config.daoConfig === 'string' ? tx.object(config.daoConfig) : config.daoConfig,
+        typeof config.baseAssetMetadata === 'string' ? tx.object(config.baseAssetMetadata) : config.baseAssetMetadata,
+        typeof config.baseStableMetadata === 'string' ? tx.object(config.baseStableMetadata) : config.baseStableMetadata,
       ],
     });
   }
 
-  static createConditionalAmmPools(
+  /**
+   * Add up to 10 outcomes' conditional coins (20 coins total) in one call.
+   * For proposals with up to 10 outcomes, this is a single PTB call.
+   * For larger proposals, combine with addOutcomeCoins for remaining outcomes.
+   *
+   * Unused outcome slots (when outcomeCount < 10) will have their caps/metadata
+   * transferred to burn address automatically.
+   */
+  static addOutcomeCoins10(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+      assetType: string;
+      stableType: string;
+      // 10 pairs of conditional coin types
+      condCoinTypes: Array<{ asset: string; stable: string }>;
+      proposal: ReturnType<Transaction['moveCall']>;
+      escrow: ReturnType<Transaction['moveCall']>;
+      // 10 pairs of treasury caps
+      treasuryCaps: Array<{
+        asset: ReturnType<Transaction['moveCall']>;
+        stable: ReturnType<Transaction['moveCall']>;
+      }>;
+      // 10 pairs of metadata
+      metadatas: Array<{
+        asset: ReturnType<Transaction['moveCall']>;
+        stable: ReturnType<Transaction['moveCall']>;
+      }>;
+      daoConfig: ReturnType<Transaction['moveCall']> | string;
+      baseAssetMetadata: ReturnType<Transaction['moveCall']> | string;
+      baseStableMetadata: ReturnType<Transaction['moveCall']> | string;
+      startOutcomeIndex: number;
+    }
+  ): void {
+    // Validate we have exactly 10 of each
+    if (config.condCoinTypes.length !== 10 || config.treasuryCaps.length !== 10 || config.metadatas.length !== 10) {
+      throw new Error('addOutcomeCoins10 requires exactly 10 conditional coin type pairs, treasury cap pairs, and metadata pairs');
+    }
+
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'add_outcome_coins_10'),
+      typeArguments: [
+        config.assetType,
+        config.stableType,
+        // Outcome 0
+        config.condCoinTypes[0].asset, config.condCoinTypes[0].stable,
+        // Outcome 1
+        config.condCoinTypes[1].asset, config.condCoinTypes[1].stable,
+        // Outcome 2
+        config.condCoinTypes[2].asset, config.condCoinTypes[2].stable,
+        // Outcome 3
+        config.condCoinTypes[3].asset, config.condCoinTypes[3].stable,
+        // Outcome 4
+        config.condCoinTypes[4].asset, config.condCoinTypes[4].stable,
+        // Outcome 5
+        config.condCoinTypes[5].asset, config.condCoinTypes[5].stable,
+        // Outcome 6
+        config.condCoinTypes[6].asset, config.condCoinTypes[6].stable,
+        // Outcome 7
+        config.condCoinTypes[7].asset, config.condCoinTypes[7].stable,
+        // Outcome 8
+        config.condCoinTypes[8].asset, config.condCoinTypes[8].stable,
+        // Outcome 9
+        config.condCoinTypes[9].asset, config.condCoinTypes[9].stable,
+      ],
+      arguments: [
+        config.proposal,
+        config.escrow,
+        // Outcome 0
+        config.treasuryCaps[0].asset, config.metadatas[0].asset,
+        config.treasuryCaps[0].stable, config.metadatas[0].stable,
+        // Outcome 1
+        config.treasuryCaps[1].asset, config.metadatas[1].asset,
+        config.treasuryCaps[1].stable, config.metadatas[1].stable,
+        // Outcome 2
+        config.treasuryCaps[2].asset, config.metadatas[2].asset,
+        config.treasuryCaps[2].stable, config.metadatas[2].stable,
+        // Outcome 3
+        config.treasuryCaps[3].asset, config.metadatas[3].asset,
+        config.treasuryCaps[3].stable, config.metadatas[3].stable,
+        // Outcome 4
+        config.treasuryCaps[4].asset, config.metadatas[4].asset,
+        config.treasuryCaps[4].stable, config.metadatas[4].stable,
+        // Outcome 5
+        config.treasuryCaps[5].asset, config.metadatas[5].asset,
+        config.treasuryCaps[5].stable, config.metadatas[5].stable,
+        // Outcome 6
+        config.treasuryCaps[6].asset, config.metadatas[6].asset,
+        config.treasuryCaps[6].stable, config.metadatas[6].stable,
+        // Outcome 7
+        config.treasuryCaps[7].asset, config.metadatas[7].asset,
+        config.treasuryCaps[7].stable, config.metadatas[7].stable,
+        // Outcome 8
+        config.treasuryCaps[8].asset, config.metadatas[8].asset,
+        config.treasuryCaps[8].stable, config.metadatas[8].stable,
+        // Outcome 9
+        config.treasuryCaps[9].asset, config.metadatas[9].asset,
+        config.treasuryCaps[9].stable, config.metadatas[9].stable,
+        // Config and base metadata
+        typeof config.daoConfig === 'string' ? tx.object(config.daoConfig) : config.daoConfig,
+        typeof config.baseAssetMetadata === 'string' ? tx.object(config.baseAssetMetadata) : config.baseAssetMetadata,
+        typeof config.baseStableMetadata === 'string' ? tx.object(config.baseStableMetadata) : config.baseStableMetadata,
+        tx.pure.u64(config.startOutcomeIndex),
+      ],
+    });
+  }
+
+  /**
+   * Finalize proposal creation: validate all coins registered, create AMM pools, share.
+   * Must be called after all addOutcomeCoins/addOutcomeCoins10 calls.
+   */
+  static finalizeProposal(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+      assetType: string;
+      stableType: string;
+      lpType: string;
+      proposal: ReturnType<Transaction['moveCall']>;
+      escrow: ReturnType<Transaction['moveCall']>;
+      spotPool: ReturnType<Transaction['moveCall']> | string;
+      liquidityProvider: string;
+      clock?: string;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'finalize_proposal'),
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [
+        config.proposal,
+        config.escrow,
+        typeof config.spotPool === 'string' ? tx.object(config.spotPool) : config.spotPool,
+        tx.pure.address(config.liquidityProvider),
+        tx.object(config.clock || '0x6'),
+      ],
+    });
+  }
+
+  // ============================================================================
+  // Fee Escrow Functions
+  // ============================================================================
+
+  /**
+   * Takes the escrowed fee balance out of the proposal (StableType version)
+   * Used for refunding fees to proposer if any accept wins.
+   * Call this when feePaidInAsset() returns false.
+   */
+  static takeFeeEscrowStable(
     tx: Transaction,
     config: {
       marketsCorePackageId: string;
       assetType: string;
       stableType: string;
       proposal: ReturnType<Transaction['moveCall']>;
-      initialAsset: ReturnType<Transaction['moveCall']>;
-      initialStable: ReturnType<Transaction['moveCall']>;
-      clock?: string;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'create_conditional_amm_pools'),
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'take_fee_escrow_stable'),
       typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        config.proposal,
-        config.initialAsset,
-        config.initialStable,
-        tx.object(config.clock || '0x6'),
-      ],
+      arguments: [config.proposal],
     });
   }
 
-  static addOutcome(
-    tx: Transaction,
-    config: {
-      marketsCorePackageId: string;
-      assetType: string;
-      stableType: string;
-      conditionalCoinConfig: ReturnType<Transaction['moveCall']>;
-      proposal: ReturnType<Transaction['moveCall']>;
-      message: string;
-      assetAmount: bigint;
-      stableAmount: bigint;
-      creatorFee: bigint;
-      clock?: string;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'add_outcome'),
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        config.conditionalCoinConfig,
-        config.proposal,
-        tx.pure.string(config.message),
-        tx.pure.u64(config.assetAmount),
-        tx.pure.u64(config.stableAmount),
-        tx.pure.u64(config.creatorFee),
-        tx.object(config.clock || '0x6'),
-      ],
-    });
-  }
-
-  static addOutcomeWithFee(
-    tx: Transaction,
-    config: {
-      marketsCorePackageId: string;
-      assetType: string;
-      stableType: string;
-      conditionalCoinConfig: ReturnType<Transaction['moveCall']>;
-      proposal: ReturnType<Transaction['moveCall']>;
-      message: string;
-      assetAmount: bigint;
-      stableAmount: bigint;
-      creatorFee: bigint;
-      feeManager: ReturnType<Transaction['moveCall']>;
-      payment: ReturnType<Transaction['moveCall']>;
-      clock?: string;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'add_outcome_with_fee'),
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        config.conditionalCoinConfig,
-        config.proposal,
-        tx.pure.string(config.message),
-        tx.pure.u64(config.assetAmount),
-        tx.pure.u64(config.stableAmount),
-        tx.pure.u64(config.creatorFee),
-        config.feeManager,
-        config.payment,
-        tx.object(config.clock || '0x6'),
-      ],
-    });
-  }
-
-  static initializeMarketFields(
-    tx: Transaction,
-    config: {
-      marketsCorePackageId: string;
-      assetType: string;
-      stableType: string;
-      proposal: ReturnType<Transaction['moveCall']>;
-      clock?: string;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'initialize_market_fields'),
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [config.proposal, tx.object(config.clock || '0x6')],
-    });
-  }
-
-  static emitMarketInitialized(
-    tx: Transaction,
-    config: {
-      marketsCorePackageId: string;
-      proposalId: string;
-      escrowId: string;
-      ammPoolIds: string[];
-      marketStateId: string;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'emit_market_initialized'),
-      arguments: [
-        tx.object(config.proposalId),
-        tx.object(config.escrowId),
-        tx.pure.vector('address', config.ammPoolIds),
-        tx.object(config.marketStateId),
-      ],
-    });
-  }
-
-  static takeFeeEscrow(
+  /**
+   * Takes the escrowed fee balance out of the proposal (AssetType version)
+   * Used for refunding fees to proposer if any accept wins.
+   * Call this when feePaidInAsset() returns true.
+   */
+  static takeFeeEscrowAsset(
     tx: Transaction,
     config: {
       marketsCorePackageId: string;
@@ -353,7 +369,26 @@ export class Proposal {
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'take_fee_escrow'),
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'take_fee_escrow_asset'),
+      typeArguments: [config.assetType, config.stableType],
+      arguments: [config.proposal],
+    });
+  }
+
+  /**
+   * Check if fee was paid in AssetType (true) or StableType (false)
+   */
+  static feePaidInAsset(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+      assetType: string;
+      stableType: string;
+      proposal: ReturnType<Transaction['moveCall']>;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'fee_paid_in_asset'),
       typeArguments: [config.assetType, config.stableType],
       arguments: [config.proposal],
     });
@@ -660,28 +695,6 @@ export class Proposal {
       target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'set_winning_outcome'),
       typeArguments: [config.assetType, config.stableType],
       arguments: [config.proposal, tx.pure.u8(config.outcomeIdx)],
-    });
-  }
-
-  static finalizeProposal(
-    tx: Transaction,
-    config: {
-      marketsCorePackageId: string;
-      assetType: string;
-      stableType: string;
-      proposal: ReturnType<Transaction['moveCall']>;
-      spotPool: ReturnType<Transaction['moveCall']>;
-      clock?: string;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'finalize_proposal'),
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        config.proposal,
-        config.spotPool,
-        tx.object(config.clock || '0x6'),
-      ],
     });
   }
 

@@ -2,13 +2,15 @@
  * Example: Proposal Workflow
  *
  * This example demonstrates the complete proposal lifecycle:
- * 1. Creating a proposal with outcomes
- * 2. Adding actions to outcomes
- * 3. Advancing through states (PREMARKET -> REVIEW -> TRADING)
- * 4. Trading on conditional markets
- * 5. Finalizing the proposal
- * 6. Executing winning actions
- * 7. Redeeming conditional tokens
+ * 1. Creating and initializing a proposal atomically (with actions)
+ * 2. Advancing from REVIEW to TRADING state
+ * 3. Trading on conditional markets
+ * 4. Finalizing the proposal
+ * 5. Executing winning actions
+ * 6. Redeeming conditional tokens
+ *
+ * The new atomic flow combines proposal creation, action addition,
+ * and initialization into a single transaction for better UX.
  */
 
 import { Transaction } from "@mysten/sui/transactions";
@@ -21,6 +23,8 @@ const CONFIG = {
   STABLE_TYPE: "0xYOUR_PACKAGE::coin::STABLE",
   LP_TYPE: "0xYOUR_PACKAGE::pool::LP",
   SPOT_POOL_ID: "0xYOUR_SPOT_POOL_ID",
+  BASE_ASSET_METADATA_ID: "0xYOUR_ASSET_METADATA",
+  BASE_STABLE_METADATA_ID: "0xYOUR_STABLE_METADATA",
 
   // Conditional coins registry (from deploy-conditional-coins)
   REGISTRY_ID: "0xYOUR_REGISTRY_ID",
@@ -54,16 +58,21 @@ async function main() {
   const proposalWorkflow = sdk.workflows.proposal;
   const registryId = sdk.deployments.getPackageRegistry()!.objectId;
 
-  // ===== STEP 1: Create Proposal =====
+  // ===== STEP 1: Create and Initialize Proposal Atomically =====
 
-  console.log("\n📝 Creating proposal...");
+  console.log("\n📝 Creating and initializing proposal atomically...");
+  console.log("This combines proposal creation, action addition, and initialization.");
 
-  const createResult = proposalWorkflow.createProposal({
+  const ACCEPT_OUTCOME_INDEX = 1;
+  const activeAddress = "0xYOUR_ADDRESS";
+
+  const createResult = proposalWorkflow.createAndInitializeProposal({
+    // CreateProposalConfig
     daoAccountId: CONFIG.DAO_ACCOUNT_ID,
     assetType: CONFIG.ASSET_TYPE,
     stableType: CONFIG.STABLE_TYPE,
     title: "Example Governance Proposal",
-    introductionDetails: "This proposal demonstrates the futarchy governance flow",
+    introduction: "This proposal demonstrates the futarchy governance flow",
     metadata: JSON.stringify({
       category: "governance",
       version: "1.0",
@@ -73,107 +82,77 @@ async function main() {
       "Status quo - no changes",
       "Execute the proposed actions",
     ],
+    proposer: activeAddress,
+    treasuryAddress: activeAddress,
+    usedQuota: false,
+    feeCoins: ["0xFEE_COIN_ID"],
     feeAmount: BigInt(10_000_000), // 0.01 stable
-    conditionalCoinsRegistry: {
-      registryId: CONFIG.REGISTRY_ID,
-      coinSets: CONFIG.CONDITIONAL_COINS,
-    },
-  });
 
-  console.log("Transaction created for proposal creation");
-  console.log("Intent type:", createResult.intentType);
-
-  // NOTE: Execute transaction to get proposalId
-  // const result = await executeTransaction(sdk, createResult.transaction);
-  // const proposalId = extractProposalId(result);
-
-  // ===== STEP 2: Add Actions to Accept Outcome =====
-
-  console.log("\n⚙️ Adding actions to Accept outcome...");
-
-  const EXAMPLE_PROPOSAL_ID = "0xPROPOSAL_ID";
-  const ACCEPT_OUTCOME_INDEX = 1;
-
-  // Add a memo action
-  const addMemoResult = proposalWorkflow.addActionsToOutcome({
-    proposalId: EXAMPLE_PROPOSAL_ID,
-    assetType: CONFIG.ASSET_TYPE,
-    stableType: CONFIG.STABLE_TYPE,
-    outcomeIndex: ACCEPT_OUTCOME_INDEX,
-    daoAccountId: CONFIG.DAO_ACCOUNT_ID,
-    registryId,
-    actions: [
+    // Actions to add to Accept outcome (before finalization)
+    outcomeActions: [
       {
-        type: "memo",
-        message: "This memo was executed via governance!",
+        outcomeIndex: ACCEPT_OUTCOME_INDEX,
+        actions: [
+          {
+            type: "memo",
+            message: "This memo was executed via governance!",
+          },
+          {
+            type: "create_stream",
+            coinType: CONFIG.STABLE_TYPE,
+            vaultName: "treasury",
+            beneficiary: "0xBENEFICIARY_ADDRESS",
+            amountPerIteration: BigInt(1_000_000),
+            startTime: BigInt(Date.now() + 86400000), // Start in 1 day
+            iterationsTotal: BigInt(12), // 12 payments
+            iterationPeriodMs: BigInt(2592000000), // Monthly
+            maxPerWithdrawal: BigInt(1_000_000),
+          },
+        ],
       },
     ],
-  });
-
-  console.log("Memo action added");
-
-  // Add a stream action (payment stream from treasury)
-  const addStreamResult = proposalWorkflow.addActionsToOutcome({
-    proposalId: EXAMPLE_PROPOSAL_ID,
-    assetType: CONFIG.ASSET_TYPE,
-    stableType: CONFIG.STABLE_TYPE,
-    outcomeIndex: ACCEPT_OUTCOME_INDEX,
-    daoAccountId: CONFIG.DAO_ACCOUNT_ID,
     registryId,
-    actions: [
-      {
-        type: "create_stream",
-        coinType: CONFIG.STABLE_TYPE,
-        vaultName: "treasury",
-        beneficiary: "0xBENEFICIARY_ADDRESS",
-        amountPerIteration: BigInt(1_000_000),
-        startTime: BigInt(Date.now() + 86400000), // Start in 1 day
-        iterationsTotal: BigInt(12), // 12 payments
-        iterationPeriodMs: BigInt(2592000000), // Monthly
-        maxPerWithdrawal: BigInt(1_000_000),
-      },
-    ],
-  });
 
-  console.log("Stream action added");
-
-  // ===== STEP 3: Advance to REVIEW =====
-
-  console.log("\n🔄 Advancing to REVIEW state...");
-
-  const advanceToReviewResult = proposalWorkflow.advanceToReview({
-    daoAccountId: CONFIG.DAO_ACCOUNT_ID,
-    proposalId: EXAMPLE_PROPOSAL_ID,
-    assetType: CONFIG.ASSET_TYPE,
-    stableType: CONFIG.STABLE_TYPE,
+    // AdvanceToReviewConfig
     lpType: CONFIG.LP_TYPE,
     spotPoolId: CONFIG.SPOT_POOL_ID,
+    senderAddress: activeAddress,
+    baseAssetMetadataId: CONFIG.BASE_ASSET_METADATA_ID,
+    baseStableMetadataId: CONFIG.BASE_STABLE_METADATA_ID,
     conditionalCoinsRegistry: {
       registryId: CONFIG.REGISTRY_ID,
       coinSets: CONFIG.CONDITIONAL_COINS,
     },
   });
 
-  console.log("Advance to REVIEW transaction created");
-  // This creates TokenEscrow and conditional markets
-  // Extract escrowId from result.objectChanges
+  console.log("Transaction created for atomic proposal creation + initialization");
+  console.log("Description:", createResult.description);
 
-  // ===== STEP 4: Advance to TRADING =====
+  // NOTE: Execute transaction to get proposalId and escrowId
+  // const result = await executeTransaction(sdk, createResult.transaction);
+  // const proposalId = extractProposalId(result);
+  // const escrowId = extractEscrowId(result);
+
+  const EXAMPLE_PROPOSAL_ID = "0xPROPOSAL_ID";
+  const EXAMPLE_ESCROW_ID = "0xESCROW_ID";
+
+  // ===== STEP 2: Advance to TRADING =====
 
   console.log("\n⏰ After review period, advance to TRADING...");
 
-  const EXAMPLE_ESCROW_ID = "0xESCROW_ID";
-
-  const advanceToTradingResult = proposalWorkflow.advanceState({
+  const advanceToTradingResult = proposalWorkflow.advanceToTrading({
+    daoAccountId: CONFIG.DAO_ACCOUNT_ID,
     proposalId: EXAMPLE_PROPOSAL_ID,
     escrowId: EXAMPLE_ESCROW_ID,
+    spotPoolId: CONFIG.SPOT_POOL_ID,
     assetType: CONFIG.ASSET_TYPE,
     stableType: CONFIG.STABLE_TYPE,
+    lpType: CONFIG.LP_TYPE,
   });
 
   console.log("Advance to TRADING transaction created");
 
-  // ===== STEP 5: Trade on Conditional Markets =====
+  // ===== STEP 3: Trade on Conditional Markets =====
 
   console.log("\n💱 Trading on conditional markets...");
 
@@ -186,36 +165,25 @@ async function main() {
     stableType: CONFIG.STABLE_TYPE,
     lpType: CONFIG.LP_TYPE,
     outcomeIndex: ACCEPT_OUTCOME_INDEX,
-    assetConditionalType: CONFIG.CONDITIONAL_COINS[1].assetCoinType,
-    stableConditionalType: CONFIG.CONDITIONAL_COINS[1].stableCoinType,
-    direction: "buy_asset", // Buy conditional asset tokens
-    stableAmount: BigInt(100_000_000), // 0.1 stable
+    direction: "stable_to_asset", // Buy conditional asset tokens
+    amountIn: BigInt(100_000_000), // 0.1 stable
+    minAmountOut: BigInt(0),
+    recipient: activeAddress,
+    allOutcomeCoins: CONFIG.CONDITIONAL_COINS.map((c) => ({
+      outcomeIndex: c.outcomeIndex,
+      assetCoinType: c.assetCoinType,
+      stableCoinType: c.stableCoinType,
+    })),
+    stableCoins: ["0xSTABLE_COIN_ID"],
   });
 
   console.log("Buy ACCEPT tokens transaction created");
 
-  // Sell REJECT tokens (outcome index 0)
-  const sellRejectResult = proposalWorkflow.conditionalSwap({
-    proposalId: EXAMPLE_PROPOSAL_ID,
-    escrowId: EXAMPLE_ESCROW_ID,
-    spotPoolId: CONFIG.SPOT_POOL_ID,
-    assetType: CONFIG.ASSET_TYPE,
-    stableType: CONFIG.STABLE_TYPE,
-    lpType: CONFIG.LP_TYPE,
-    outcomeIndex: 0,
-    assetConditionalType: CONFIG.CONDITIONAL_COINS[0].assetCoinType,
-    stableConditionalType: CONFIG.CONDITIONAL_COINS[0].stableCoinType,
-    direction: "sell_asset", // Sell conditional asset tokens
-    assetAmount: BigInt(50_000_000),
-  });
-
-  console.log("Sell REJECT tokens transaction created");
-
-  // ===== STEP 6: Finalize Proposal =====
+  // ===== STEP 4: Finalize Proposal =====
 
   console.log("\n🏁 After trading period, finalize proposal...");
 
-  const finalizeResult = proposalWorkflow.finalize({
+  const finalizeResult = proposalWorkflow.finalizeProposal({
     daoAccountId: CONFIG.DAO_ACCOUNT_ID,
     proposalId: EXAMPLE_PROPOSAL_ID,
     escrowId: EXAMPLE_ESCROW_ID,
@@ -228,7 +196,7 @@ async function main() {
   console.log("Finalize transaction created");
   // Check ProposalFinalized event for winning_outcome
 
-  // ===== STEP 7: Execute Actions (if Accept won) =====
+  // ===== STEP 5: Execute Actions (if Accept won) =====
 
   console.log("\n⚡ Executing winning actions...");
 
@@ -236,35 +204,34 @@ async function main() {
     daoAccountId: CONFIG.DAO_ACCOUNT_ID,
     proposalId: EXAMPLE_PROPOSAL_ID,
     escrowId: EXAMPLE_ESCROW_ID,
+    spotPoolId: CONFIG.SPOT_POOL_ID,
     assetType: CONFIG.ASSET_TYPE,
     stableType: CONFIG.STABLE_TYPE,
+    lpType: CONFIG.LP_TYPE,
     actionTypes: [
       { type: "memo" },
-      {
-        type: "create_stream",
-        coinType: CONFIG.STABLE_TYPE,
-        vaultName: "treasury",
-      },
+      { type: "create_stream", coinType: CONFIG.STABLE_TYPE },
     ],
   });
 
   console.log("Execute actions transaction created");
 
-  // ===== STEP 8: Redeem Winning Tokens =====
+  // ===== STEP 6: Redeem Winning Tokens =====
 
   console.log("\n💰 Redeeming winning conditional tokens...");
 
   // Redeem ACCEPT tokens (assuming Accept won)
-  const redeemResult = proposalWorkflow.redeemConditionalTokens({
-    proposalId: EXAMPLE_PROPOSAL_ID,
-    escrowId: EXAMPLE_ESCROW_ID,
-    assetType: CONFIG.ASSET_TYPE,
-    stableType: CONFIG.STABLE_TYPE,
-    conditionalCoinType: CONFIG.CONDITIONAL_COINS[1].assetCoinType,
-    conditionalCoinIds: ["0xCOND_TOKEN_1", "0xCOND_TOKEN_2"],
-    outcomeIndex: ACCEPT_OUTCOME_INDEX,
-    isAsset: true,
-  });
+  const redeemResult = proposalWorkflow.redeemConditionalTokens(
+    EXAMPLE_PROPOSAL_ID,
+    EXAMPLE_ESCROW_ID,
+    CONFIG.ASSET_TYPE,
+    CONFIG.STABLE_TYPE,
+    "0xCOND_TOKEN_ID",
+    CONFIG.CONDITIONAL_COINS[1].assetCoinType,
+    ACCEPT_OUTCOME_INDEX,
+    true, // isAsset
+    activeAddress
+  );
 
   console.log("Redeem tokens transaction created");
 

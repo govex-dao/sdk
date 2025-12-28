@@ -11,6 +11,9 @@ import type { ActionConfig } from './actions';
 
 /**
  * Configuration for creating a new proposal
+ *
+ * NOTE: For the atomic creation flow, use this config combined with AdvanceToReviewConfig
+ * via createAndInitializeProposal() which creates the proposal and initializes it atomically.
  */
 export interface CreateProposalConfig extends WorkflowBaseConfig {
   /** DAO account object ID or full ObjectRef */
@@ -35,10 +38,23 @@ export interface CreateProposalConfig extends WorkflowBaseConfig {
   treasuryAddress: string;
   /** Whether to use quota */
   usedQuota: boolean;
-  /** Fee payment coin object IDs */
+  /** Fee payment coin object IDs (stable coins if feeInAsset=false, asset coins if feeInAsset=true) */
   feeCoins: string[];
   /** Fee amount */
   feeAmount: bigint;
+  /** Whether fee is paid in asset token (true) or stable token (false, default) */
+  feeInAsset?: boolean;
+  /**
+   * Actions to add to specific outcomes during atomic creation.
+   * This is applied BEFORE finalizing the proposal.
+   */
+  outcomeActions?: Array<{
+    outcomeIndex: number;
+    actions: ActionConfig[];
+    maxActionsPerOutcome?: number;
+  }>;
+  /** Package registry ID (required if outcomeActions is provided) */
+  registryId?: ObjectIdOrRef;
 }
 
 /**
@@ -68,10 +84,13 @@ export interface AddProposalActionsConfig extends WorkflowBaseConfig {
 
 /**
  * Configuration for advancing proposal to review state
+ *
+ * NOTE: This is now used in combination with CreateProposalConfig for the atomic
+ * createAndInitializeProposal() flow. The old separate advanceToReview() has been removed.
  */
 export interface AdvanceToReviewConfig extends WorkflowBaseConfig {
-  /** Proposal object ID or full ObjectRef */
-  proposalId: ObjectIdOrRef;
+  /** Proposal object ID or full ObjectRef (not needed for atomic creation) */
+  proposalId?: ObjectIdOrRef;
   /** DAO account object ID or full ObjectRef */
   daoAccountId: ObjectIdOrRef;
   /** Asset type */
@@ -84,6 +103,10 @@ export interface AdvanceToReviewConfig extends WorkflowBaseConfig {
   spotPoolId: ObjectIdOrRef;
   /** Sender address (for receiving unused fees back) */
   senderAddress: string;
+  /** Base asset coin metadata object ID (e.g., SUI metadata) */
+  baseAssetMetadataId: ObjectIdOrRef;
+  /** Base stable coin metadata object ID (e.g., USDC metadata) */
+  baseStableMetadataId: ObjectIdOrRef;
   /** Conditional coin registry config (if using typed conditional coins from registry) */
   conditionalCoinsRegistry?: ConditionalCoinsRegistryConfig;
 }

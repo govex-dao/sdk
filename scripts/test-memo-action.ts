@@ -53,6 +53,8 @@ async function main() {
   const spotPoolId = daoInfo.spotPoolId;
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
+  const baseAssetMetadataId = daoInfo.assetMetadata;
+  const baseStableMetadataId = daoInfo.stableMetadata;
 
   logSuccess(`DAO Account: ${daoAccountId}`);
 
@@ -104,11 +106,14 @@ async function main() {
   const feeCoinIds = feeCoins.data.map((c) => c.coinObjectId);
 
   // ============================================================================
-  // STEP 2: Create proposal with memo action
+  // STEP 2: Create and initialize proposal atomically with memo action
   // ============================================================================
-  logStep(2, "CREATE PROPOSAL WITH MEMO ACTION");
+  logStep(2, "CREATE AND INITIALIZE PROPOSAL (atomic, with memo action)");
 
-  const createTx = proposalWorkflow.createProposal({
+  logInfo(`Memo message: "${MEMO_MESSAGE}"`);
+
+  const createTx = proposalWorkflow.createAndInitializeProposal({
+    // CreateProposalConfig
     daoAccountId,
     assetType,
     stableType,
@@ -122,59 +127,25 @@ async function main() {
     usedQuota: false,
     feeCoins: feeCoinIds,
     feeAmount,
-  });
-
-  const createResult = await executeTransaction(sdk, createTx.transaction, {
-    network: "devnet",
-    showObjectChanges: true,
-  });
-
-  const proposalObject = createResult.objectChanges?.find(
-    (obj: any) => obj.type === "created" && obj.objectType?.includes("Proposal")
-  );
-  const proposalId = (proposalObject as any)?.objectId;
-  logSuccess(`Proposal created: ${proposalId}`);
-  console.log();
-
-  // ============================================================================
-  // STEP 3: Add memo action to Accept outcome
-  // ============================================================================
-  logStep(3, "ADD MEMO ACTION TO ACCEPT OUTCOME");
-
-  logInfo(`Memo message: "${MEMO_MESSAGE}"`);
-
-  const addActionsTx = proposalWorkflow.addActionsToOutcome({
-    proposalId,
-    assetType,
-    stableType,
-    outcomeIndex: ACCEPT_OUTCOME_INDEX,
-    daoAccountId,
-    registryId,
-    actions: [
+    // Actions to add before finalization
+    outcomeActions: [
       {
-        type: "memo",
-        message: MEMO_MESSAGE,
+        outcomeIndex: ACCEPT_OUTCOME_INDEX,
+        actions: [
+          {
+            type: "memo",
+            message: MEMO_MESSAGE,
+          },
+        ],
       },
     ],
-  });
-
-  await executeTransaction(sdk, addActionsTx.transaction, { network: "devnet" });
-  logSuccess("Memo action added to Accept outcome");
-  console.log();
-
-  // ============================================================================
-  // STEP 4: Advance to TRADING and buy ACCEPT tokens
-  // ============================================================================
-  logStep(4, "ADVANCE TO TRADING AND BUY ACCEPT TOKENS");
-
-  const advanceTx = proposalWorkflow.advanceToReview({
-    daoAccountId,
-    proposalId,
-    assetType,
-    stableType,
+    registryId,
+    // AdvanceToReviewConfig
     lpType,
     spotPoolId,
     senderAddress: activeAddress,
+    baseAssetMetadataId,
+    baseStableMetadataId,
     conditionalCoinsRegistry: {
       registryId: conditionalCoinsInfo.registryId,
       coinSets: conditionalOutcomes.map((outcome) => ({
@@ -187,18 +158,31 @@ async function main() {
     },
   });
 
-  const advanceResult = await executeTransaction(sdk, advanceTx.transaction, {
+  const createResult = await executeTransaction(sdk, createTx.transaction, {
     network: "devnet",
     showObjectChanges: true,
   });
 
-  const escrowObject = advanceResult.objectChanges?.find(
+  const proposalObject = createResult.objectChanges?.find(
+    (obj: any) => obj.type === "created" && obj.objectType?.includes("Proposal")
+  );
+  const proposalId = (proposalObject as any)?.objectId;
+
+  const escrowObject = createResult.objectChanges?.find(
     (obj: any) =>
       obj.type === "created" && obj.objectType?.includes("TokenEscrow")
   );
   const escrowId = (escrowObject as any)?.objectId;
 
-  logSuccess(`Advanced to REVIEW. Escrow: ${escrowId}`);
+  logSuccess(`Proposal created and initialized atomically`);
+  logSuccess(`  Proposal: ${proposalId}`);
+  logSuccess(`  Escrow: ${escrowId}`);
+  console.log();
+
+  // ============================================================================
+  // STEP 3: Advance to TRADING
+  // ============================================================================
+  logStep(3, "ADVANCE TO TRADING STATE");
 
   // Wait for review period
   await waitForTimePeriod(TEST_CONFIG.REVIEW_PERIOD_MS + 2000, { description: "review period" });
@@ -215,6 +199,12 @@ async function main() {
 
   await executeTransaction(sdk, toTradingTx.transaction, { network: "devnet" });
   logSuccess("Advanced to TRADING state");
+  console.log();
+
+  // ============================================================================
+  // STEP 4: Buy ACCEPT tokens to make Accept win
+  // ============================================================================
+  logStep(4, "BUY ACCEPT TOKENS");
 
   // Mint and swap for ACCEPT tokens
   const tradeAmount = 100_000_000n;

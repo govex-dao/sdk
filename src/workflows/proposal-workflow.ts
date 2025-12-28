@@ -73,6 +73,7 @@ export interface ProposalWorkflowPackages extends IntentExecutorPackages {
   futarchyMarketsPrimitivesPackageId: string;
   futarchyMarketsOperationsPackageId: string;
   futarchyGovernanceActionsPackageId: string;
+  futarchyCorePackageId: string;
   oneShotUtilsPackageId?: string;
 }
 
@@ -142,38 +143,72 @@ export class ProposalWorkflow {
   }
 
   // ============================================================================
-  // STEP 1: CREATE PROPOSAL
+  // STEP 1: CREATE AND INITIALIZE PROPOSAL (ATOMIC)
   // ============================================================================
+  //
+  // The new atomic proposal creation pattern ensures proposals are created with
+  // all conditional coins in a single transaction, preventing incomplete proposals.
+  //
+  // Flow in a single PTB:
+  // 1. begin_proposal() → returns [Proposal, TokenEscrow] (both unshared)
+  // 2. add_outcome_coins() or add_outcome_coins_10() → registers coins with escrow
+  // 3. finalize_proposal() → validates completeness, creates AMM pools, shares both
 
   /**
-   * Create a new governance proposal
+   * Create and initialize a proposal atomically
+   *
+   * This combines the old createProposal + advanceToReview into a single atomic operation.
+   * The proposal and escrow are created, conditional coins registered, AMM pools created,
+   * and both objects shared - all in one transaction.
+   *
+   * @param config - Configuration including conditional coins for all outcomes
    */
-  createProposal(config: CreateProposalConfig): WorkflowTransaction {
+  createAndInitializeProposal(config: CreateProposalConfig & AdvanceToReviewConfig): WorkflowTransaction {
     const tx = new Transaction();
     const clockId = config.clockId || '0x6';
 
-    const { futarchyMarketsCorePackageId, accountProtocolPackageId } = this.packages;
+    const {
+      futarchyMarketsCorePackageId,
+      futarchyCorePackageId,
+      accountProtocolPackageId,
+      oneShotUtilsPackageId,
+    } = this.packages;
 
-    // Merge fee coins if multiple provided
-    const coinObjects = config.feeCoins.map((id) => tx.object(id));
-    const [firstCoin, ...restCoins] = coinObjects;
+    // 1. Prepare fee coins - determine if fee is in asset or stable based on DAO config
+    // For now, we assume stable fee (the common case). For asset fee DAOs, use feeInAsset flag.
+    const stableCoinObjects = config.feeCoins.map((id) => tx.object(id));
+    const [firstStableCoin, ...restStableCoins] = stableCoinObjects;
 
-    if (restCoins.length > 0) {
-      tx.mergeCoins(firstCoin, restCoins);
+    if (restStableCoins.length > 0) {
+      tx.mergeCoins(firstStableCoin, restStableCoins);
     }
 
-    // Split fee payment
-    const [feePayment] = tx.splitCoins(firstCoin, [tx.pure.u64(config.feeAmount)]);
+    // Split fee payment and create zero coin for the other type
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let stableFee: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let assetFee: any;
 
-    // Create Option::None for vector<ActionSpec> (initial intent spec)
+    if (config.feeInAsset) {
+      // Fee paid in asset token - stableFee should be zero
+      [stableFee] = tx.splitCoins(tx.gas, [tx.pure.u64(0)]);
+      [assetFee] = tx.splitCoins(firstStableCoin, [tx.pure.u64(config.feeAmount)]);
+    } else {
+      // Fee paid in stable token (default)
+      [stableFee] = tx.splitCoins(firstStableCoin, [tx.pure.u64(config.feeAmount)]);
+      [assetFee] = tx.splitCoins(tx.gas, [tx.pure.u64(0)]);
+    }
+
+    // Create Option::None for intent spec
     const noneOption = tx.moveCall({
       target: '0x1::option::none',
       typeArguments: [`vector<${accountProtocolPackageId}::intents::ActionSpec>`],
       arguments: [],
     });
 
-    tx.moveCall({
-      target: `${futarchyMarketsCorePackageId}::proposal::new_premarket`,
+    // 2. Begin proposal - returns [Proposal, TokenEscrow] both unshared
+    const beginResult = tx.moveCall({
+      target: `${futarchyMarketsCorePackageId}::proposal::begin_proposal`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
         txObject(tx, config.daoAccountId),
@@ -185,7 +220,8 @@ export class ProposalWorkflow {
         tx.pure.vector('string', config.outcomeDetails),
         tx.pure.address(config.proposer),
         tx.pure.bool(config.usedQuota),
-        feePayment,
+        stableFee,
+        assetFee,
         noneOption,
         tx.sharedObjectRef({
           objectId: clockId,
@@ -195,12 +231,158 @@ export class ProposalWorkflow {
       ],
     });
 
+    // Extract proposal and escrow from result tuple
+    const proposal = beginResult[0];
+    const escrow = beginResult[1];
+
+    // 3. Get DAO config for conditional coin metadata updates
+    const daoConfig = tx.moveCall({
+      target: `${futarchyCorePackageId}::futarchy_config::dao_config`,
+      arguments: [
+        tx.moveCall({
+          target: `${accountProtocolPackageId}::account::config`,
+          typeArguments: [`${futarchyCorePackageId}::futarchy_config::FutarchyConfig`],
+          arguments: [txObject(tx, config.daoAccountId)],
+        }),
+      ],
+    });
+
+    // 4. Take conditional coins from registry and add to proposal
+    if (config.conditionalCoinsRegistry && config.conditionalCoinsRegistry.coinSets.length > 0 && oneShotUtilsPackageId) {
+      const registryId = config.conditionalCoinsRegistry.registryId;
+      let feeCoin: ReturnType<typeof tx.splitCoins>[0] = tx.splitCoins(tx.gas, [tx.pure.u64(0)])[0];
+
+      for (const coinSet of config.conditionalCoinsRegistry.coinSets) {
+        // Take asset conditional coin from registry
+        const assetResults = tx.moveCall({
+          target: `${oneShotUtilsPackageId}::coin_registry::take_coin_set_for_ptb`,
+          typeArguments: [coinSet.assetCoinType],
+          arguments: [
+            tx.object(registryId),
+            tx.pure.id(coinSet.assetCapId),
+            feeCoin,
+            tx.sharedObjectRef({
+              objectId: clockId,
+              initialSharedVersion: 1,
+              mutable: false,
+            }),
+          ],
+        });
+
+        const assetTreasuryCap = assetResults[0];
+        const assetMetadata = assetResults[1];
+        feeCoin = assetResults[2] as ReturnType<typeof tx.splitCoins>[0];
+
+        // Take stable conditional coin from registry
+        const stableResults = tx.moveCall({
+          target: `${oneShotUtilsPackageId}::coin_registry::take_coin_set_for_ptb`,
+          typeArguments: [coinSet.stableCoinType],
+          arguments: [
+            tx.object(registryId),
+            tx.pure.id(coinSet.stableCapId),
+            feeCoin,
+            tx.sharedObjectRef({
+              objectId: clockId,
+              initialSharedVersion: 1,
+              mutable: false,
+            }),
+          ],
+        });
+
+        const stableTreasuryCap = stableResults[0];
+        const stableMetadata = stableResults[1];
+        feeCoin = stableResults[2] as ReturnType<typeof tx.splitCoins>[0];
+
+        // Add outcome coins to proposal (new atomic pattern)
+        tx.moveCall({
+          target: `${futarchyMarketsCorePackageId}::proposal::add_outcome_coins`,
+          typeArguments: [
+            config.assetType,
+            config.stableType,
+            coinSet.assetCoinType,
+            coinSet.stableCoinType,
+          ],
+          arguments: [
+            proposal,
+            escrow,
+            tx.pure.u64(coinSet.outcomeIndex),
+            assetTreasuryCap,
+            assetMetadata,
+            stableTreasuryCap,
+            stableMetadata,
+            daoConfig,
+            txObject(tx, config.baseAssetMetadataId),
+            txObject(tx, config.baseStableMetadataId),
+          ],
+        });
+      }
+
+      // Transfer remaining fee coin back to sender
+      tx.transferObjects([feeCoin], tx.pure.address(config.senderAddress));
+    }
+
+    // 5. Add actions to outcomes if provided (before finalization)
+    if (config.outcomeActions && config.outcomeActions.length > 0) {
+      const { accountActionsPackageId, futarchyMarketsCorePackageId: marketsCorePackage } = this.packages;
+      const registryRef = config.registryId ? txObject(tx, config.registryId) : tx.object(this.sharedObjects.packageRegistryId);
+
+      for (const outcomeAction of config.outcomeActions) {
+        // Create action spec builder
+        const builder = tx.moveCall({
+          target: `${accountActionsPackageId}::action_spec_builder::new`,
+          arguments: [],
+        });
+
+        // Add each action to the builder
+        for (const action of outcomeAction.actions) {
+          this.addActionToBuilder(tx, builder, action, config.assetType, config.stableType);
+        }
+
+        // Convert builder to vector
+        const specs = tx.moveCall({
+          target: `${accountActionsPackageId}::action_spec_builder::into_vector`,
+          arguments: [builder],
+        });
+
+        // Set intent spec for outcome on the UNSHARED proposal
+        tx.moveCall({
+          target: `${marketsCorePackage}::proposal::set_intent_spec_for_outcome`,
+          typeArguments: [config.assetType, config.stableType],
+          arguments: [
+            proposal, // unshared proposal from begin_proposal
+            tx.pure.u64(outcomeAction.outcomeIndex),
+            specs,
+            tx.pure.u64(outcomeAction.maxActionsPerOutcome || 10),
+            txObject(tx, config.daoAccountId),
+            registryRef,
+          ],
+        });
+      }
+    }
+
+    // 6. Finalize proposal - validates all coins registered, creates AMM pools, shares both
+    tx.moveCall({
+      target: `${futarchyMarketsCorePackageId}::proposal::finalize_proposal`,
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [
+        proposal,
+        escrow,
+        txObject(tx, config.spotPoolId),
+        tx.pure.address(config.senderAddress),
+        tx.sharedObjectRef({
+          objectId: clockId,
+          initialSharedVersion: 1,
+          mutable: false,
+        }),
+      ],
+    });
+
     // Return unused fee coins to sender
-    tx.transferObjects([firstCoin], tx.pure.address(config.proposer));
+    tx.transferObjects([firstStableCoin], tx.pure.address(config.proposer));
 
     return {
       transaction: tx,
-      description: 'Create governance proposal',
+      description: 'Create and initialize governance proposal (atomic)',
     };
   }
 
@@ -506,229 +688,11 @@ export class ProposalWorkflow {
   }
 
   // ============================================================================
-  // STEP 3: ADVANCE TO REVIEW STATE
+  // STEP 3: ADVANCE TO TRADING STATE
   // ============================================================================
-
-  /**
-   * Create escrow, register conditional coins, and advance to REVIEW state
-   *
-   * This is a complex multi-step operation that:
-   * 1. Takes conditional coins from registry (if available)
-   * 2. Creates escrow for the market
-   * 3. Registers conditional coin caps with escrow
-   * 4. Creates conditional AMM pools
-   * 5. Shares the escrow
-   */
-  advanceToReview(config: AdvanceToReviewConfig): WorkflowTransaction {
-    const tx = new Transaction();
-    const clockId = config.clockId || '0x6';
-
-    const {
-      futarchyMarketsCorePackageId,
-      futarchyMarketsPrimitivesPackageId,
-      oneShotUtilsPackageId,
-    } = this.packages;
-
-    // Track outcome caps for conditional coin registration
-    // Using 'any' here due to complex Sui SDK TransactionResult types
-    // that don't fully expose the nested result structure at compile time
-    const outcomeCaps: Record<number, { asset?: any; stable?: any; assetType?: string; stableType?: string }> = {};
-
-    // 1. Take conditional coins from registry if provided
-    if (config.conditionalCoinsRegistry && config.conditionalCoinsRegistry.coinSets.length > 0 && oneShotUtilsPackageId) {
-      const registryId = config.conditionalCoinsRegistry.registryId;
-      let feeCoin: any = tx.splitCoins(tx.gas, [tx.pure.u64(0)]);
-
-      for (const coinSet of config.conditionalCoinsRegistry.coinSets) {
-        // Take asset conditional coin from registry using cap ID
-        const assetResults: any = tx.moveCall({
-          target: `${oneShotUtilsPackageId}::coin_registry::take_coin_set_for_ptb`,
-          typeArguments: [coinSet.assetCoinType],
-          arguments: [
-            tx.object(registryId),
-            tx.pure.id(coinSet.assetCapId),
-            feeCoin,
-            tx.sharedObjectRef({
-              objectId: clockId,
-              initialSharedVersion: 1,
-              mutable: false,
-            }),
-          ],
-        });
-
-        outcomeCaps[coinSet.outcomeIndex] = outcomeCaps[coinSet.outcomeIndex] || {};
-        outcomeCaps[coinSet.outcomeIndex].asset = assetResults;
-        outcomeCaps[coinSet.outcomeIndex].assetType = coinSet.assetCoinType;
-        feeCoin = assetResults[2];
-
-        // Take stable conditional coin from registry using cap ID
-        const stableResults: any = tx.moveCall({
-          target: `${oneShotUtilsPackageId}::coin_registry::take_coin_set_for_ptb`,
-          typeArguments: [coinSet.stableCoinType],
-          arguments: [
-            tx.object(registryId),
-            tx.pure.id(coinSet.stableCapId),
-            feeCoin,
-            tx.sharedObjectRef({
-              objectId: clockId,
-              initialSharedVersion: 1,
-              mutable: false,
-            }),
-          ],
-        });
-
-        outcomeCaps[coinSet.outcomeIndex].stable = stableResults;
-        outcomeCaps[coinSet.outcomeIndex].stableType = coinSet.stableCoinType;
-        feeCoin = stableResults[2];
-      }
-
-      // Transfer remaining fee coin back to sender
-      tx.transferObjects([feeCoin], tx.pure.address(config.senderAddress));
-    }
-
-    // 2. Create escrow for market
-    const escrow = tx.moveCall({
-      target: `${futarchyMarketsCorePackageId}::proposal::create_escrow_for_market`,
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        txObject(tx, config.proposalId),
-        tx.sharedObjectRef({
-          objectId: clockId,
-          initialSharedVersion: 1,
-          mutable: false,
-        }),
-      ],
-    });
-
-    // 3. Register conditional caps with escrow (if we have them)
-    if (config.conditionalCoinsRegistry && config.conditionalCoinsRegistry.coinSets.length > 0) {
-      for (const coinSet of config.conditionalCoinsRegistry.coinSets) {
-        const caps = outcomeCaps[coinSet.outcomeIndex];
-        if (!caps?.asset || !caps?.stable) continue;
-
-        // Register asset conditional coin
-        tx.moveCall({
-          target: `${futarchyMarketsCorePackageId}::proposal::add_conditional_coin_via_account`,
-          typeArguments: [config.assetType, config.stableType, caps.assetType!],
-          arguments: [
-            txObject(tx, config.proposalId),
-            tx.pure.u64(coinSet.outcomeIndex),
-            tx.pure.bool(true), // is_asset
-            caps.asset[0], // treasury cap
-            caps.asset[1], // metadata
-            txObject(tx, config.daoAccountId),
-            tx.pure.string('ASSET'),
-            tx.pure.string('STABLE'),
-          ],
-        });
-
-        // Register stable conditional coin
-        tx.moveCall({
-          target: `${futarchyMarketsCorePackageId}::proposal::add_conditional_coin_via_account`,
-          typeArguments: [config.assetType, config.stableType, caps.stableType!],
-          arguments: [
-            txObject(tx, config.proposalId),
-            tx.pure.u64(coinSet.outcomeIndex),
-            tx.pure.bool(false), // is_asset
-            caps.stable[0], // treasury cap
-            caps.stable[1], // metadata
-            txObject(tx, config.daoAccountId),
-            tx.pure.string('ASSET'),
-            tx.pure.string('STABLE'),
-          ],
-        });
-
-        // Register caps with escrow
-        tx.moveCall({
-          target: `${futarchyMarketsCorePackageId}::proposal::register_outcome_caps_with_escrow`,
-          typeArguments: [
-            config.assetType,
-            config.stableType,
-            caps.assetType!,
-            caps.stableType!,
-          ],
-          arguments: [
-            txObject(tx, config.proposalId),
-            escrow,
-            tx.pure.u64(coinSet.outcomeIndex),
-          ],
-        });
-      }
-    }
-
-    // 4. Create conditional AMM pools
-    tx.moveCall({
-      target: `${futarchyMarketsCorePackageId}::proposal::create_conditional_amm_pools`,
-      typeArguments: [config.assetType, config.stableType, config.lpType],
-      arguments: [
-        txObject(tx, config.proposalId),
-        escrow,
-        txObject(tx, config.spotPoolId),
-        tx.sharedObjectRef({
-          objectId: clockId,
-          initialSharedVersion: 1,
-          mutable: false,
-        }),
-      ],
-    });
-
-    // 5. Get market_state_id and escrow_id for initialize_market_fields
-    const marketStateId = tx.moveCall({
-      target: `${futarchyMarketsPrimitivesPackageId}::coin_escrow::market_state_id`,
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [escrow],
-    });
-
-    const escrowId = tx.moveCall({
-      target: '0x2::object::id',
-      typeArguments: [
-        `${futarchyMarketsPrimitivesPackageId}::coin_escrow::TokenEscrow<${config.assetType}, ${config.stableType}>`,
-      ],
-      arguments: [escrow],
-    });
-
-    // 6. Initialize market fields to advance proposal from PREMARKET to REVIEW
-    // This sets market_initialized_at (critical for timing), market_state_id, escrow_id,
-    // and liquidity_provider on the proposal, then advances state to REVIEW
-    const clockRef = tx.sharedObjectRef({
-      objectId: clockId,
-      initialSharedVersion: 1,
-      mutable: false,
-    });
-    const timestamp = tx.moveCall({
-      target: '0x2::clock::timestamp_ms',
-      arguments: [clockRef],
-    });
-    tx.moveCall({
-      target: `${futarchyMarketsCorePackageId}::proposal::initialize_market_fields`,
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        txObject(tx, config.proposalId),
-        marketStateId,
-        escrowId,
-        timestamp,
-        tx.pure.address(config.senderAddress),
-      ],
-    });
-
-    // 7. Share the escrow
-    tx.moveCall({
-      target: '0x2::transfer::public_share_object',
-      typeArguments: [
-        `${futarchyMarketsPrimitivesPackageId}::coin_escrow::TokenEscrow<${config.assetType}, ${config.stableType}>`,
-      ],
-      arguments: [escrow],
-    });
-
-    return {
-      transaction: tx,
-      description: 'Create escrow and advance to REVIEW state',
-    };
-  }
-
-  // ============================================================================
-  // STEP 4: ADVANCE TO TRADING STATE
-  // ============================================================================
+  //
+  // NOTE: The old advanceToReview() has been removed. Use createAndInitializeProposal()
+  // which atomically creates the proposal in REVIEW state with all conditional coins.
 
   /**
    * Advance proposal from REVIEW to TRADING state
