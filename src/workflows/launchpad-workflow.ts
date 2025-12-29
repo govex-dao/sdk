@@ -1,13 +1,17 @@
 /**
  * Launchpad Workflow - High-level orchestrator for token launches
  *
- * Provides simple, user-friendly API for the entire launchpad lifecycle:
- * 1. Create raise
- * 2. Stage success/failure actions
- * 3. Lock intents
- * 4. Contribute
- * 5. Complete raise
- * 6. Execute init actions
+ * Provides simple, user-friendly API for the entire launchpad lifecycle.
+ *
+ * ATOMIC CREATION FLOW (single PTB):
+ * 1. create_raise (returns UnsharedRaise)
+ * 2. stage_success_intent (on UnsharedRaise)
+ * 3. stage_failure_intent (on UnsharedRaise)
+ * 4. lock_and_share_raise (consumes UnsharedRaise)
+ *
+ * POST-CREATION FLOW:
+ * 5. Contribute
+ * 6. Complete raise (settle + create DAO + execute init actions)
  * 7. Claim tokens
  *
  * @module workflows/launchpad-workflow
@@ -21,14 +25,13 @@ import {
   StageActionsConfig,
   ContributeConfig,
   CompleteRaiseConfig,
-  ExecuteLaunchpadActionsConfig,
   ActionConfig,
   WorkflowTransaction,
   ObjectIdOrRef,
   isOwnedObjectRef,
   isTxSharedObjectRef,
 } from './types';
-import { IntentExecutor, IntentExecutorPackages } from './intent-executor';
+import type { IntentExecutorPackages } from './intent-executor';
 
 /**
  * Helper to convert ObjectIdOrRef to transaction object argument.
@@ -74,11 +77,11 @@ export interface LaunchpadWorkflowPackages extends IntentExecutorPackages {
  */
 export interface LaunchpadWorkflowSharedObjects {
   factoryId: string;
-  factorySharedVersion: number;
+  factorySharedVersion: number | string;
   packageRegistryId: string;
-  packageRegistrySharedVersion: number;
+  packageRegistrySharedVersion: number | string;
   feeManagerId: string;
-  feeManagerSharedVersion: number;
+  feeManagerSharedVersion: number | string;
 }
 
 /**
@@ -135,40 +138,61 @@ export interface LaunchpadWorkflowSharedObjects {
 export class LaunchpadWorkflow {
   private packages: LaunchpadWorkflowPackages;
   private sharedObjects: LaunchpadWorkflowSharedObjects;
-  private intentExecutor: IntentExecutor;
 
   /** Unlimited cap constant for contribution tiers */
   static readonly UNLIMITED_CAP = 18446744073709551615n;
 
   constructor(
-    client: SuiClient,
+    _client: SuiClient, // Reserved for future async operations
     packages: LaunchpadWorkflowPackages,
     sharedObjects: LaunchpadWorkflowSharedObjects
   ) {
     this.packages = packages;
     this.sharedObjects = sharedObjects;
-    this.intentExecutor = new IntentExecutor(client, packages);
   }
 
   // ============================================================================
-  // STEP 1: CREATE RAISE
+  // STEP 1: CREATE RAISE (ATOMIC - includes action staging and locking)
   // ============================================================================
 
   /**
-   * Create a new token raise
+   * Create a raise with staged actions in a single atomic transaction.
+   *
+   * This builds a single PTB that:
+   * 1. create_raise → returns UnsharedRaise
+   * 2. stage_success_intent → stages success actions on UnsharedRaise
+   * 3. stage_failure_intent → stages failure actions on UnsharedRaise
+   * 4. lock_and_share_raise → locks intents and shares the Raise
+   *
+   * All steps happen atomically - if any fails, everything rolls back.
+   *
+   * @param config - Raise configuration
+   * @param successActions - Actions to execute on raise success
+   * @param failureActions - Actions to execute on raise failure
    */
-  createRaise(config: CreateRaiseConfig): WorkflowTransaction {
+  createRaise(
+    config: CreateRaiseConfig,
+    successActions: ActionConfig[] = [],
+    failureActions: ActionConfig[] = []
+  ): WorkflowTransaction {
     const tx = new Transaction();
     const clockId = config.clockId || '0x6';
 
-    const { futarchyFactoryPackageId } = this.packages;
-    const { factoryId, factorySharedVersion, feeManagerId, feeManagerSharedVersion } =
-      this.sharedObjects;
+    const { accountActionsPackageId, futarchyFactoryPackageId } = this.packages;
+    const {
+      factoryId,
+      factorySharedVersion,
+      feeManagerId,
+      feeManagerSharedVersion,
+      packageRegistryId,
+      packageRegistrySharedVersion,
+    } = this.sharedObjects;
 
     // Split launchpad fee from gas
     const [launchpadFeeCoin] = tx.splitCoins(tx.gas, [tx.pure.u64(config.launchpadFee)]);
 
-    tx.moveCall({
+    // 1. Create raise (returns UnsharedRaise hot potato)
+    const unsharedRaise = tx.moveCall({
       target: `${futarchyFactoryPackageId}::launchpad::create_raise`,
       typeArguments: [config.assetType, config.stableType],
       arguments: [
@@ -213,60 +237,89 @@ export class LaunchpadWorkflow {
       ],
     });
 
-    return {
-      transaction: tx,
-      description: 'Create token raise',
-    };
-  }
+    // 2. Stage success actions (if any)
+    if (successActions.length > 0) {
+      // Create action spec builder
+      const successBuilder = tx.moveCall({
+        target: `${accountActionsPackageId}::action_spec_builder::new`,
+        arguments: [],
+      });
 
-  // ============================================================================
-  // STEP 2: STAGE ACTIONS
-  // ============================================================================
+      // Add each action to the builder
+      for (const action of successActions) {
+        this.addActionToBuilder(tx, successBuilder, action, {
+          assetType: config.assetType,
+          stableType: config.stableType,
+        } as StageActionsConfig);
+      }
 
-  /**
-   * Stage success or failure actions for a raise
-   */
-  stageActions(config: StageActionsConfig): WorkflowTransaction {
-    const tx = new Transaction();
-    const clockId = config.clockId || '0x6';
-
-    const { accountActionsPackageId, futarchyFactoryPackageId } = this.packages;
-    const { packageRegistryId } = this.sharedObjects;
-
-    // Create action spec builder
-    const builder = tx.moveCall({
-      target: `${accountActionsPackageId}::action_spec_builder::new`,
-      arguments: [],
-    });
-
-    // Add each action to the builder
-    for (const action of config.actions) {
-      this.addActionToBuilder(tx, builder, action, config);
+      // Stage success intent on UnsharedRaise
+      tx.moveCall({
+        target: `${futarchyFactoryPackageId}::launchpad::stage_success_intent`,
+        typeArguments: [config.assetType, config.stableType],
+        arguments: [
+          unsharedRaise,
+          tx.sharedObjectRef({
+            objectId: packageRegistryId,
+            initialSharedVersion: packageRegistrySharedVersion,
+            mutable: false,
+          }),
+          successBuilder,
+          tx.object(clockId),
+        ],
+      });
     }
 
-    // Stage as success or failure intent
-    const stageTarget =
-      config.outcome === 'success'
-        ? `${futarchyFactoryPackageId}::launchpad::stage_success_intent`
-        : `${futarchyFactoryPackageId}::launchpad::stage_failure_intent`;
+    // 3. Stage failure actions (if any)
+    if (failureActions.length > 0) {
+      // Create action spec builder
+      const failureBuilder = tx.moveCall({
+        target: `${accountActionsPackageId}::action_spec_builder::new`,
+        arguments: [],
+      });
 
+      // Add each action to the builder
+      for (const action of failureActions) {
+        this.addActionToBuilder(tx, failureBuilder, action, {
+          assetType: config.assetType,
+          stableType: config.stableType,
+        } as StageActionsConfig);
+      }
+
+      // Stage failure intent on UnsharedRaise
+      tx.moveCall({
+        target: `${futarchyFactoryPackageId}::launchpad::stage_failure_intent`,
+        typeArguments: [config.assetType, config.stableType],
+        arguments: [
+          unsharedRaise,
+          tx.sharedObjectRef({
+            objectId: packageRegistryId,
+            initialSharedVersion: packageRegistrySharedVersion,
+            mutable: false,
+          }),
+          failureBuilder,
+          tx.object(clockId),
+        ],
+      });
+    }
+
+    // 4. Lock intents and share raise (consumes UnsharedRaise)
     tx.moveCall({
-      target: stageTarget,
+      target: `${futarchyFactoryPackageId}::launchpad::lock_and_share_raise`,
       typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        txObject(tx, config.raiseId),
-        tx.object(packageRegistryId),
-        txObject(tx, config.creatorCapId),
-        builder,
-        tx.object(clockId),
-      ],
+      arguments: [unsharedRaise],
     });
 
     return {
       transaction: tx,
-      description: `Stage ${config.actions.length} ${config.outcome} action(s)`,
+      description: `Create raise with ${successActions.length} success and ${failureActions.length} failure action(s)`,
     };
   }
+
+  // ============================================================================
+  // NOTE: Stage actions is now integrated into createRaise (atomic flow)
+  // The old separate stageActions method has been removed.
+  // ============================================================================
 
   /**
    * Add an action configuration to the builder
@@ -597,36 +650,12 @@ export class LaunchpadWorkflow {
   }
 
   // ============================================================================
-  // STEP 3: LOCK INTENTS
+  // NOTE: Lock intents is now integrated into createRaise (atomic flow)
+  // The old separate lockIntentsAndStart method has been removed.
   // ============================================================================
 
-  /**
-   * Lock intents and start the raise (prevents further modifications)
-   */
-  lockIntentsAndStart(
-    raiseId: ObjectIdOrRef,
-    creatorCapId: ObjectIdOrRef,
-    assetType: string,
-    stableType: string
-  ): WorkflowTransaction {
-    const tx = new Transaction();
-
-    const { futarchyFactoryPackageId } = this.packages;
-
-    tx.moveCall({
-      target: `${futarchyFactoryPackageId}::launchpad::lock_intents_and_start_raise`,
-      typeArguments: [assetType, stableType],
-      arguments: [txObject(tx, raiseId), txObject(tx, creatorCapId)],
-    });
-
-    return {
-      transaction: tx,
-      description: 'Lock intents and start raise',
-    };
-  }
-
   // ============================================================================
-  // STEP 4: CONTRIBUTE
+  // STEP 2: CONTRIBUTE
   // ============================================================================
 
   /**
@@ -678,17 +707,29 @@ export class LaunchpadWorkflow {
   }
 
   // ============================================================================
-  // STEP 5: COMPLETE RAISE
+  // STEP 3: COMPLETE RAISE (ATOMIC WITH ACTION EXECUTION)
   // ============================================================================
 
   /**
-   * Complete a raise (settle, create DAO, finalize)
+   * Complete a raise with atomic action execution.
+   *
+   * This performs everything in a single PTB:
+   * 1. settle_raise
+   * 2. begin_dao_creation (creates intents from staged actions)
+   * 3. Execute all staged actions via begin_execution → do_* → finalize_execution
+   * 4. finalize_and_share_dao
+   *
+   * If any step fails, the entire transaction rolls back - no broken DAO state.
    */
   completeRaise(config: CompleteRaiseConfig): WorkflowTransaction {
     const tx = new Transaction();
     const clockId = config.clockId || '0x6';
 
-    const { futarchyFactoryPackageId } = this.packages;
+    const {
+      accountActionsPackageId,
+      futarchyCorePackageId,
+      futarchyFactoryPackageId,
+    } = this.packages;
     const { factoryId, packageRegistryId } = this.sharedObjects;
 
     // 1. Settle raise
@@ -698,7 +739,7 @@ export class LaunchpadWorkflow {
       arguments: [txObject(tx, config.raiseId), tx.object(clockId)],
     });
 
-    // 2. Begin DAO creation
+    // 2. Begin DAO creation (creates intents from staged actions)
     const unsharedDao = tx.moveCall({
       target: `${futarchyFactoryPackageId}::launchpad::begin_dao_creation`,
       typeArguments: [config.assetType, config.stableType],
@@ -710,7 +751,64 @@ export class LaunchpadWorkflow {
       ],
     });
 
-    // 3. Finalize and share DAO (JIT conversion happens inside)
+    // 3. Get account reference from UnsharedDao
+    const accountRef = tx.moveCall({
+      target: `${futarchyFactoryPackageId}::launchpad::account_mut`,
+      typeArguments: [config.assetType, config.stableType],
+      arguments: [unsharedDao],
+    });
+
+    // 4. Execute staged actions if any
+    if (config.actionTypes && config.actionTypes.length > 0) {
+      // Begin execution - creates Executable hot potato
+      const executable = tx.moveCall({
+        target: `${futarchyFactoryPackageId}::dao_init_executor::begin_execution_for_launchpad`,
+        arguments: [
+          tx.pure.id(this.getObjectId(config.raiseId)),
+          accountRef,
+          tx.object(packageRegistryId),
+          tx.object(clockId),
+        ],
+      });
+
+      // Create witnesses
+      const versionWitness = tx.moveCall({
+        target: `${accountActionsPackageId}::actions_version::current`,
+        arguments: [],
+      });
+
+      const intentWitness = tx.moveCall({
+        target: `${futarchyFactoryPackageId}::dao_init_executor::dao_init_intent_witness`,
+        arguments: [],
+      });
+
+      // Type context for actions
+      const configType = `${futarchyCorePackageId}::futarchy_config::FutarchyConfig`;
+      const outcomeType = `${futarchyFactoryPackageId}::dao_init_outcome::DaoInitOutcome`;
+      const witnessType = `${futarchyFactoryPackageId}::dao_init_executor::DaoInitIntent`;
+
+      // Execute each action in order
+      for (const actionType of config.actionTypes) {
+        this.executeActionOnUnshared(
+          tx,
+          executable,
+          accountRef,
+          versionWitness,
+          intentWitness,
+          config,
+          actionType,
+          { configType, outcomeType, witnessType, clockId }
+        );
+      }
+
+      // Finalize execution
+      tx.moveCall({
+        target: `${futarchyFactoryPackageId}::dao_init_executor::finalize_execution`,
+        arguments: [accountRef, executable, tx.object(clockId)],
+      });
+    }
+
+    // 5. Finalize and share DAO
     tx.moveCall({
       target: `${futarchyFactoryPackageId}::launchpad::finalize_and_share_dao`,
       typeArguments: [config.assetType, config.stableType],
@@ -724,69 +822,223 @@ export class LaunchpadWorkflow {
 
     return {
       transaction: tx,
-      description: 'Complete raise and create DAO',
+      description: `Complete raise and execute ${config.actionTypes?.length || 0} init action(s)`,
     };
   }
 
-  // ============================================================================
-  // STEP 6: EXECUTE INIT ACTIONS
-  // ============================================================================
+  /**
+   * Helper to get object ID from ObjectIdOrRef
+   */
+  private getObjectId(input: ObjectIdOrRef): string {
+    if (isOwnedObjectRef(input) || isTxSharedObjectRef(input)) {
+      return input.objectId;
+    }
+    return input;
+  }
 
   /**
-   * Execute launchpad init actions
+   * Execute a single action on unshared account
    */
-  executeActions(config: ExecuteLaunchpadActionsConfig): WorkflowTransaction {
-    return this.intentExecutor.execute({
-      intentType: 'launchpad',
-      accountId: config.accountId,
-      raiseId: config.raiseId,
-      assetType: config.assetType,
-      stableType: config.stableType,
-      clockId: config.clockId,
-      actions: config.actionTypes.map((at) => {
-        switch (at.type) {
-          case 'create_stream':
-            return { action: 'create_stream' as const, coinType: at.coinType };
-          case 'create_pool_with_mint':
-            return {
-              action: 'create_pool_with_mint' as const,
-              assetType: at.assetType,
-              stableType: at.stableType,
-              lpType: at.lpType,
-              lpTreasuryCapId: at.lpTreasuryCapId,
-              lpMetadataId: at.lpMetadataId,
-            };
-          case 'update_trading_params':
-            return { action: 'update_trading_params' as const };
-          case 'update_twap_config':
-            return { action: 'update_twap_config' as const };
-          case 'update_governance':
-            return { action: 'update_governance' as const };
-          case 'return_treasury_cap':
-            return { action: 'return_treasury_cap' as const, coinType: at.coinType };
-          case 'return_metadata':
-            return {
-              action: 'return_metadata' as const,
-              coinType: at.coinType,
-              keyType: `${this.packages.accountActionsPackageId}::currency::CoinMetadataKey<${at.coinType}>`,
-            };
-          case 'mint':
-            return { action: 'mint' as const, coinType: at.coinType };
-          case 'transfer_coin':
-            return { action: 'transfer_coin' as const, coinType: at.coinType };
-          case 'deposit':
-            return { action: 'deposit' as const, coinType: at.coinType };
-          case 'deposit_from_resources':
-            return { action: 'deposit_from_resources' as const, coinType: at.coinType };
-          default:
-            throw new Error(`Unknown action type: ${(at as { type?: string }).type}`);
-        }
-      }),
-    });
+  private executeActionOnUnshared(
+    tx: Transaction,
+    executable: ReturnType<Transaction['moveCall']>,
+    accountRef: ReturnType<Transaction['moveCall']>,
+    versionWitness: ReturnType<Transaction['moveCall']>,
+    intentWitness: ReturnType<Transaction['moveCall']>,
+    _config: CompleteRaiseConfig, // Reserved for future use
+    actionType: import('./types').LaunchpadActionType,
+    typeContext: {
+      configType: string;
+      outcomeType: string;
+      witnessType: string;
+      clockId: string;
+    }
+  ): void {
+    const {
+      accountActionsPackageId,
+      futarchyActionsPackageId,
+    } = this.packages;
+    const { packageRegistryId } = this.sharedObjects;
+    const { configType, outcomeType, witnessType, clockId } = typeContext;
+
+    switch (actionType.type) {
+      case 'create_stream':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::vault::do_init_create_stream`,
+          typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
+          arguments: [
+            executable,
+            accountRef,
+            tx.object(packageRegistryId),
+            tx.object(clockId),
+            versionWitness,
+            intentWitness,
+          ],
+        });
+        break;
+
+      case 'create_pool_with_mint':
+        tx.moveCall({
+          target: `${futarchyActionsPackageId}::liquidity_init_actions::do_init_create_pool_with_mint`,
+          typeArguments: [
+            configType,
+            outcomeType,
+            actionType.assetType,
+            actionType.stableType,
+            actionType.lpType,
+            witnessType,
+          ],
+          arguments: [
+            executable,
+            accountRef,
+            tx.object(packageRegistryId),
+            tx.object(actionType.lpTreasuryCapId),
+            tx.object(actionType.lpMetadataId),
+            tx.object(clockId),
+            versionWitness,
+            intentWitness,
+          ],
+        });
+        break;
+
+      case 'update_trading_params':
+        tx.moveCall({
+          target: `${futarchyActionsPackageId}::config_actions::do_update_trading_params`,
+          typeArguments: [outcomeType, witnessType],
+          arguments: [
+            executable,
+            accountRef,
+            tx.object(packageRegistryId),
+            versionWitness,
+            intentWitness,
+            tx.object(clockId),
+          ],
+        });
+        break;
+
+      case 'update_twap_config':
+        tx.moveCall({
+          target: `${futarchyActionsPackageId}::config_actions::do_update_twap_config`,
+          typeArguments: [outcomeType, witnessType],
+          arguments: [
+            executable,
+            accountRef,
+            tx.object(packageRegistryId),
+            versionWitness,
+            intentWitness,
+            tx.object(clockId),
+          ],
+        });
+        break;
+
+      case 'update_governance':
+        tx.moveCall({
+          target: `${futarchyActionsPackageId}::config_actions::do_update_governance`,
+          typeArguments: [outcomeType, witnessType],
+          arguments: [
+            executable,
+            accountRef,
+            tx.object(packageRegistryId),
+            versionWitness,
+            intentWitness,
+            tx.object(clockId),
+          ],
+        });
+        break;
+
+      case 'return_treasury_cap':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::currency::do_init_remove_treasury_cap`,
+          typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
+          arguments: [
+            executable,
+            accountRef,
+            tx.object(packageRegistryId),
+            versionWitness,
+            intentWitness,
+          ],
+        });
+        break;
+
+      case 'return_metadata': {
+        const keyType = `${accountActionsPackageId}::currency::CoinMetadataKey<${actionType.coinType}>`;
+        const metadataKey = tx.moveCall({
+          target: `${accountActionsPackageId}::currency::coin_metadata_key`,
+          typeArguments: [actionType.coinType],
+          arguments: [],
+        });
+        tx.moveCall({
+          target: `${accountActionsPackageId}::currency::do_init_remove_metadata`,
+          typeArguments: [configType, outcomeType, keyType, actionType.coinType, witnessType],
+          arguments: [
+            executable,
+            accountRef,
+            tx.object(packageRegistryId),
+            metadataKey,
+            versionWitness,
+            intentWitness,
+          ],
+        });
+        break;
+      }
+
+      case 'mint':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::currency::do_init_mint`,
+          typeArguments: [outcomeType, actionType.coinType, witnessType],
+          arguments: [
+            executable,
+            accountRef,
+            tx.object(packageRegistryId),
+            versionWitness,
+            intentWitness,
+          ],
+        });
+        break;
+
+      case 'transfer_coin':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::transfer::do_init_transfer_coin`,
+          typeArguments: [outcomeType, actionType.coinType, witnessType],
+          arguments: [executable, intentWitness],
+        });
+        break;
+
+      case 'deposit':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::vault::do_init_deposit`,
+          typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
+          arguments: [
+            executable,
+            accountRef,
+            tx.object(packageRegistryId),
+            versionWitness,
+            intentWitness,
+          ],
+        });
+        break;
+
+      case 'deposit_from_resources':
+        tx.moveCall({
+          target: `${accountActionsPackageId}::vault::do_init_deposit_from_resources`,
+          typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
+          arguments: [
+            executable,
+            accountRef,
+            tx.object(packageRegistryId),
+            versionWitness,
+            intentWitness,
+          ],
+        });
+        break;
+
+      default:
+        throw new Error(`Unknown action type: ${(actionType as { type?: string }).type}`);
+    }
   }
 
   // ============================================================================
-  // STEP 7: CLAIM TOKENS
+  // STEP 4: CLAIM TOKENS
   // ============================================================================
 
   /**
@@ -822,56 +1074,19 @@ export class LaunchpadWorkflow {
   /**
    * Create a raise with pre-staged success and failure actions
    *
-   * This combines createRaise + stageActions (success) + stageActions (failure)
-   * into a single transaction when possible, or returns multiple transactions
-   * if they must be sequential.
+   * @deprecated Use createRaise(config, successActions, failureActions) directly.
+   * This method is kept for backwards compatibility but now just wraps createRaise.
    *
-   * @param raiseConfig - Configuration for the raise
-   * @param successActions - Actions to execute on raise success
-   * @param failureActions - Actions to execute on raise failure
-   * @returns Object with transaction builders that accept ObjectIdOrRef (string or full ObjectRef)
+   * BREAKING CHANGE: Previously this returned separate transactions for each step.
+   * Now it returns a single atomic transaction that does everything in one PTB.
    */
   createRaiseWithActions(
     raiseConfig: CreateRaiseConfig,
     successActions: ActionConfig[],
     failureActions: ActionConfig[],
     _creatorAddress?: string // Reserved for future use
-  ): {
-    createTx: WorkflowTransaction;
-    stageSuccessTx: (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) => WorkflowTransaction;
-    stageFailureTx: (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) => WorkflowTransaction;
-    lockTx: (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) => WorkflowTransaction;
-  } {
-    const createTx = this.createRaise(raiseConfig);
-
-    const stageSuccessTx = (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) =>
-      this.stageActions({
-        raiseId,
-        creatorCapId,
-        assetType: raiseConfig.assetType,
-        stableType: raiseConfig.stableType,
-        outcome: 'success',
-        actions: successActions,
-      });
-
-    const stageFailureTx = (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) =>
-      this.stageActions({
-        raiseId,
-        creatorCapId,
-        assetType: raiseConfig.assetType,
-        stableType: raiseConfig.stableType,
-        outcome: 'failure',
-        actions: failureActions,
-      });
-
-    const lockTx = (raiseId: ObjectIdOrRef, creatorCapId: ObjectIdOrRef) =>
-      this.lockIntentsAndStart(
-        raiseId,
-        creatorCapId,
-        raiseConfig.assetType,
-        raiseConfig.stableType
-      );
-
-    return { createTx, stageSuccessTx, stageFailureTx, lockTx };
+  ): WorkflowTransaction {
+    // Now atomic - everything in one PTB
+    return this.createRaise(raiseConfig, successActions, failureActions);
   }
 }

@@ -10,7 +10,7 @@ import { SuiClient, SuiEvent } from '@mysten/sui/client';
 import type { Packages, SharedObjects, RaiseFields, RaiseCreatedEvent } from '../../types';
 import { isMoveObject } from '../../types';
 import { LaunchpadWorkflow, LaunchpadWorkflowPackages, LaunchpadWorkflowSharedObjects } from '../../workflows/launchpad-workflow';
-import type { CreateRaiseConfig, StageActionsConfig, ContributeConfig, ExecuteLaunchpadActionsConfig, WorkflowTransaction } from '../../workflows/types';
+import type { CreateRaiseConfig, ContributeConfig, CompleteRaiseConfig, ActionConfig, WorkflowTransaction } from '../../workflows/types';
 
 export interface ServiceParams {
   client: SuiClient;
@@ -65,17 +65,18 @@ export class LaunchpadService {
   // ============================================================================
 
   /**
-   * Create a new token raise
+   * Create a new token raise with staged actions (atomic)
+   *
+   * @param config - Raise configuration
+   * @param successActions - Actions to execute on raise success (optional)
+   * @param failureActions - Actions to execute on raise failure (optional)
    */
-  createRaise(config: CreateRaiseConfig): WorkflowTransaction {
-    return this.workflow.createRaise(config);
-  }
-
-  /**
-   * Stage actions for success/failure outcomes
-   */
-  stageActions(config: StageActionsConfig): WorkflowTransaction {
-    return this.workflow.stageActions(config);
+  createRaise(
+    config: CreateRaiseConfig,
+    successActions: ActionConfig[] = [],
+    failureActions: ActionConfig[] = []
+  ): WorkflowTransaction {
+    return this.workflow.createRaise(config, successActions, failureActions);
   }
 
   /**
@@ -86,10 +87,11 @@ export class LaunchpadService {
   }
 
   /**
-   * Execute actions after raise completes
+   * Complete a raise with atomic action execution.
+   * Performs settle + create DAO + execute actions + share in a single PTB.
    */
-  executeActions(config: ExecuteLaunchpadActionsConfig): WorkflowTransaction {
-    return this.workflow.executeActions(config);
+  completeRaise(config: CompleteRaiseConfig): WorkflowTransaction {
+    return this.workflow.completeRaise(config);
   }
 
   // ============================================================================

@@ -651,20 +651,6 @@ export class IntentExecutor {
         });
         break;
 
-      case 'create_commit_cap':
-        tx.moveCall({
-          target: `${accountActionsPackageId}::package_upgrade::do_create_commit_cap`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-          ],
-        });
-        break;
-
       // =========================================================================
       // ACCOUNT ACTIONS - ACCESS CONTROL
       // =========================================================================

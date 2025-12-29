@@ -23,7 +23,6 @@ const CONFIG = {
   STABLE_TYPE: "0xYOUR_PACKAGE::coin::STABLE",
   LP_TYPE: "0xYOUR_PACKAGE::pool::LP",
   SPOT_POOL_ID: "0xYOUR_SPOT_POOL_ID",
-  BASE_ASSET_METADATA_ID: "0xYOUR_ASSET_METADATA",
   BASE_STABLE_METADATA_ID: "0xYOUR_STABLE_METADATA",
 
   // Conditional coins registry (from deploy-conditional-coins)
@@ -117,7 +116,6 @@ async function main() {
     lpType: CONFIG.LP_TYPE,
     spotPoolId: CONFIG.SPOT_POOL_ID,
     senderAddress: activeAddress,
-    baseAssetMetadataId: CONFIG.BASE_ASSET_METADATA_ID,
     baseStableMetadataId: CONFIG.BASE_STABLE_METADATA_ID,
     conditionalCoinsRegistry: {
       registryId: CONFIG.REGISTRY_ID,

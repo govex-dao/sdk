@@ -27,7 +27,6 @@ export type {
   StageActionsConfig,
   ContributeConfig,
   CompleteRaiseConfig,
-  ExecuteLaunchpadActionsConfig,
   LaunchpadActionType,
 } from './launchpad';
 

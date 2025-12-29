@@ -1,8 +1,14 @@
 /**
- * Launchpad E2E Test with Two-Outcome Init Actions
+ * Launchpad E2E Test with Two-Outcome Init Actions (FULLY ATOMIC)
  *
  * Full end-to-end integration test of the launchpad two-outcome flow.
  * This test can simulate BOTH success and failure paths.
+ *
+ * FULLY ATOMIC CREATION: Raise creation, action staging, and locking now happen
+ * in a SINGLE PTB. If any step fails, the entire transaction rolls back.
+ *
+ * ATOMIC COMPLETION: The raise completion and action execution also happen
+ * in a SINGLE PTB. No broken DAO state is ever created.
  *
  * PREREQUISITES:
  *   npx tsx scripts/protocol-setup.ts   # Run ONCE to set up test coins
@@ -13,21 +19,15 @@
  *   npx tsx scripts/launchpad-e2e.ts failure # Test failure path
  *
  * SUCCESS PATH (default):
- *   1. Creates a raise
- *   2. Stages SUCCESS init actions (stream creation)
- *   3. Stages FAILURE init actions (return caps)
- *   4. Locks intents (prevents modifications)
- *   5. Contributes to MEET minimum (1500 TSTABLE > 1 TSTABLE)
- *   6. Completes the raise → STATE_SUCCESSFUL
- *   7. JIT converts success_specs → Intent → executes stream
- *   8. Creates AMM pool and claims tokens
+ *   1. Creates raise + stages actions + locks (ATOMIC - single PTB)
+ *   2. Contributes to MEET minimum (1500 TSTABLE > 1 TSTABLE)
+ *   3. Completes raise ATOMICALLY: settle → create DAO → execute actions → share
+ *   4. Claims tokens
  *
  * FAILURE PATH:
- *   1-4. Same as success path
- *   5. Contributes BELOW minimum (0.5 TSTABLE < 1 TSTABLE)
- *   6. Completes the raise → STATE_FAILED
- *   7. JIT converts failure_specs → Intent → returns treasury cap & metadata
- *   8. Skips AMM pool and token claiming (not available for failed raises)
+ *   1-2. Same as success path (but with insufficient contribution)
+ *   3. Completes raise ATOMICALLY: settle → create DAO → return caps → share
+ *   4. No token claiming (failed raise)
  *
  * This test demonstrates proper SDK usage with the LaunchpadWorkflow class.
  */
@@ -101,9 +101,9 @@ async function main() {
   console.log(`   LP: ${testCoins.lp.type}`);
   logSuccess("Test coins loaded!");
 
-  // Step 1: Create raise using SDK workflow
+  // Step 1: Create raise ATOMICALLY (single PTB: create + stage actions + lock)
   console.log("\n" + "=".repeat(80));
-  console.log("STEP 1: CREATE RAISE (using sdk.workflows.launchpad)");
+  console.log("STEP 1: CREATE RAISE (ATOMIC - create + stage actions + lock)");
   console.log("=".repeat(80));
 
   const streamRecipient = sender;
@@ -235,8 +235,9 @@ async function main() {
     },
   ];
 
-  // Create the raise flow
-  const raiseFlow = launchpadWorkflow.createRaiseWithActions(
+  // Create the raise atomically (single PTB: create + stage actions + lock)
+  // This uses the new atomic flow where everything happens in one transaction
+  const createRaiseTx = launchpadWorkflow.createRaiseWithActions(
     {
       assetType: testCoins.asset.type,
       stableType: testCoins.stable.type,
@@ -259,11 +260,12 @@ async function main() {
     },
     successActions,
     failureActions,
-    sender,
   );
 
-  console.log("Creating raise...");
-  const createResult = await executeTransaction(sdk, raiseFlow.createTx.transaction, {
+  console.log(`\n📋 Creating raise with ${successActions.length} success and ${failureActions.length} failure actions...`);
+  console.log("   (All steps atomic: create → stage success → stage failure → lock & share)");
+
+  const createResult = await executeTransaction(sdk, createRaiseTx.transaction, {
     network: "devnet",
     dryRun: false,
     showEffects: true,
@@ -282,110 +284,26 @@ async function main() {
   // Get network for localnet detection
   const network = sdk.network.network;
 
-  // Extract object refs (full ref on localnet, string ID on mainnet/testnet)
+  // Extract raise ID from event
   const raiseId = raiseCreatedEvent.parsedJson.raise_id;
-
   let raiseRef = getObjectRefById(createResult, raiseId, network);
-  let creatorCapRef = getObjectRef(createResult, "CreatorCap", network);
 
-  if (!creatorCapRef) {
-    throw new Error("Failed to find CreatorCap in transaction result");
-  }
-
-  const creatorCapId = typeof creatorCapRef === 'string' ? creatorCapRef : creatorCapRef.objectId;
-
-  console.log("\n✅ Raise Created!");
+  console.log("\n✅ Raise Created & Configured (ATOMIC)!");
   console.log(`   Raise ID: ${raiseId}`);
-  console.log(`   CreatorCap ID: ${creatorCapId}`);
-
-  // On localnet, wait for indexer to catch up before next transaction
-  if (isLocalnet(network)) {
-    console.log("\n⏳ Waiting for indexer to catch up (2s)...");
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-
-  // Step 2: Stage SUCCESS init actions
-  console.log("\n" + "=".repeat(80));
-  console.log("STEP 2: STAGE SUCCESS INIT ACTIONS");
-  console.log("=".repeat(80));
-
-  console.log(`\n📋 Staging SUCCESS actions (${successActions.length} total)...`);
-
-  const stageSuccessResult = await executeTransaction(
-    sdk,
-    raiseFlow.stageSuccessTx(raiseRef, creatorCapRef).transaction,
-    {
-      network: "devnet",
-      dryRun: false,
-      showEffects: false,
-      showObjectChanges: true,
-    }
-  );
-
-  // Update refs for next transaction (on localnet)
-  raiseRef = getObjectRefById(stageSuccessResult, raiseId, network);
-  creatorCapRef = getObjectRefById(stageSuccessResult, creatorCapId, network);
-
-  console.log(`✅ All ${successActions.length} SUCCESS actions staged!`);
-  console.log(`   Transaction: ${stageSuccessResult.digest}`);
-
-  // Step 3: Stage FAILURE init actions
-  console.log("\n" + "=".repeat(80));
-  console.log("STEP 3: STAGE FAILURE INIT ACTIONS");
-  console.log("=".repeat(80));
-
-  console.log("\n📋 Staging failure actions...");
-
-  const stageFailureResult = await executeTransaction(
-    sdk,
-    raiseFlow.stageFailureTx(raiseRef, creatorCapRef).transaction,
-    {
-      network: "devnet",
-      dryRun: false,
-      showEffects: false,
-      showObjectChanges: true,
-    }
-  );
-
-  // Update refs for next transaction
-  raiseRef = getObjectRefById(stageFailureResult, raiseId, network);
-  creatorCapRef = getObjectRefById(stageFailureResult, creatorCapId, network);
-
-  console.log("✅ Failure specs staged!");
-  console.log(`   Transaction: ${stageFailureResult.digest}`);
-
-  // Step 4: Lock intents
-  console.log("\n" + "=".repeat(80));
-  console.log("STEP 4: LOCK INTENTS");
-  console.log("=".repeat(80));
-
-  console.log("\n🔒 Locking intents...");
-
-  const lockResult = await executeTransaction(
-    sdk,
-    raiseFlow.lockTx(raiseRef, creatorCapRef).transaction,
-    {
-      network: "devnet",
-      dryRun: false,
-      showEffects: false,
-      showObjectChanges: true,
-    }
-  );
-
-  // Update raiseRef (creatorCap may be deleted after lock)
-  raiseRef = getObjectRefById(lockResult, raiseId, network);
-
-  console.log("✅ Intents locked!");
+  console.log(`   Success actions staged: ${successActions.length}`);
+  console.log(`   Failure actions staged: ${failureActions.length}`);
+  console.log(`   Intents locked: ✓`);
+  console.log(`   Transaction: ${createResult.digest}`);
 
   // Wait for start delay
   console.log("\n⏳ Waiting for start delay (5s)...");
   await new Promise((resolve) => setTimeout(resolve, 6000));
   console.log("✅ Raise has started!");
 
-  // Step 5: Contribute
+  // Step 2: Contribute
   console.log("\n" + "=".repeat(80));
   console.log(
-    `STEP 5: CONTRIBUTE ${shouldRaiseSucceed ? "(MEET MINIMUM)" : "(INSUFFICIENT - WILL FAIL)"}`,
+    `STEP 2: CONTRIBUTE ${shouldRaiseSucceed ? "(MEET MINIMUM)" : "(INSUFFICIENT - WILL FAIL)"}`,
   );
   console.log("=".repeat(80));
 
@@ -446,26 +364,59 @@ async function main() {
 
   console.log("✅ Contributed!");
 
-  // Step 6: Wait for deadline
+  // Step 3: Wait for deadline
   console.log("\n" + "=".repeat(80));
-  console.log("STEP 6: WAIT FOR DEADLINE");
+  console.log("STEP 3: WAIT FOR DEADLINE");
   console.log("=".repeat(80));
 
   console.log("\n⏰ Waiting for deadline (30s)...");
   await new Promise((resolve) => setTimeout(resolve, 30000));
   console.log("✅ Deadline passed!");
 
-  // Step 7: Complete raise
+  // Step 4: Complete raise with atomic action execution
+  // The new atomic flow combines settle + create DAO + execute actions + share
+  // All in a single PTB - if any step fails, the entire transaction rolls back
   console.log("\n" + "=".repeat(80));
-  console.log("STEP 7: COMPLETE RAISE");
+  console.log("STEP 4: COMPLETE RAISE (ATOMIC ACTION EXECUTION)");
   console.log("=".repeat(80));
 
-  console.log("\n🏛️  Creating DAO and converting specs to Intent...");
+  console.log("\n🏛️  Creating DAO and executing all actions atomically...");
+
+  // Determine which actions to execute based on expected outcome
+  // (The contract will select success_specs or failure_specs based on actual raise result)
+  const successActionTypes = [
+    { type: 'create_stream' as const, coinType: testCoins.stable.type },
+    { type: 'mint' as const, coinType: testCoins.asset.type },
+    { type: 'transfer_coin' as const, coinType: testCoins.asset.type },
+    { type: 'mint' as const, coinType: testCoins.asset.type },
+    { type: 'deposit' as const, coinType: testCoins.asset.type },
+    { type: 'create_stream' as const, coinType: testCoins.asset.type },
+    {
+      type: 'create_pool_with_mint' as const,
+      assetType: testCoins.asset.type,
+      stableType: testCoins.stable.type,
+      lpType: testCoins.lp.type,
+      lpTreasuryCapId: testCoins.lp.treasuryCap,
+      lpMetadataId: testCoins.lp.metadata,
+    },
+    { type: 'update_trading_params' as const },
+    { type: 'update_twap_config' as const },
+    { type: 'update_governance' as const },
+  ];
+
+  const failureActionTypes = [
+    { type: 'return_treasury_cap' as const, coinType: testCoins.asset.type },
+    { type: 'return_metadata' as const, coinType: testCoins.asset.type },
+  ];
+
+  // Use the action types that match the expected outcome
+  const actionTypes = shouldRaiseSucceed ? successActionTypes : failureActionTypes;
 
   const completeTx = launchpadWorkflow.completeRaise({
     raiseId: raiseRef,
     assetType: testCoins.asset.type,
     stableType: testCoins.stable.type,
+    actionTypes,
   });
 
   const completeResult = await executeTransaction(sdk, completeTx.transaction, {
@@ -485,20 +436,34 @@ async function main() {
   );
 
   let accountId: string | undefined;
-  let accountRef: ObjectIdOrRef | undefined;
   let poolId: string | undefined;
   let raiseActuallySucceeded = false;
 
   if (raiseSuccessEvent) {
     raiseActuallySucceeded = true;
-    console.log("✅ DAO Created & Intent Generated (SUCCESS PATH)!");
+    console.log("✅ DAO Created & Actions Executed (SUCCESS PATH)!");
     console.log(`   Transaction: ${completeResult.digest}`);
     accountId = raiseSuccessEvent.parsedJson?.account_id;
+
+    // Find the pool created by create_pool_with_mint action
+    const poolObject = completeResult.objectChanges?.find((c: any) =>
+      c.objectType?.includes("::unified_spot_pool::UnifiedSpotPool"),
+    );
+    if (poolObject) {
+      poolId = poolObject.objectId;
+      console.log(`   Pool ID: ${poolId}`);
+    }
   } else if (raiseFailedEvent) {
     raiseActuallySucceeded = false;
-    console.log("✅ DAO Created & Intent Generated (FAILURE PATH)!");
+    console.log("✅ DAO Created & Caps Returned (FAILURE PATH)!");
     console.log(`   Transaction: ${completeResult.digest}`);
-    accountId = raiseFailedEvent.parsedJson?.account_id;
+    // For failed raises, look for account in object changes
+    const accountObject = completeResult.objectChanges?.find((c: any) =>
+      c.objectType?.includes("::account::Account"),
+    );
+    if (accountObject) {
+      accountId = accountObject.objectId;
+    }
   } else {
     throw new Error("Neither RaiseSuccessful nor RaiseFailed event found");
   }
@@ -516,90 +481,13 @@ async function main() {
     throw new Error("Could not find Account ID");
   }
 
-  // Get accountRef and update raiseRef
-  accountRef = getObjectRefById(completeResult, accountId, network);
+  // Update raiseRef for claiming
   raiseRef = getObjectRefById(completeResult, raiseId, network);
 
   console.log(`   Account ID: ${accountId}`);
+  console.log(`   Actions executed: ${actionTypes.length}`)
 
-  // On localnet, wait for indexer to catch up before next transaction
-  if (isLocalnet(network)) {
-    console.log("\n⏳ Waiting for indexer to catch up (2s)...");
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-
-  // Step 8: Execute Intent
-  console.log("\n" + "=".repeat(80));
-  if (raiseActuallySucceeded) {
-    console.log("STEP 8: EXECUTE INTENT (SUCCESS ACTIONS)");
-  } else {
-    console.log("STEP 8: EXECUTE INTENT (FAILURE - RETURN CAPS)");
-  }
-  console.log("=".repeat(80));
-
-  const actionTypes = raiseActuallySucceeded
-    ? [
-        { type: 'create_stream' as const, coinType: testCoins.stable.type },
-        { type: 'mint' as const, coinType: testCoins.asset.type },
-        { type: 'transfer_coin' as const, coinType: testCoins.asset.type },
-        { type: 'mint' as const, coinType: testCoins.asset.type },
-        { type: 'deposit' as const, coinType: testCoins.asset.type },
-        { type: 'create_stream' as const, coinType: testCoins.asset.type },
-        {
-          type: 'create_pool_with_mint' as const,
-          assetType: testCoins.asset.type,
-          stableType: testCoins.stable.type,
-          lpType: testCoins.lp.type,
-          lpTreasuryCapId: testCoins.lp.treasuryCap,
-          lpMetadataId: testCoins.lp.metadata,
-        },
-        { type: 'update_trading_params' as const },
-        { type: 'update_twap_config' as const },
-        { type: 'update_governance' as const },
-      ]
-    : [
-        { type: 'return_treasury_cap' as const, coinType: testCoins.asset.type },
-        { type: 'return_metadata' as const, coinType: testCoins.asset.type },
-      ];
-
-  const executeTx = launchpadWorkflow.executeActions({
-    accountId: accountRef!,
-    raiseId: raiseRef,
-    assetType: testCoins.asset.type,
-    stableType: testCoins.stable.type,
-    actionTypes,
-  });
-
-  try {
-    const executeResult = await executeTransaction(sdk, executeTx.transaction, {
-      network: "devnet",
-      dryRun: false,
-      showEffects: true,
-      showObjectChanges: true,
-      showEvents: false,
-    });
-
-    if (raiseActuallySucceeded) {
-      console.log(`✅ All ${actionTypes.length} actions executed!`);
-      console.log(`   Transaction: ${executeResult.digest}`);
-
-      const poolObject = executeResult.objectChanges?.find((c: any) =>
-        c.objectType?.includes("::unified_spot_pool::UnifiedSpotPool"),
-      );
-      if (poolObject) {
-        poolId = poolObject.objectId;
-        console.log(`   Pool ID: ${poolId}`);
-      }
-    } else {
-      console.log("✅ TreasuryCap and Metadata returned!");
-      console.log(`   Transaction: ${executeResult.digest}`);
-    }
-  } catch (error: any) {
-    console.error("❌ Failed to execute Intent:", error.message);
-    throw error;
-  }
-
-  // Step 9: Claim tokens (only for successful raises)
+  // Step 5: Claim tokens (only for successful raises)
   if (raiseActuallySucceeded) {
     // On localnet, wait for indexer to catch up before next transaction
     if (isLocalnet(network)) {
@@ -608,7 +496,7 @@ async function main() {
     }
 
     console.log("\n" + "=".repeat(80));
-    console.log("STEP 9: CLAIM TOKENS");
+    console.log("STEP 5: CLAIM TOKENS");
     console.log("=".repeat(80));
 
     console.log("\n💰 Claiming contributor tokens...");
@@ -631,7 +519,7 @@ async function main() {
     console.log(`   Transaction: ${claimResult.digest}`);
   } else {
     console.log("\n" + "=".repeat(80));
-    console.log("SKIPPING STEP 9: RAISE FAILED");
+    console.log("SKIPPING STEP 5: RAISE FAILED");
     console.log("=".repeat(80));
     console.log("\nℹ️  Token claiming is only available for successful raises");
   }
@@ -643,21 +531,16 @@ async function main() {
   console.log("=".repeat(80));
 
   console.log("\n📋 Summary:");
-  console.log(`   ✅ Created raise`);
-  console.log(`   ✅ Staged success_specs`);
-  console.log(`   ✅ Staged failure_specs`);
-  console.log(`   ✅ Locked intents`);
+  console.log(`   ✅ Created raise (ATOMIC: create + stage ${successActions.length} success + ${failureActions.length} failure + lock)`);
   console.log(`   ✅ Contributed`);
 
   if (shouldRaiseSucceed) {
     console.log(`   ✅ Raise SUCCEEDED`);
-    console.log(`   ✅ Completed raise`);
-    console.log(`   ✅ Executed Intent`);
+    console.log(`   ✅ Completed raise + executed ${actionTypes.length} actions (ATOMIC)`);
     console.log(`   ✅ Claimed tokens`);
   } else {
     console.log(`   ✅ Raise FAILED (as expected)`);
-    console.log(`   ✅ Completed raise`);
-    console.log(`   ✅ Executed Intent → caps returned`);
+    console.log(`   ✅ Completed raise + returned caps (ATOMIC)`);
   }
 
   console.log(`\n🔗 View raise: https://suiscan.xyz/devnet/object/${raiseId}`);

@@ -313,15 +313,6 @@ registerAction('restrict_upgrade', (ctx) => {
   });
 });
 
-registerAction('create_commit_cap', (ctx) => {
-  const { tx, executable, versionWitness, intentWitness, config, packages, typeContext } = ctx;
-  tx.moveCall({
-    target: `${packages.accountActionsPackageId}::package_upgrade::do_create_commit_cap`,
-    typeArguments: [typeContext.outcomeType, typeContext.witnessType],
-    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), versionWitness, intentWitness],
-  });
-});
-
 // ============================================================================
 // ACCOUNT ACTIONS - ACCESS CONTROL
 // ============================================================================

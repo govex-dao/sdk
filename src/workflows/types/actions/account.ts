@@ -321,19 +321,6 @@ export interface RestrictUpgradeActionConfig {
   policy: number;
 }
 
-/**
- * Create commit capability and transfer to recipient
- */
-export interface CreateCommitCapActionConfig {
-  type: 'create_commit_cap';
-  /** Package name */
-  name: string;
-  /** Recipient address */
-  recipient: string;
-  /** New timelock delay for reclaiming commit authority (ms) */
-  newReclaimDelayMs: bigint;
-}
-
 // ============================================================================
 // ACCOUNT ACTIONS - MEMO
 // ============================================================================

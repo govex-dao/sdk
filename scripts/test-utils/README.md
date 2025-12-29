@@ -400,7 +400,6 @@ async function main() {
     lpType: daoInfo.lpType,
     spotPoolId: daoInfo.spotPoolId,
     senderAddress: activeAddress,
-    baseAssetMetadataId: daoInfo.assetMetadata,
     baseStableMetadataId: daoInfo.stableMetadata,
     conditionalCoinsRegistry: {
       registryId: conditionalCoins.registryId,

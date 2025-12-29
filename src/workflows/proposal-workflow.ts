@@ -169,7 +169,6 @@ export class ProposalWorkflow {
 
     const {
       futarchyMarketsCorePackageId,
-      futarchyCorePackageId,
       accountProtocolPackageId,
       oneShotUtilsPackageId,
     } = this.packages;
@@ -191,12 +190,22 @@ export class ProposalWorkflow {
 
     if (config.feeInAsset) {
       // Fee paid in asset token - stableFee should be zero
-      [stableFee] = tx.splitCoins(tx.gas, [tx.pure.u64(0)]);
+      // Use factory::zero_coin helper to create a properly typed zero coin
+      stableFee = tx.moveCall({
+        target: `${this.packages.futarchyFactoryPackageId}::factory::zero_coin`,
+        typeArguments: [config.stableType],
+        arguments: [],
+      });
       [assetFee] = tx.splitCoins(firstStableCoin, [tx.pure.u64(config.feeAmount)]);
     } else {
-      // Fee paid in stable token (default)
+      // Fee paid in stable token (default) - assetFee should be zero
+      // Use factory::zero_coin helper to create a properly typed zero coin
       [stableFee] = tx.splitCoins(firstStableCoin, [tx.pure.u64(config.feeAmount)]);
-      [assetFee] = tx.splitCoins(tx.gas, [tx.pure.u64(0)]);
+      assetFee = tx.moveCall({
+        target: `${this.packages.futarchyFactoryPackageId}::factory::zero_coin`,
+        typeArguments: [config.assetType],
+        arguments: [],
+      });
     }
 
     // Create Option::None for intent spec
@@ -235,19 +244,7 @@ export class ProposalWorkflow {
     const proposal = beginResult[0];
     const escrow = beginResult[1];
 
-    // 3. Get DAO config for conditional coin metadata updates
-    const daoConfig = tx.moveCall({
-      target: `${futarchyCorePackageId}::futarchy_config::dao_config`,
-      arguments: [
-        tx.moveCall({
-          target: `${accountProtocolPackageId}::account::config`,
-          typeArguments: [`${futarchyCorePackageId}::futarchy_config::FutarchyConfig`],
-          arguments: [txObject(tx, config.daoAccountId)],
-        }),
-      ],
-    });
-
-    // 4. Take conditional coins from registry and add to proposal
+    // 3. Take conditional coins from registry and add to proposal
     if (config.conditionalCoinsRegistry && config.conditionalCoinsRegistry.coinSets.length > 0 && oneShotUtilsPackageId) {
       const registryId = config.conditionalCoinsRegistry.registryId;
       let feeCoin: ReturnType<typeof tx.splitCoins>[0] = tx.splitCoins(tx.gas, [tx.pure.u64(0)])[0];
@@ -293,9 +290,10 @@ export class ProposalWorkflow {
         const stableMetadata = stableResults[1];
         feeCoin = stableResults[2] as ReturnType<typeof tx.splitCoins>[0];
 
-        // Add outcome coins to proposal (new atomic pattern)
+        // Add outcome coins to proposal using factory wrapper
+        // Factory wrapper borrows base asset metadata internally (avoids PTB reference return issues)
         tx.moveCall({
-          target: `${futarchyMarketsCorePackageId}::proposal::add_outcome_coins`,
+          target: `${this.packages.futarchyFactoryPackageId}::factory::add_outcome_coins_to_proposal`,
           typeArguments: [
             config.assetType,
             config.stableType,
@@ -310,8 +308,8 @@ export class ProposalWorkflow {
             assetMetadata,
             stableTreasuryCap,
             stableMetadata,
-            daoConfig,
-            txObject(tx, config.baseAssetMetadataId),
+            txObject(tx, config.daoAccountId),
+            config.registryId ? txObject(tx, config.registryId) : tx.object(this.sharedObjects.packageRegistryId),
             txObject(tx, config.baseStableMetadataId),
           ],
         });

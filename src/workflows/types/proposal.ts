@@ -103,8 +103,12 @@ export interface AdvanceToReviewConfig extends WorkflowBaseConfig {
   spotPoolId: ObjectIdOrRef;
   /** Sender address (for receiving unused fees back) */
   senderAddress: string;
-  /** Base asset coin metadata object ID (e.g., SUI metadata) */
-  baseAssetMetadataId: ObjectIdOrRef;
+  /** Base asset coin metadata object ID (e.g., SUI metadata)
+   * @deprecated After launchpad, the asset metadata is stored in the DAO Account.
+   * The workflow now borrows it from the DAO Account automatically.
+   * This field is ignored when using conditional coins from registry.
+   */
+  baseAssetMetadataId?: ObjectIdOrRef;
   /** Base stable coin metadata object ID (e.g., USDC metadata) */
   baseStableMetadataId: ObjectIdOrRef;
   /** Conditional coin registry config (if using typed conditional coins from registry) */

@@ -163,7 +163,8 @@ export class Proposal {
       assetMetadata: ReturnType<Transaction['moveCall']>;
       stableTreasuryCap: ReturnType<Transaction['moveCall']>;
       stableMetadata: ReturnType<Transaction['moveCall']>;
-      daoConfig: ReturnType<Transaction['moveCall']> | string;
+      /** DAO Account - function borrows DaoConfig internally */
+      daoAccount: ReturnType<Transaction['moveCall']> | string;
       baseAssetMetadata: ReturnType<Transaction['moveCall']> | string;
       baseStableMetadata: ReturnType<Transaction['moveCall']> | string;
     }
@@ -184,7 +185,7 @@ export class Proposal {
         config.assetMetadata,
         config.stableTreasuryCap,
         config.stableMetadata,
-        typeof config.daoConfig === 'string' ? tx.object(config.daoConfig) : config.daoConfig,
+        typeof config.daoAccount === 'string' ? tx.object(config.daoAccount) : config.daoAccount,
         typeof config.baseAssetMetadata === 'string' ? tx.object(config.baseAssetMetadata) : config.baseAssetMetadata,
         typeof config.baseStableMetadata === 'string' ? tx.object(config.baseStableMetadata) : config.baseStableMetadata,
       ],
@@ -219,7 +220,8 @@ export class Proposal {
         asset: ReturnType<Transaction['moveCall']>;
         stable: ReturnType<Transaction['moveCall']>;
       }>;
-      daoConfig: ReturnType<Transaction['moveCall']> | string;
+      /** DAO Account - function borrows DaoConfig internally */
+      daoAccount: ReturnType<Transaction['moveCall']> | string;
       baseAssetMetadata: ReturnType<Transaction['moveCall']> | string;
       baseStableMetadata: ReturnType<Transaction['moveCall']> | string;
       startOutcomeIndex: number;
@@ -290,7 +292,7 @@ export class Proposal {
         config.treasuryCaps[9].asset, config.metadatas[9].asset,
         config.treasuryCaps[9].stable, config.metadatas[9].stable,
         // Config and base metadata
-        typeof config.daoConfig === 'string' ? tx.object(config.daoConfig) : config.daoConfig,
+        typeof config.daoAccount === 'string' ? tx.object(config.daoAccount) : config.daoAccount,
         typeof config.baseAssetMetadata === 'string' ? tx.object(config.baseAssetMetadata) : config.baseAssetMetadata,
         typeof config.baseStableMetadata === 'string' ? tx.object(config.baseStableMetadata) : config.baseStableMetadata,
         tx.pure.u64(config.startOutcomeIndex),

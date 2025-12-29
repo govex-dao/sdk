@@ -11,5 +11,6 @@ export * from './dao-config';
 export * from './executable-resources';
 export * from './futarchy-config';
 export * from './proposal-quota-registry';
+export * from './protective-bid';
 export * from './resource-requests';
 export * from './version';

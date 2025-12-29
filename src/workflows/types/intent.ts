@@ -65,7 +65,6 @@ export type IntentActionConfig =
   | { action: 'upgrade_package' }
   | { action: 'commit_upgrade' }
   | { action: 'restrict_upgrade' }
-  | { action: 'create_commit_cap' }
   // Account Actions - Access Control
   | { action: 'borrow_access'; capType: string }
   | { action: 'return_access'; capType: string }

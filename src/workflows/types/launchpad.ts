@@ -86,7 +86,15 @@ export interface ContributeConfig extends WorkflowBaseConfig {
 }
 
 /**
- * Configuration for completing a raise
+ * Configuration for completing a raise with atomic action execution.
+ *
+ * This performs everything in a single PTB:
+ * 1. settle_raise
+ * 2. begin_dao_creation (creates intents)
+ * 3. Execute all staged actions
+ * 4. finalize_and_share_dao
+ *
+ * If any step fails, the entire transaction rolls back.
  */
 export interface CompleteRaiseConfig extends WorkflowBaseConfig {
   /** Raise object ID or full ObjectRef */
@@ -95,23 +103,10 @@ export interface CompleteRaiseConfig extends WorkflowBaseConfig {
   assetType: string;
   /** Stable type */
   stableType: string;
-}
-
-/**
- * Configuration for executing launchpad init actions
- */
-export interface ExecuteLaunchpadActionsConfig extends WorkflowBaseConfig {
-  /** Raise object ID or full ObjectRef */
-  raiseId: ObjectIdOrRef;
-  /** Account (DAO) object ID or full ObjectRef */
-  accountId: ObjectIdOrRef;
-  /** Asset type */
-  assetType: string;
-  /** Stable type */
-  stableType: string;
-  /** Action types to execute (in order) */
+  /** Action types to execute (in order) - must match staged actions */
   actionTypes: LaunchpadActionType[];
 }
+
 
 /**
  * Supported launchpad action types for execution

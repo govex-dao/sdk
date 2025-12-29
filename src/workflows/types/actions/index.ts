@@ -28,7 +28,6 @@ export type {
   UpgradePackageActionConfig,
   CommitUpgradeActionConfig,
   RestrictUpgradeActionConfig,
-  CreateCommitCapActionConfig,
   MemoActionConfig,
 } from './account';
 
@@ -104,7 +103,6 @@ import type {
   UpgradePackageActionConfig,
   CommitUpgradeActionConfig,
   RestrictUpgradeActionConfig,
-  CreateCommitCapActionConfig,
   MemoActionConfig,
 } from './account';
 
@@ -185,7 +183,6 @@ export type ActionConfig =
   | UpgradePackageActionConfig
   | CommitUpgradeActionConfig
   | RestrictUpgradeActionConfig
-  | CreateCommitCapActionConfig
   // Memo
   | MemoActionConfig
   // Futarchy Config

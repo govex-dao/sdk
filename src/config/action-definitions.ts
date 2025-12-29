@@ -521,25 +521,6 @@ export const PACKAGE_UPGRADE_ACTIONS: ActionDefinition[] = [
     launchpadSupported: false,
     proposalSupported: true,
   },
-  {
-    id: 'create_commit_cap',
-    name: 'Create Commit Cap',
-    category: 'package_upgrade',
-    package: 'accountActions',
-    stagingModule: 'package_upgrade_init_actions',
-    stagingFunction: 'add_create_commit_cap_spec',
-    executionModule: 'package_upgrade',
-    executionFunction: 'do_create_commit_cap',
-    markerType: 'account_actions::package_upgrade::PackageCreateCommitCap',
-    params: [
-      { name: 'name', type: 'string', description: 'Package name' },
-      { name: 'recipient', type: 'address', description: 'Recipient of the commit cap' },
-      { name: 'newReclaimDelayMs', type: 'u64', description: 'New timelock delay for reclaiming' },
-    ],
-    description: 'Create and transfer a commit capability',
-    launchpadSupported: false,
-    proposalSupported: true,
-  },
 ];
 
 // ============================================================================

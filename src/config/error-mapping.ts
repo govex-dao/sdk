@@ -87,13 +87,16 @@ export const MOVE_ERROR_CODES: Record<string, Record<number, string>> = {
   },
 
   'account_actions::package_upgrade': {
-    0: 'UpgradeCap not found',
-    1: 'Package not found',
-    2: 'Invalid upgrade digest',
-    3: 'Upgrade policy violation',
-    4: 'Upgrade ticket not found',
-    5: 'CommitCap not found',
-    6: 'Reclaim delay not elapsed',
+    0: 'UpgradeCap lock already exists',
+    1: 'Upgrade too early - timelock not elapsed',
+    2: 'Package does not exist',
+    3: 'Unsupported action version',
+    12: 'Proposal not approved',
+    13: 'Proposal not found',
+    14: 'Digest mismatch',
+    15: 'Proposal expired',
+    16: 'Expiration before execution time',
+    17: 'Proposal not expired',
   },
 
   'account_actions::memo': {
