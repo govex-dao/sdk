@@ -40,25 +40,14 @@ import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
 // Import utilities from centralized test-utils
 import {
   // Object reference utilities
-  getObjectRef,
   getObjectRefById,
-  getObjId,
   isLocalnet,
-  // Timing utilities
-  sleep,
-  TEST_CONFIG,
   // Fixture loading
   loadTestCoinsInfo,
   saveDaoInfo,
   // Logging
-  logSection,
-  logStep,
   logSuccess,
-  logError,
   // Types
-  type ObjectIdOrRef,
-  type TxSharedObjectRef,
-  type TestCoinsInfo,
   type DaoInfo,
 } from "./test-utils";
 

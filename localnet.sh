@@ -495,11 +495,17 @@ setup_database() {
 
   # Generate Prisma client
   log_info "Generating Prisma client..."
-  npx prisma generate --schema=prisma/schema-v2.prisma 2>/dev/null
+  if ! npx prisma generate --schema=prisma/schema-v2.prisma; then
+    log_error "Failed to generate Prisma client"
+    return 1
+  fi
 
   # Push schema
   log_info "Pushing database schema..."
-  npx prisma db push --schema=prisma/schema-v2.prisma --accept-data-loss 2>/dev/null
+  if ! npx prisma db push --schema=prisma/schema-v2.prisma --accept-data-loss; then
+    log_error "Failed to push database schema"
+    return 1
+  fi
 
   log_success "Database ready: $DB_PATH"
 }
