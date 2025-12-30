@@ -128,6 +128,47 @@ export class QueryHelper {
   }
 
   /**
+   * Get spot balances for a DAO's coin pair
+   *
+   * @param address - Wallet address
+   * @param assetType - DAO's asset coin type
+   * @param stableType - DAO's stable coin type
+   * @param decimals - Coin decimals (default 9)
+   * @returns Formatted balances { asset, stable, assetRaw, stableRaw }
+   */
+  async getSpotBalances(
+    address: string,
+    assetType: string,
+    stableType: string,
+    decimals = 9
+  ): Promise<{
+    asset: string;
+    stable: string;
+    assetRaw: bigint;
+    stableRaw: bigint;
+  }> {
+    const [assetRaw, stableRaw] = await Promise.all([
+      this.getBalance(address, assetType),
+      this.getBalance(address, stableType),
+    ]);
+
+    const formatBalance = (raw: bigint): string => {
+      const divisor = BigInt(10 ** decimals);
+      const whole = raw / divisor;
+      const fraction = raw % divisor;
+      const fractionStr = fraction.toString().padStart(decimals, '0').slice(0, 4);
+      return `${whole}.${fractionStr}`;
+    };
+
+    return {
+      asset: formatBalance(assetRaw),
+      stable: formatBalance(stableRaw),
+      assetRaw,
+      stableRaw,
+    };
+  }
+
+  /**
    * Find treasury cap for a coin type
    */
   async findTreasuryCap(_coinType: string): Promise<string | null> {
@@ -143,4 +184,111 @@ export class QueryHelper {
     const owner = obj.data?.owner;
     return owner !== undefined && owner !== null && typeof owner === 'object' && 'Shared' in owner;
   }
+
+  /**
+   * Get all balances for a proposal (spot + conditional per outcome)
+   *
+   * @param address - Wallet address
+   * @param assetType - DAO's asset coin type
+   * @param stableType - DAO's stable coin type
+   * @param conditionalAssetTypes - Conditional asset coin types per outcome
+   * @param conditionalStableTypes - Conditional stable coin types per outcome
+   * @param decimals - Coin decimals (default 9)
+   * @returns Complete balance info for trading
+   */
+  async getProposalBalances(
+    address: string,
+    assetType: string,
+    stableType: string,
+    conditionalAssetTypes: string[],
+    conditionalStableTypes: string[],
+    decimals = 9
+  ): Promise<ProposalBalances> {
+    const formatBalance = (raw: bigint): string => {
+      const divisor = BigInt(10 ** decimals);
+      const whole = raw / divisor;
+      const fraction = raw % divisor;
+      const fractionStr = fraction.toString().padStart(decimals, '0').slice(0, 4);
+      return `${whole}.${fractionStr}`;
+    };
+
+    // Fetch all balances in parallel
+    const balancePromises: Promise<bigint>[] = [
+      this.getBalance(address, assetType),
+      this.getBalance(address, stableType),
+    ];
+
+    // Add conditional coin balance fetches
+    for (const coinType of conditionalAssetTypes) {
+      balancePromises.push(this.getBalance(address, coinType));
+    }
+    for (const coinType of conditionalStableTypes) {
+      balancePromises.push(this.getBalance(address, coinType));
+    }
+
+    const rawBalances = await Promise.all(balancePromises);
+
+    // Parse results
+    const spotAssetRaw = rawBalances[0];
+    const spotStableRaw = rawBalances[1];
+
+    const outcomeCount = conditionalAssetTypes.length;
+    const outcomes: OutcomeBalances[] = [];
+
+    for (let i = 0; i < outcomeCount; i++) {
+      const condAssetRaw = rawBalances[2 + i];
+      const condStableRaw = rawBalances[2 + outcomeCount + i];
+
+      outcomes.push({
+        outcomeIndex: i,
+        conditionalAsset: {
+          coinType: conditionalAssetTypes[i],
+          raw: condAssetRaw,
+          formatted: formatBalance(condAssetRaw),
+        },
+        conditionalStable: {
+          coinType: conditionalStableTypes[i],
+          raw: condStableRaw,
+          formatted: formatBalance(condStableRaw),
+        },
+      });
+    }
+
+    return {
+      spot: {
+        asset: {
+          coinType: assetType,
+          raw: spotAssetRaw,
+          formatted: formatBalance(spotAssetRaw),
+        },
+        stable: {
+          coinType: stableType,
+          raw: spotStableRaw,
+          formatted: formatBalance(spotStableRaw),
+        },
+      },
+      outcomes,
+    };
+  }
+}
+
+// Types for proposal balances
+export interface CoinBalance {
+  coinType: string;
+  raw: bigint;
+  formatted: string;
+}
+
+export interface OutcomeBalances {
+  outcomeIndex: number;
+  conditionalAsset: CoinBalance;
+  conditionalStable: CoinBalance;
+}
+
+export interface ProposalBalances {
+  spot: {
+    asset: CoinBalance;
+    stable: CoinBalance;
+  };
+  outcomes: OutcomeBalances[];
 }

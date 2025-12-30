@@ -15,6 +15,7 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { fileURLToPath } from 'url';
 
 // ESM compatibility for __dirname
@@ -130,14 +131,30 @@ export function loadTestCoins(): {
 
 /**
  * Initialize SDK with current network
- * Uses bundled deployments by default (no file loading needed for devnet)
+ * Uses bundled deployments by default for devnet/testnet/mainnet.
+ * For localnet, loads deployments from local files.
  */
 export function initSDK(network?: Network): FutarchySDK {
     const actualNetwork = network || getActiveEnv();
 
     console.log(`🚀 Initializing SDK on ${actualNetwork}...`);
 
-    // SDK now uses bundled deployments automatically for supported networks
+    // For localnet, we need to load deployments from files
+    if (actualNetwork === 'localnet') {
+        const deployments = loadDeployments();
+        const sdk = new FutarchySDK({
+            network: actualNetwork,
+            deployments,
+        });
+
+        console.log(`✅ SDK initialized (localnet with file-based deployments)`);
+        console.log(`   Network: ${sdk.network.network}`);
+        console.log(`   RPC: ${sdk.network.url}`);
+
+        return sdk;
+    }
+
+    // For other networks, use bundled deployments
     const sdk = new FutarchySDK({
         network: actualNetwork,
     });
@@ -194,7 +211,7 @@ export async function executeTransaction(
             console.log('\n⚡ Executing transaction on-chain FOR REAL...');
 
             // Get keypair from sui config
-            const suiConfigPath = path.join(require('os').homedir(), '.sui', 'sui_config', 'client.yaml');
+            const suiConfigPath = path.join(os.homedir(), '.sui', 'sui_config', 'client.yaml');
             const configYaml = fs.readFileSync(suiConfigPath, 'utf8');
 
             // Extract keystore path
@@ -203,7 +220,7 @@ export async function executeTransaction(
                 throw new Error('Could not find keystore path in sui config');
             }
 
-            const keystorePath = keystoreMatch[1].trim().replace('~', require('os').homedir());
+            const keystorePath = keystoreMatch[1].trim().replace('~', os.homedir());
             const keystore = JSON.parse(fs.readFileSync(keystorePath, 'utf8'));
 
             // Find the keypair for the active address

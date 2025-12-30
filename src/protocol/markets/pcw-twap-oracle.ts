@@ -186,17 +186,29 @@ export class PCWTwapOracle {
   }
 
   /**
-   * Backfill oracle from conditional oracle
+   * Backfill oracle from conditional period data
    *
-   * Initializes PCW oracle using data from conditional oracle.
-   * Used during market creation.
+   * Updates PCW oracle with cumulative data from a conditional period.
+   * Used after proposal finalization to sync spot oracle with conditional period.
+   *
+   * @param tx - Transaction
+   * @param config - Backfill configuration
+   * @param config.pcwOracle - The PCW oracle to update
+   * @param config.proposalStart - Start timestamp of the proposal period (must match oracle.last_update)
+   * @param config.proposalEnd - End timestamp of the proposal period (must be <= current time)
+   * @param config.periodCumulative - Cumulative price × time from the conditional period
+   * @param config.periodFinalPrice - Final price at end of conditional period
+   * @param config.clock - Clock object ID (defaults to '0x6')
    */
   static backfillFromConditional(
     tx: Transaction,
     config: {
       marketsPackageId: string;
       pcwOracle: ReturnType<Transaction['moveCall']>;
-      conditionalOracle: ReturnType<Transaction['moveCall']>;
+      proposalStart: bigint;
+      proposalEnd: bigint;
+      periodCumulative: bigint;
+      periodFinalPrice: bigint;
       clock?: string;
     }
   ): void {
@@ -208,7 +220,10 @@ export class PCWTwapOracle {
       ),
       arguments: [
         config.pcwOracle,
-        config.conditionalOracle,
+        tx.pure.u64(config.proposalStart),
+        tx.pure.u64(config.proposalEnd),
+        tx.pure.u256(config.periodCumulative),
+        tx.pure.u128(config.periodFinalPrice),
         tx.object(config.clock || '0x6'),
       ],
     });
@@ -221,7 +236,8 @@ export class PCWTwapOracle {
   /**
    * Get current TWAP
    *
-   * Returns time-weighted average price over window.
+   * Returns the last finalized window's capped TWAP.
+   * This is O(1) - just returns a stored value.
    *
    * @param tx - Transaction
    * @param config - Query configuration
@@ -232,7 +248,6 @@ export class PCWTwapOracle {
    * const twap = PCWTwapOracle.getTwap(tx, {
    *   marketsPackageId,
    *   oracle,
-   *   clock: '0x6',
    * });
    * ```
    */
@@ -241,7 +256,6 @@ export class PCWTwapOracle {
     config: {
       marketsPackageId: string;
       oracle: ReturnType<Transaction['moveCall']>;
-      clock?: string;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -250,7 +264,7 @@ export class PCWTwapOracle {
         'PCW_TWAP_oracle',
         'get_twap'
       ),
-      arguments: [config.oracle, tx.object(config.clock || '0x6')],
+      arguments: [config.oracle],
     });
   }
 

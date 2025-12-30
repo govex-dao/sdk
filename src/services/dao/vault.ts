@@ -51,6 +51,16 @@ export interface StreamInfo {
   totalAmount: bigint;
 }
 
+export interface VaultBalance {
+  coinType: string;
+  amount: bigint;
+}
+
+export interface VaultInfo {
+  name: string;
+  balances: VaultBalance[];
+}
+
 /**
  * VaultService - Vault operations for DAOs
  *
@@ -316,5 +326,80 @@ export class VaultService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * List all vaults and their balances for a DAO
+   *
+   * @param daoId - DAO account object ID
+   * @returns Array of vault info with all coin balances
+   */
+  async listVaults(daoId: string): Promise<VaultInfo[]> {
+    const vaults: VaultInfo[] = [];
+
+    try {
+      // Get all dynamic fields on the DAO account
+      const fields = await this.client.getDynamicFields({ parentId: daoId });
+
+      for (const field of fields.data) {
+        // Check if this is a vault (keyed by VaultKey which wraps a String)
+        // The type will be something like "0x...::vault::VaultKey"
+        if (!field.name.type.includes('::vault::VaultKey')) {
+          continue;
+        }
+
+        // Get the vault name from the key
+        const vaultName = (field.name.value as { name: string }).name;
+
+        // Get the vault object
+        const vaultObj = await this.client.getDynamicFieldObject({
+          parentId: daoId,
+          name: field.name,
+        });
+
+        if (!vaultObj.data?.content || vaultObj.data.content.dataType !== 'moveObject') {
+          continue;
+        }
+
+        const vaultFields = extractFields<VaultFields>(vaultObj);
+        if (!vaultFields) continue;
+
+        // Get the balances bag ID
+        const balancesBagId = vaultFields.balances?.fields?.id?.id;
+        if (!balancesBagId) {
+          vaults.push({ name: vaultName, balances: [] });
+          continue;
+        }
+
+        // Get all balances in the bag
+        const balanceFields = await this.client.getDynamicFields({ parentId: balancesBagId });
+        const balances: VaultBalance[] = [];
+
+        for (const balanceField of balanceFields.data) {
+          // The key is a TypeName containing the coin type
+          const coinType = balanceField.name.value as string;
+
+          // Get the balance value
+          const balanceObj = await this.client.getDynamicFieldObject({
+            parentId: balancesBagId,
+            name: balanceField.name,
+          });
+
+          if (balanceObj.data?.content && balanceObj.data.content.dataType === 'moveObject') {
+            const fields = balanceObj.data.content.fields as { value?: string };
+            const amount = BigInt(fields.value || '0');
+            if (amount > 0n) {
+              balances.push({ coinType, amount });
+            }
+          }
+        }
+
+        vaults.push({ name: vaultName, balances });
+      }
+    } catch (error) {
+      console.error('Error listing vaults:', error);
+    }
+
+    return vaults;
   }
 }

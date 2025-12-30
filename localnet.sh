@@ -27,6 +27,7 @@ SUI_RPC_PORT=9000
 SUI_FAUCET_PORT=9123
 SUI_GRAPHQL_PORT=9125
 INDEXER_METRICS_PORT=9090
+API_SERVER_PORT=3000
 
 # Colors
 RED='\033[0;31m'
@@ -180,6 +181,7 @@ cleanup() {
   log_section "Cleaning Up"
 
   # Stop child processes
+  stop_process "api-server" "quiet"
   stop_process "indexer" "quiet"
   stop_process "sui-localnet" "quiet"
 
@@ -188,6 +190,7 @@ cleanup() {
   kill_port $SUI_FAUCET_PORT
   kill_port $SUI_GRAPHQL_PORT
   kill_port $INDEXER_METRICS_PORT
+  kill_port $API_SERVER_PORT
 
   log_success "Cleanup complete"
 }
@@ -212,6 +215,9 @@ stop_process() {
         ;;
       "indexer")
         pid=$(pgrep -f "grpc-indexer" 2>/dev/null | head -1 || true)
+        ;;
+      "api-server")
+        pid=$(pgrep -f "api-server" 2>/dev/null | head -1 || true)
         ;;
     esac
   fi
@@ -285,6 +291,7 @@ setup_sui_postgres() {
 stop_all() {
   log_section "Stopping All Processes"
 
+  stop_process "api-server"
   stop_process "indexer"
   stop_process "sui-localnet"
 
@@ -293,12 +300,14 @@ stop_all() {
   pkill -9 -f "sui start" 2>/dev/null || true
   pkill -9 -f "sui-node" 2>/dev/null || true
   pkill -9 -f "grpc-indexer" 2>/dev/null || true
+  pkill -9 -f "api-server" 2>/dev/null || true
 
   # Clear ports
   kill_port $SUI_RPC_PORT
   kill_port $SUI_FAUCET_PORT
   kill_port $SUI_GRAPHQL_PORT
   kill_port $INDEXER_METRICS_PORT
+  kill_port $API_SERVER_PORT
 
   # Give processes time to die
   sleep 2
@@ -572,6 +581,56 @@ start_indexer() {
   fi
 }
 
+# === API Server ===
+
+start_api_server() {
+  log_section "Starting API Server"
+
+  # Check if already running
+  local pid=$(get_pid "api-server")
+  if is_running "$pid"; then
+    log_warn "API server already running (PID: $pid), restarting..."
+    stop_process "api-server"
+  fi
+
+  # Make sure port is free
+  if is_port_in_use $API_SERVER_PORT; then
+    log_warn "Port $API_SERVER_PORT in use, killing..."
+    kill_port $API_SERVER_PORT
+    sleep 1
+  fi
+
+  cd "$BACKEND_DIR"
+  ensure_dirs
+
+  # Set environment
+  export API_PORT="$API_SERVER_PORT"
+
+  log_info "Starting API server..."
+  log_info "  API:     http://127.0.0.1:$API_SERVER_PORT"
+
+  # Start API server in background
+  nohup npx tsx ./indexer-v2/api-server.ts > "$LOG_DIR/api-server.log" 2>&1 &
+
+  local api_pid=$!
+  save_pid "api-server" "$api_pid"
+
+  log_info "API server starting (PID: $api_pid)"
+  log_info "Log: $LOG_DIR/api-server.log"
+
+  # Wait a moment and verify it's running
+  sleep 2
+
+  if is_running "$api_pid"; then
+    log_success "API server is running"
+  else
+    log_error "API server failed to start"
+    log_error "Last 30 lines of log:"
+    tail -30 "$LOG_DIR/api-server.log" || true
+    return 1
+  fi
+}
+
 # === Deploy Packages ===
 
 deploy_packages() {
@@ -776,9 +835,11 @@ run_test() {
     return 1
   fi
 
+  # Calculate coin count: 2 coins per outcome (asset + stable)
+  local coin_count=$((num_outcomes * 2))
   {
-    echo "--- STEP: deploy-conditional-coins ---"
-    if ! npm run deploy-conditional-coins 2>&1; then
+    echo "--- STEP: deploy-conditional-coins ($coin_count coins for $num_outcomes outcomes) ---"
+    if ! npx tsx scripts/deploy-conditional-coins.ts --count "$coin_count" 2>&1; then
       echo "❌ FAILED: deploy-conditional-coins"
       setup_failed=true
     else
@@ -948,6 +1009,15 @@ show_status() {
     echo -e "  ${RED}○${NC} Indexer (not running)"
   fi
 
+  local api_pid=$(get_pid "api-server")
+  if is_running "$api_pid"; then
+    echo -e "  ${GREEN}●${NC} API Server (PID: $api_pid)"
+    echo "      API:     http://127.0.0.1:$API_SERVER_PORT"
+    echo "      Health:  http://127.0.0.1:$API_SERVER_PORT/health"
+  else
+    echo -e "  ${RED}○${NC} API Server (not running)"
+  fi
+
   echo ""
   echo "Database:"
   if [[ -f "$DB_PATH" ]]; then
@@ -961,6 +1031,7 @@ show_status() {
   echo "Logs:"
   echo "  tail -f $LOG_DIR/sui-localnet.log"
   echo "  tail -f $LOG_DIR/indexer-v2.log"
+  echo "  tail -f $LOG_DIR/api-server.log"
 }
 
 # === Main ===
@@ -1194,10 +1265,12 @@ EOF
     deploy_packages
     log_info "Starting indexer with fresh package IDs..."
     start_indexer
+    start_api_server
   else
     # Only start indexer if we have package IDs
     if [[ -f "$BACKEND_DIR/.env" ]] && grep -q "V2_PACKAGE_ID=" "$BACKEND_DIR/.env" 2>/dev/null; then
       start_indexer
+      start_api_server
     else
       log_warn "Skipping indexer start - no package IDs found in .env"
       log_warn "Run with --deploy to deploy packages first"
@@ -1222,6 +1295,7 @@ EOF
   echo "Logs:"
   echo "  tail -f $LOG_DIR/sui-localnet.log"
   echo "  tail -f $LOG_DIR/indexer-v2.log"
+  echo "  tail -f $LOG_DIR/api-server.log"
 }
 
 main "$@"
