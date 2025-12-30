@@ -2,22 +2,28 @@
  * Deploy and Register Conditional Coins
  *
  * This script:
- * 1. Deploys the conditional_coins package (4 coin types)
- * 2. Registers all TreasuryCaps in the CoinRegistry
- * 3. Saves deployment info to JSON for use in tests
+ * 1. Generates conditional coin Move modules (conditional_0, conditional_1, etc.)
+ * 2. Deploys each as a separate package (required for unique module names)
+ * 3. Registers all TreasuryCaps in the CoinRegistry
+ * 4. Saves deployment info to JSON for use in tests
  *
  * Usage:
- *   npx tsx scripts/deploy-conditional-coins.ts [--registry 0x...existing] [--fee <mist>]
+ *   npx tsx scripts/deploy-conditional-coins.ts [--registry 0x...existing] [--fee <mist>] [--count N]
  */
 
 import { Transaction } from "@mysten/sui/transactions";
 import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
 
+// ESM compatibility for __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const CONDITIONAL_COINS_PATH = path.join(REPO_ROOT, "packages", "conditional_coins");
+const CONDITIONAL_COIN_BASE_PATH = path.join(REPO_ROOT, "packages", "conditional_coin");
 const DEPLOYMENTS_DIR = path.join(REPO_ROOT, "packages", "deployments");
 const SDK_DIR = path.join(REPO_ROOT, "sdk");
 
@@ -25,20 +31,77 @@ interface ConditionalCoinInfo {
   treasuryCapId: string;
   metadataId: string;
   coinType: string;
+  packageId: string;
 }
 
 interface ConditionalCoinsDeployment {
-  packageId: string;
   registryId: string;
-  [key: string]: string | ConditionalCoinInfo; // Dynamic cond*_asset, cond*_stable
+  coins: Record<string, ConditionalCoinInfo>;
   timestamp: string;
   network: string;
+}
+
+/**
+ * Generate Move module source for a conditional coin
+ * Module name will be "conditional_N" where N is the index
+ * OTW struct will be "CONDITIONAL_N" (uppercased module name)
+ */
+function generateCoinModule(index: number): string {
+  const moduleName = `conditional_${index}`;
+  const otwName = `CONDITIONAL_${index}`;
+
+  return `// Copyright (c) Govex DAO LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+/// Conditional Coin ${index}
+/// Module name is "conditional_${index}" for CoinRegistry acceptance
+module conditional_coin::${moduleName};
+
+use sui::coin;
+
+/// One-Time Witness for ${otwName}
+public struct ${otwName} has drop {}
+
+/// Initialize function called when module is published
+fun init(witness: ${otwName}, ctx: &mut TxContext) {
+    let (treasury_cap, metadata) = coin::create_currency(
+        witness,
+        6, // 6 decimals to match test coins
+        b"", // Empty symbol for CoinRegistry
+        b"", // Empty name for CoinRegistry
+        b"", // Empty description for CoinRegistry
+        option::none(), // No icon for CoinRegistry
+        ctx,
+    );
+
+    // Transfer both to sender
+    transfer::public_transfer(treasury_cap, ctx.sender());
+    transfer::public_transfer(metadata, ctx.sender());
+}
+`;
+}
+
+/**
+ * Generate Move.toml for a conditional coin package
+ */
+function generateMoveToml(packageName: string): string {
+  return `[package]
+name = "${packageName}"
+edition = "2024.beta"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "mainnet-v1.39.3" }
+
+[addresses]
+conditional_coin = "0x0"
+`;
 }
 
 async function main() {
   const args = process.argv.slice(2);
   let existingRegistryId: string | null = null;
   let feeOverride: bigint | null = null;
+  let coinCount = 4; // Default: 4 coins (for 2-outcome proposals: 2 asset + 2 stable)
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
@@ -56,6 +119,13 @@ async function main() {
       }
       feeOverride = BigInt(value);
       i += 1;
+    } else if (arg === "--count") {
+      const value = args[i + 1];
+      if (!value) {
+        throw new Error("--count flag requires a number");
+      }
+      coinCount = parseInt(value, 10);
+      i += 1;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -70,6 +140,7 @@ async function main() {
   const sdk = await initSDK();
   const activeAddress = getActiveAddress();
   console.log(`Active address: ${activeAddress}`);
+  console.log(`Deploying ${coinCount} conditional coins...`);
   console.log();
 
   // Get one_shot_utils package
@@ -126,14 +197,38 @@ async function main() {
     throw new Error("CoinRegistry ID not available");
   }
 
-  // Step 1: Deploy conditional_coins package
-  console.log("📦 Deploying conditional_coins package...");
+  // Clean up sources directory
+  const sourcesDir = path.join(CONDITIONAL_COIN_BASE_PATH, "sources");
+  if (fs.existsSync(sourcesDir)) {
+    for (const file of fs.readdirSync(sourcesDir)) {
+      fs.unlinkSync(path.join(sourcesDir, file));
+    }
+  } else {
+    fs.mkdirSync(sourcesDir, { recursive: true });
+  }
+
+  // Generate all coin modules in one package
+  console.log(`📝 Generating ${coinCount} conditional coin modules...`);
+  for (let i = 0; i < coinCount; i++) {
+    const moduleSource = generateCoinModule(i);
+    const fileName = `conditional_${i}.move`;
+    fs.writeFileSync(path.join(sourcesDir, fileName), moduleSource);
+    console.log(`   Created ${fileName}`);
+  }
   console.log();
 
-  const buildCmd = `cd ${CONDITIONAL_COINS_PATH} && sui move build --silence-warnings`;
+  // Update Move.toml
+  const moveToml = generateMoveToml("conditional_coin");
+  fs.writeFileSync(path.join(CONDITIONAL_COIN_BASE_PATH, "Move.toml"), moveToml);
+
+  // Build and deploy the package
+  console.log("📦 Building and deploying conditional_coin package...");
+  console.log();
+
+  const buildCmd = `cd ${CONDITIONAL_COIN_BASE_PATH} && sui move build --silence-warnings`;
   execSync(buildCmd, { stdio: "inherit" });
 
-  const publishCmd = `cd ${CONDITIONAL_COINS_PATH} && sui client publish --gas-budget 100000000 --json`;
+  const publishCmd = `cd ${CONDITIONAL_COIN_BASE_PATH} && sui client publish --gas-budget 100000000 --json`;
   const publishOutput = execSync(publishCmd, { encoding: "utf-8" });
   const publishResult = JSON.parse(publishOutput);
 
@@ -156,69 +251,52 @@ async function main() {
   console.log(`✅ Deployed: ${packageId}`);
   console.log();
 
-  // Extract TreasuryCaps and Metadata dynamically
+  // Extract TreasuryCaps and Metadata
   const objectChanges = publishResult.objectChanges || [];
-  const caps: Record<string, ConditionalCoinInfo> = {};
+  const coins: Record<string, ConditionalCoinInfo> = {};
 
-  // Find all cond*_asset and cond*_stable coins dynamically
-  const coinNamePattern = /::cond(\d+)_(asset|stable)::/;
-  const foundCoins = new Set<string>();
+  // Find all conditional_N coins
+  const coinPattern = /::conditional_(\d+)::/;
 
-  for (const obj of objectChanges) {
-    if (obj.objectType?.includes("TreasuryCap")) {
-      const match = obj.objectType.match(coinNamePattern);
-      if (match) {
-        foundCoins.add(`cond${match[1]}_${match[2]}`);
-      }
-    }
-  }
+  for (let i = 0; i < coinCount; i++) {
+    const moduleName = `conditional_${i}`;
 
-  // Sort coin names to process in order
-  const coinNames = Array.from(foundCoins).sort((a, b) => {
-    const numA = parseInt(a.match(/cond(\d+)/)?.[1] || "0");
-    const numB = parseInt(b.match(/cond(\d+)/)?.[1] || "0");
-    if (numA !== numB) return numA - numB;
-    return a.includes("asset") ? -1 : 1; // asset before stable
-  });
-
-  console.log(`Found ${coinNames.length} conditional coins`);
-  console.log();
-
-  for (const coinName of coinNames) {
     const treasuryCap = objectChanges.find(
       (obj: any) =>
-        obj.objectType?.includes(`::${coinName}::`) && obj.objectType?.includes("TreasuryCap")
+        obj.objectType?.includes(`::${moduleName}::`) && obj.objectType?.includes("TreasuryCap")
     );
     const metadata = objectChanges.find(
       (obj: any) =>
-        obj.objectType?.includes(`::${coinName}::`) && obj.objectType?.includes("CoinMetadata")
+        obj.objectType?.includes(`::${moduleName}::`) && obj.objectType?.includes("CoinMetadata")
     );
 
     if (!treasuryCap || !metadata) {
-      console.error(`❌ Failed to find TreasuryCap or Metadata for ${coinName}`);
+      console.error(`❌ Failed to find TreasuryCap or Metadata for ${moduleName}`);
       process.exit(1);
     }
 
-    caps[coinName] = {
+    coins[moduleName] = {
       treasuryCapId: treasuryCap.objectId,
       metadataId: metadata.objectId,
       coinType: treasuryCap.objectType.match(/TreasuryCap<(.+)>/)?.[1] || "",
+      packageId,
     };
 
-    console.log(`✅ ${coinName}:`);
-    console.log(`   TreasuryCap: ${caps[coinName].treasuryCapId}`);
-    console.log(`   Metadata: ${caps[coinName].metadataId}`);
+    console.log(`✅ ${moduleName}:`);
+    console.log(`   TreasuryCap: ${coins[moduleName].treasuryCapId}`);
+    console.log(`   Metadata: ${coins[moduleName].metadataId}`);
+    console.log(`   Type: ${coins[moduleName].coinType}`);
   }
   console.log();
 
-  // Step 2: Register all caps in CoinRegistry
+  // Register all caps in CoinRegistry
   console.log("📝 Registering conditional coins in CoinRegistry...");
   console.log();
 
   const registerTx = new Transaction();
   const fee = feeOverride ?? 0n; // Default zero fee for test coins
 
-  for (const [coinName, info] of Object.entries(caps)) {
+  for (const [coinName, info] of Object.entries(coins)) {
     console.log(`   Registering ${coinName}...`);
 
     registerTx.moveCall({
@@ -245,23 +323,41 @@ async function main() {
   console.log("✅ All conditional coins registered in CoinRegistry!");
   console.log();
 
-  // Step 3: Save deployment info
-  const deployment: ConditionalCoinsDeployment = {
-    packageId,
+  // Save deployment info in LEGACY format expected by test utils
+  // Test utils expect: cond0_asset, cond0_stable, cond1_asset, cond1_stable, etc.
+  // Each pair of consecutive coins is (asset, stable) for one outcome
+  const legacyFormat: Record<string, any> = {
+    packageId: packageId, // All coins are in the same package
     registryId,
-    ...caps, // Spread all dynamic coin entries
-    timestamp: new Date().toISOString(),
-    network: "devnet",
   };
+
+  // Map conditional_N coins to condM_asset/condM_stable pairs
+  // conditional_0 -> cond0_asset, conditional_1 -> cond0_stable
+  // conditional_2 -> cond1_asset, conditional_3 -> cond1_stable, etc.
+  const outcomeCount = Math.floor(coinCount / 2);
+  for (let outcome = 0; outcome < outcomeCount; outcome++) {
+    const assetCoinKey = `conditional_${outcome * 2}`;
+    const stableCoinKey = `conditional_${outcome * 2 + 1}`;
+
+    if (coins[assetCoinKey]) {
+      legacyFormat[`cond${outcome}_asset`] = coins[assetCoinKey];
+    }
+    if (coins[stableCoinKey]) {
+      legacyFormat[`cond${outcome}_stable`] = coins[stableCoinKey];
+    }
+  }
+
+  legacyFormat.timestamp = new Date().toISOString();
+  legacyFormat.network = "devnet";
 
   // Save to deployments directory
   const deploymentFile = path.join(DEPLOYMENTS_DIR, "conditional_coins.json");
-  fs.writeFileSync(deploymentFile, JSON.stringify(deployment, null, 2));
+  fs.writeFileSync(deploymentFile, JSON.stringify(legacyFormat, null, 2));
   console.log(`✅ Saved deployment info: ${deploymentFile}`);
 
   // Save to SDK directory for easy access
   const sdkFile = path.join(SDK_DIR, "conditional-coins-info.json");
-  fs.writeFileSync(sdkFile, JSON.stringify(deployment, null, 2));
+  fs.writeFileSync(sdkFile, JSON.stringify(legacyFormat, null, 2));
   console.log(`✅ Saved to SDK: ${sdkFile}`);
   console.log();
 

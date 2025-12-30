@@ -97,12 +97,13 @@ async function main() {
 
   console.log("\n📈 Conditional Market Operations");
 
+  // Module names follow pattern: conditional_N where N = (outcome_index * 2) for asset, (outcome_index * 2 + 1) for stable
   const CONDITIONAL_CONFIG = {
     PROPOSAL_ID: "0xPROPOSAL_ID",
     ESCROW_ID: "0xESCROW_ID",
     OUTCOME_INDEX: 1, // Accept outcome
-    COND_ASSET_TYPE: "0x...::cond1_asset::COND1_ASSET",
-    COND_STABLE_TYPE: "0x...::cond1_stable::COND1_STABLE",
+    COND_ASSET_TYPE: "0x...::conditional_2::CONDITIONAL_2", // outcome 1 asset = index 2
+    COND_STABLE_TYPE: "0x...::conditional_3::CONDITIONAL_3", // outcome 1 stable = index 3
   };
 
   // --- Buy Conditional Tokens ---

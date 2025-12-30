@@ -6,8 +6,6 @@
  * @module workflows/types/actions/futarchy
  */
 
-import type { SignedU128 } from '../common';
-
 // ============================================================================
 // FUTARCHY ACTIONS - CONFIG
 // ============================================================================
@@ -82,7 +80,7 @@ export interface UpdateTwapConfigActionConfig {
   stepMax?: bigint;
   /** Initial observation value */
   initialObservation?: bigint;
-  /** TWAP threshold for winning (raw bigint value, will be converted to SignedU128) */
+  /** TWAP threshold for winning (u128 value in 1e18 scale) */
   threshold?: bigint;
 }
 
@@ -153,12 +151,8 @@ export interface UpdateSponsorshipConfigActionConfig {
   type: 'update_sponsorship_config';
   /** Enable sponsorship */
   enabled?: boolean;
-  /** Sponsored threshold (SignedU128) */
-  sponsoredThreshold?: SignedU128;
   /** Waive advancement fees */
   waiveAdvancementFees?: boolean;
-  /** Default sponsor quota amount */
-  defaultSponsorQuotaAmount?: bigint;
 }
 
 // ============================================================================

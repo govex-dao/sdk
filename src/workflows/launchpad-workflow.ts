@@ -331,8 +331,7 @@ export class LaunchpadWorkflow {
     action: ActionConfig,
     config: StageActionsConfig
   ): void {
-    const { accountActionsPackageId, futarchyActionsPackageId, futarchyTypesPackageId } =
-      this.packages;
+    const { accountActionsPackageId, futarchyActionsPackageId } = this.packages;
 
     // Helper to get coin type - uses action's coinType if specified, otherwise falls back to config
     const getCoinType = (actionCoinType?: string, defaultType?: string): string => {
@@ -380,6 +379,8 @@ export class LaunchpadWorkflow {
             tx.pure.u64(action.stableAmount),
             tx.pure.u64(action.feeBps),
             tx.pure.u64(action.launchFeeDurationMs ?? 0n),
+            tx.pure.id(action.lpTreasuryCapId),
+            tx.pure.id(action.lpMetadataId),
           ],
         });
         break;
@@ -415,26 +416,6 @@ export class LaunchpadWorkflow {
         break;
 
       case 'update_twap_config':
-        // Create SignedU128 for threshold if provided
-        let thresholdOption: ReturnType<Transaction['moveCall']>;
-        if (action.threshold !== undefined) {
-          const signedThreshold = tx.moveCall({
-            target: `${futarchyTypesPackageId}::signed::from_u128`,
-            arguments: [tx.pure.u128(action.threshold)],
-          });
-          thresholdOption = tx.moveCall({
-            target: '0x1::option::some',
-            typeArguments: [`${futarchyTypesPackageId}::signed::SignedU128`],
-            arguments: [signedThreshold],
-          });
-        } else {
-          thresholdOption = tx.moveCall({
-            target: '0x1::option::none',
-            typeArguments: [`${futarchyTypesPackageId}::signed::SignedU128`],
-            arguments: [],
-          });
-        }
-
         tx.moveCall({
           target: `${futarchyActionsPackageId}::futarchy_config_init_actions::add_update_twap_config_spec`,
           arguments: [
@@ -442,7 +423,7 @@ export class LaunchpadWorkflow {
             tx.pure.option('u64', action.startDelay ? Number(action.startDelay) : null),
             tx.pure.option('u64', action.stepMax ? Number(action.stepMax) : null),
             tx.pure.option('u128', action.initialObservation ?? null),
-            thresholdOption,
+            tx.pure.option('u128', action.threshold ?? null),
           ],
         });
         break;
@@ -713,9 +694,8 @@ export class LaunchpadWorkflow {
   /**
    * Complete a raise and create the DAO.
    *
-   * NOTE: Init actions must be executed in a separate transaction via
-   * executeInitActions() after this transaction completes. This is required
-   * because Sui PTBs cannot get &mut Account from UnsharedDao.
+   * NOTE: Init actions are executed separately via AutoExecutor after this
+   * transaction completes.
    *
    * Returns account ID in RaiseSuccessful or RaiseFailed event.
    */
@@ -761,210 +741,6 @@ export class LaunchpadWorkflow {
       transaction: tx,
       description: `Complete raise and create DAO`,
     };
-  }
-
-  // ============================================================================
-  // STEP 4: EXECUTE INIT ACTIONS (SEPARATE TRANSACTION)
-  // ============================================================================
-
-  /**
-   * Execute init actions on the shared account.
-   *
-   * Must be called after completeRaise() in a separate transaction.
-   */
-  executeInitActions(config: {
-    raiseId: ObjectIdOrRef;
-    accountId: string;
-    actionTypes: import('./types').LaunchpadActionType[];
-    clockId?: string;
-  }): WorkflowTransaction {
-    const tx = new Transaction();
-    const clockId = config.clockId || '0x6';
-
-    const {
-      accountActionsPackageId,
-      futarchyCorePackageId,
-      futarchyActionsPackageId,
-      futarchyFactoryPackageId,
-    } = this.packages;
-    const { packageRegistryId } = this.sharedObjects;
-
-    // Type context
-    const configType = `${futarchyCorePackageId}::futarchy_config::FutarchyConfig`;
-    const outcomeType = `${futarchyFactoryPackageId}::dao_init_outcome::DaoInitOutcome`;
-    const witnessType = `${futarchyFactoryPackageId}::dao_init_executor::DaoInitIntent`;
-
-    // Begin execution
-    const executable = tx.moveCall({
-      target: `${futarchyFactoryPackageId}::dao_init_executor::begin_execution_for_launchpad`,
-      arguments: [
-        tx.pure.id(this.getObjectId(config.raiseId)),
-        tx.object(config.accountId),
-        tx.object(packageRegistryId),
-        tx.object(clockId),
-      ],
-    });
-
-    const versionWitness = tx.moveCall({
-      target: `${accountActionsPackageId}::actions_version::current`,
-      arguments: [],
-    });
-
-    const intentWitness = tx.moveCall({
-      target: `${futarchyFactoryPackageId}::dao_init_executor::dao_init_intent_witness`,
-      arguments: [],
-    });
-
-    // Execute each action
-    for (const actionType of config.actionTypes) {
-      this.executeAction(tx, executable, config.accountId, versionWitness, intentWitness, actionType, {
-        configType,
-        outcomeType,
-        witnessType,
-        clockId,
-        accountActionsPackageId,
-        futarchyActionsPackageId,
-        packageRegistryId,
-      });
-    }
-
-    // Finalize
-    tx.moveCall({
-      target: `${futarchyFactoryPackageId}::dao_init_executor::finalize_execution`,
-      arguments: [tx.object(config.accountId), executable, tx.object(clockId)],
-    });
-
-    return {
-      transaction: tx,
-      description: `Execute ${config.actionTypes.length} init action(s)`,
-    };
-  }
-
-  private getObjectId(input: ObjectIdOrRef): string {
-    if (isOwnedObjectRef(input) || isTxSharedObjectRef(input)) {
-      return input.objectId;
-    }
-    return input;
-  }
-
-  private executeAction(
-    tx: Transaction,
-    executable: ReturnType<Transaction['moveCall']>,
-    accountId: string,
-    versionWitness: ReturnType<Transaction['moveCall']>,
-    intentWitness: ReturnType<Transaction['moveCall']>,
-    actionType: import('./types').LaunchpadActionType,
-    ctx: {
-      configType: string;
-      outcomeType: string;
-      witnessType: string;
-      clockId: string;
-      accountActionsPackageId: string;
-      futarchyActionsPackageId: string;
-      packageRegistryId: string;
-    }
-  ): void {
-    const { configType, outcomeType, witnessType, clockId, accountActionsPackageId, futarchyActionsPackageId, packageRegistryId } = ctx;
-
-    switch (actionType.type) {
-      case 'create_stream':
-        tx.moveCall({
-          target: `${accountActionsPackageId}::vault::do_init_create_stream`,
-          typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
-          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), tx.object(clockId), versionWitness, intentWitness],
-        });
-        break;
-
-      case 'create_pool_with_mint':
-        tx.moveCall({
-          target: `${futarchyActionsPackageId}::liquidity_init_actions::do_init_create_pool_with_mint`,
-          typeArguments: [configType, outcomeType, actionType.assetType, actionType.stableType, actionType.lpType, witnessType],
-          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), tx.object(actionType.lpTreasuryCapId), tx.object(actionType.lpMetadataId), tx.object(clockId), versionWitness, intentWitness],
-        });
-        break;
-
-      case 'update_trading_params':
-        tx.moveCall({
-          target: `${futarchyActionsPackageId}::config_actions::do_update_trading_params`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness, tx.object(clockId)],
-        });
-        break;
-
-      case 'update_twap_config':
-        tx.moveCall({
-          target: `${futarchyActionsPackageId}::config_actions::do_update_twap_config`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness, tx.object(clockId)],
-        });
-        break;
-
-      case 'update_governance':
-        tx.moveCall({
-          target: `${futarchyActionsPackageId}::config_actions::do_update_governance`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness, tx.object(clockId)],
-        });
-        break;
-
-      case 'return_treasury_cap':
-        tx.moveCall({
-          target: `${accountActionsPackageId}::currency::do_init_remove_treasury_cap`,
-          typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
-          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness],
-        });
-        break;
-
-      case 'return_metadata': {
-        const keyType = `${accountActionsPackageId}::currency::CoinMetadataKey<${actionType.coinType}>`;
-        const metadataKey = tx.moveCall({
-          target: `${accountActionsPackageId}::currency::coin_metadata_key`,
-          typeArguments: [actionType.coinType],
-          arguments: [],
-        });
-        tx.moveCall({
-          target: `${accountActionsPackageId}::currency::do_init_remove_metadata`,
-          typeArguments: [configType, outcomeType, keyType, actionType.coinType, witnessType],
-          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), metadataKey, versionWitness, intentWitness],
-        });
-        break;
-      }
-
-      case 'mint':
-        tx.moveCall({
-          target: `${accountActionsPackageId}::currency::do_init_mint`,
-          typeArguments: [outcomeType, actionType.coinType, witnessType],
-          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness],
-        });
-        break;
-
-      case 'transfer_coin':
-        tx.moveCall({
-          target: `${accountActionsPackageId}::transfer::do_init_transfer_coin`,
-          typeArguments: [outcomeType, actionType.coinType, witnessType],
-          arguments: [executable, intentWitness],
-        });
-        break;
-
-      case 'deposit':
-        tx.moveCall({
-          target: `${accountActionsPackageId}::vault::do_init_deposit`,
-          typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
-          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness],
-        });
-        break;
-
-      case 'deposit_from_resources':
-        tx.moveCall({
-          target: `${accountActionsPackageId}::vault::do_init_deposit_from_resources`,
-          typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
-          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness],
-        });
-        break;
-
-      default:
-        throw new Error(`Unknown action type: ${(actionType as { type?: string }).type}`);
-    }
   }
 
   // ============================================================================

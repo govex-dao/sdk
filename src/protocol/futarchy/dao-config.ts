@@ -94,7 +94,7 @@ export class DaoConfig {
    *   startDelay: 300_000n, // 5 minutes
    *   stepMax: 300_000n, // 5 minutes
    *   initialObservation: 1_000_000_000_000n,
-   *   threshold: signedThresholdValue,
+   *   threshold: 500_000_000_000_000_000n, // 0.5 in 1e18 scale
    * });
    * ```
    */
@@ -105,7 +105,7 @@ export class DaoConfig {
       startDelay: bigint;
       stepMax: bigint;
       initialObservation: bigint;
-      threshold: ReturnType<Transaction['moveCall']>;
+      threshold: bigint;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -118,7 +118,7 @@ export class DaoConfig {
         tx.pure.u64(config.startDelay),
         tx.pure.u64(config.stepMax),
         tx.pure.u128(config.initialObservation),
-        config.threshold,
+        tx.pure.u128(config.threshold),
       ],
     });
   }
@@ -356,9 +356,7 @@ export class DaoConfig {
    * const sponsorshipConfig = DaoConfig.newSponsorshipConfig(tx, {
    *   futarchyCorePackageId,
    *   enabled: true,
-   *   sponsoredThreshold: signedThresholdValue,
    *   waiveAdvancementFees: false,
-   *   defaultSponsorQuotaAmount: 1n,
    * });
    * ```
    */
@@ -367,9 +365,7 @@ export class DaoConfig {
     config: {
       futarchyCorePackageId: string;
       enabled: boolean;
-      sponsoredThreshold: ReturnType<Transaction['moveCall']>;
       waiveAdvancementFees: boolean;
-      defaultSponsorQuotaAmount: bigint;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -380,9 +376,7 @@ export class DaoConfig {
       ),
       arguments: [
         tx.pure.bool(config.enabled),
-        config.sponsoredThreshold,
         tx.pure.bool(config.waiveAdvancementFees),
-        tx.pure.u64(config.defaultSponsorQuotaAmount),
       ],
     });
   }
@@ -836,11 +830,11 @@ export class DaoConfig {
   }
 
   /**
-   * Get threshold (SignedU128)
+   * Get threshold (u128)
    *
    * @param tx - Transaction
    * @param config - Configuration
-   * @returns Threshold (SignedU128)
+   * @returns Threshold (u128)
    */
   static threshold(
     tx: Transaction,
@@ -1584,30 +1578,6 @@ export class DaoConfig {
   }
 
   /**
-   * Get sponsored threshold
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Sponsored threshold (SignedU128)
-   */
-  static sponsoredThreshold(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      sponsorshipConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'sponsored_threshold'
-      ),
-      arguments: [config.sponsorshipConfig],
-    });
-  }
-
-  /**
    * Get waive advancement fees flag
    *
    * @param tx - Transaction
@@ -1626,30 +1596,6 @@ export class DaoConfig {
         config.futarchyCorePackageId,
         'dao_config',
         'waive_advancement_fees'
-      ),
-      arguments: [config.sponsorshipConfig],
-    });
-  }
-
-  /**
-   * Get default sponsor quota amount
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Default sponsor quota amount (u64)
-   */
-  static defaultSponsorQuotaAmount(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      sponsorshipConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'default_sponsor_quota_amount'
       ),
       arguments: [config.sponsorshipConfig],
     });
@@ -2409,7 +2355,7 @@ export class DaoConfig {
     config: {
       futarchyCorePackageId: string;
       twapConfig: ReturnType<Transaction['moveCall']>;
-      threshold: ReturnType<Transaction['moveCall']>;
+      threshold: bigint;
     }
   ): void {
     tx.moveCall({
@@ -2418,7 +2364,7 @@ export class DaoConfig {
         'dao_config',
         'set_threshold'
       ),
-      arguments: [config.twapConfig, config.threshold],
+      arguments: [config.twapConfig, tx.pure.u128(config.threshold)],
     });
   }
 
@@ -2930,30 +2876,6 @@ export class DaoConfig {
   }
 
   /**
-   * Set sponsored threshold
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setSponsoredThreshold(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      sponsorshipConfig: ReturnType<Transaction['moveCall']>;
-      threshold: ReturnType<Transaction['moveCall']>;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_sponsored_threshold'
-      ),
-      arguments: [config.sponsorshipConfig, config.threshold],
-    });
-  }
-
-  /**
    * Set waive advancement fees flag
    *
    * @param tx - Transaction
@@ -2974,30 +2896,6 @@ export class DaoConfig {
         'set_waive_advancement_fees'
       ),
       arguments: [config.sponsorshipConfig, tx.pure.bool(config.waive)],
-    });
-  }
-
-  /**
-   * Set default sponsor quota amount
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setDefaultSponsorQuotaAmount(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      sponsorshipConfig: ReturnType<Transaction['moveCall']>;
-      amount: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_default_sponsor_quota_amount'
-      ),
-      arguments: [config.sponsorshipConfig, tx.pure.u64(config.amount)],
     });
   }
 }

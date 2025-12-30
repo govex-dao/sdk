@@ -457,7 +457,7 @@ export class TransactionBuilder {
   }
 
   private addActionToBuilder(action: ActionConfig): void {
-    const { accountActionsPackageId, futarchyActionsPackageId, futarchyTypesPackageId } =
+    const { accountActionsPackageId, futarchyActionsPackageId } =
       this.packages;
 
     switch (action.type) {
@@ -489,6 +489,8 @@ export class TransactionBuilder {
             this.tx.pure.u64(action.stableAmount),
             this.tx.pure.u64(action.feeBps),
             this.tx.pure.u64(action.launchFeeDurationMs ?? 0n),
+            this.tx.pure.id(action.lpTreasuryCapId),
+            this.tx.pure.id(action.lpMetadataId),
           ],
         });
         break;
@@ -522,25 +524,6 @@ export class TransactionBuilder {
         break;
 
       case 'update_twap_config':
-        let thresholdOption: ReturnType<Transaction['moveCall']>;
-        if (action.threshold !== undefined) {
-          const signedThreshold = this.tx.moveCall({
-            target: `${futarchyTypesPackageId}::signed::from_u128`,
-            arguments: [this.tx.pure.u128(action.threshold)],
-          });
-          thresholdOption = this.tx.moveCall({
-            target: '0x1::option::some',
-            typeArguments: [`${futarchyTypesPackageId}::signed::SignedU128`],
-            arguments: [signedThreshold],
-          });
-        } else {
-          thresholdOption = this.tx.moveCall({
-            target: '0x1::option::none',
-            typeArguments: [`${futarchyTypesPackageId}::signed::SignedU128`],
-            arguments: [],
-          });
-        }
-
         this.tx.moveCall({
           target: `${futarchyActionsPackageId}::futarchy_config_init_actions::add_update_twap_config_spec`,
           arguments: [
@@ -548,7 +531,7 @@ export class TransactionBuilder {
             this.tx.pure.option('u64', action.startDelay ? Number(action.startDelay) : null),
             this.tx.pure.option('u64', action.stepMax ? Number(action.stepMax) : null),
             this.tx.pure.option('u128', action.initialObservation ?? null),
-            thresholdOption,
+            this.tx.pure.option('u128', action.threshold ?? null),
           ],
         });
         break;

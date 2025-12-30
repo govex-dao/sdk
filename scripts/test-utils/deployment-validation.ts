@@ -56,7 +56,7 @@ const PACKAGE_EXPECTATIONS: Record<string, PackageExpectations> = {
     sharedObjects: [],
     adminCaps: [],
   },
-  conditional_coins: {
+  conditional_coin: {
     packageId: true,
     upgradeCap: true,
     sharedObjects: [],

@@ -617,27 +617,30 @@ async function main() {
   const acceptWon = winningOutcome === 1 || winningOutcome === "1";
 
   // ============================================================================
-  // STEP 6: Execute actions (if Accept won)
+  // STEP 6: Execute actions (if Accept won) via AutoExecutor
   // ============================================================================
   if (acceptWon) {
     console.log("=".repeat(80));
-    console.log("STEP 6: EXECUTE ACTIONS (using sdk.workflows.proposal)");
+    console.log("STEP 6: EXECUTE ACTIONS (via AutoExecutor)");
     console.log("=".repeat(80));
     console.log();
 
-    console.log("📤 Executing stream action...");
+    console.log("📤 Executing winning outcome actions...");
 
-    const executeTx = proposalWorkflow.executeActions({
-      daoAccountId: daoAccountRef,
-      proposalId: proposalRef,
+    // Wait for indexer to index the proposal with staged actions
+    console.log("   Waiting for indexer to index proposal (5s)...");
+    await sleep(5000);
+
+    // Create AutoExecutor using SDK helper
+    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:9090";
+    const autoExecutor = sdk.createAutoExecutor(backendUrl);
+
+    // Execute winning outcome actions - AutoExecutor fetches action specs from backend
+    const executeTx = await autoExecutor.executeProposal(proposalId, {
+      accountId: daoAccountRef,
+      outcome: winningOutcome as number,
       escrowId: escrowRef,
       spotPoolId: spotPoolRef,
-      assetType,
-      stableType,
-      lpType,
-      actionTypes: [
-        { type: 'create_stream', coinType: stableType },
-      ],
     });
 
     const executeResult = await executeTransaction(sdk, executeTx.transaction, {
@@ -817,7 +820,7 @@ async function main() {
   console.log(`  ✅ Finalized proposal - winner: ${acceptWon ? "ACCEPT" : "REJECT"}`);
   console.log("  ✅ Auto-recombination: winning conditional liquidity → spot pool");
   if (acceptWon) {
-    console.log("  ✅ Executed actions (using sdk.workflows.proposal.executeActions)");
+    console.log("  ✅ Executed actions (via AutoExecutor)");
   } else {
     console.log("  ℹ️  No actions executed (Reject won)");
   }

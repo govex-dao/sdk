@@ -694,7 +694,7 @@ export class ConditionalBalance {
       marketsPackageId: string;
       assetType: string;
       stableType: string;
-      conditionalType: string; // e.g., "0xPKG::cond0_asset::COND0_ASSET"
+      conditionalType: string; // e.g., "0xPKG::conditional_0::CONDITIONAL_0"
       balanceObj: ReturnType<Transaction['moveCall']>;
       escrowId: string;
       outcomeIdx: number;

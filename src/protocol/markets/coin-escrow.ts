@@ -85,7 +85,7 @@ export class CoinEscrow {
       marketsPackageId: string;
       assetType: string;
       stableType: string;
-      conditionalType: string; // e.g., "0xPKG::cond0_asset::COND0_ASSET"
+      conditionalType: string; // e.g., "0xPKG::conditional_0::CONDITIONAL_0"
       escrowId: string;
       treasuryCap: ReturnType<Transaction['moveCall']>;
     }

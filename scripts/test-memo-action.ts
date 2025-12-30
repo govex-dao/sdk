@@ -289,21 +289,26 @@ async function main() {
   console.log();
 
   // ============================================================================
-  // STEP 6: Execute memo action and verify event
+  // STEP 6: Execute memo action and verify event (via AutoExecutor)
   // ============================================================================
-  logStep(6, "EXECUTE MEMO ACTION AND VERIFY EVENT");
+  logStep(6, "EXECUTE MEMO ACTION AND VERIFY EVENT (via AutoExecutor)");
 
-  logInfo("Executing memo action...");
+  logInfo("Executing memo action via AutoExecutor...");
 
-  const executeTx = proposalWorkflow.executeActions({
-    daoAccountId,
-    proposalId,
+  // Wait for indexer to index the proposal with staged actions
+  logInfo("Waiting for indexer to index proposal (5s)...");
+  await sleep(5000);
+
+  // Create AutoExecutor using SDK helper
+  const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:9090";
+  const autoExecutor = sdk.createAutoExecutor(backendUrl);
+
+  // Execute winning outcome actions - AutoExecutor fetches action specs from backend
+  const executeTx = await autoExecutor.executeProposal(proposalId, {
+    accountId: daoAccountId,
+    outcome: ACCEPT_OUTCOME_INDEX,
     escrowId,
     spotPoolId,
-    assetType,
-    stableType,
-    lpType,
-    actionTypes: [{ type: "memo" }],
   });
 
   const executeResult = await executeTransaction(sdk, executeTx.transaction, {

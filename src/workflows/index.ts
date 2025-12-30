@@ -17,6 +17,25 @@ export {
   type IntentExecutorPackages,
 } from './intent-executor';
 
+// Action conversion (backend → SDK format)
+export {
+  parsedActionToExecutionConfig,
+  parsedActionsToExecutionConfigs,
+  validateAndConvertActions,
+  ActionConversionError,
+  type ParsedAction,
+} from './action-converter';
+
+// Auto executor (fetches from backend, builds PTB)
+export {
+  AutoExecutor,
+  createAutoExecutor,
+  type AutoExecutorConfig,
+  type BackendRaiseResponse,
+  type BackendProposalResponse,
+  type BackendDaoResponse,
+} from './auto-executor';
+
 // Launchpad workflow
 export {
   LaunchpadWorkflow,

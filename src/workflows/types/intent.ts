@@ -39,15 +39,26 @@ export interface IntentExecutionConfig extends WorkflowBaseConfig {
  * Intent action configuration with type info for execution
  */
 export type IntentActionConfig =
+  // Account Protocol - Dependencies Management
+  | { action: 'toggle_unverified_allowed' }
+  | { action: 'add_dep' }
+  | { action: 'remove_dep' }
+  // Account Protocol - Owned Object Actions
+  | { action: 'withdraw_object'; objectType: string }
+  | { action: 'withdraw_coin'; coinType: string }
   // Account Actions - Stream
   | { action: 'create_stream'; coinType: string }
   | { action: 'cancel_stream'; coinType: string }
   // Account Actions - Vault
   | { action: 'deposit'; coinType: string }
+  | { action: 'deposit_external'; coinType: string }
   | { action: 'spend'; coinType: string }
   | { action: 'approve_coin_type'; coinType: string }
   | { action: 'remove_approved_coin_type'; coinType: string }
   | { action: 'deposit_from_resources'; coinType: string }
+  // Account Actions - Vesting
+  | { action: 'create_vesting'; coinType: string }
+  | { action: 'cancel_vesting'; coinType: string }
   // Account Actions - Currency
   | { action: 'return_treasury_cap'; coinType: string }
   | { action: 'return_metadata'; coinType: string; keyType: string }
@@ -88,6 +99,7 @@ export type IntentActionConfig =
   | { action: 'add_liquidity'; assetType: string; stableType: string }
   | { action: 'remove_liquidity_to_resources'; assetType: string; stableType: string; lpType: string }
   | { action: 'swap'; assetType: string; stableType: string }
+  | { action: 'update_pool_fee'; assetType: string; stableType: string; lpType: string }
   // Futarchy Dissolution Actions
   | { action: 'create_dissolution_capability'; assetType: string }
   // Governance - Package Registry Actions

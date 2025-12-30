@@ -3,6 +3,11 @@ import { bcs } from '@mysten/sui/bcs';
 import { initSDK, executeTransaction, getActiveAddress } from './execute-tx';
 import * as path from 'path';
 import * as fs from 'fs';
+import { fileURLToPath } from 'url';
+
+// ESM compatibility for __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function main() {
     const sdk = await initSDK();

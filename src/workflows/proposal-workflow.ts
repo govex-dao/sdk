@@ -22,7 +22,6 @@ import {
   AdvanceToReviewConfig,
   AdvanceToTradingConfig,
   FinalizeProposalConfig,
-  ExecuteProposalActionsConfig,
   SpotSwapConfig,
   ConditionalSwapConfig,
   ActionConfig,
@@ -31,7 +30,7 @@ import {
   isOwnedObjectRef,
   isTxSharedObjectRef,
 } from './types';
-import { IntentExecutor, IntentExecutorPackages } from './intent-executor';
+import type { IntentExecutorPackages } from './intent-executor';
 
 /**
  * Helper to convert ObjectIdOrRef to tx.object() input
@@ -130,16 +129,14 @@ export interface ProposalWorkflowSharedObjects {
 export class ProposalWorkflow {
   private packages: ProposalWorkflowPackages;
   private sharedObjects: ProposalWorkflowSharedObjects;
-  private intentExecutor: IntentExecutor;
 
   constructor(
-    client: SuiClient,
+    _client: SuiClient,
     packages: ProposalWorkflowPackages,
     sharedObjects: ProposalWorkflowSharedObjects
   ) {
     this.packages = packages;
     this.sharedObjects = sharedObjects;
-    this.intentExecutor = new IntentExecutor(client, packages);
   }
 
   // ============================================================================
@@ -491,6 +488,8 @@ export class ProposalWorkflow {
             tx.pure.u64(action.stableAmount),
             tx.pure.u64(action.feeBps),
             tx.pure.u64(action.launchFeeDurationMs ?? 0n),
+            tx.pure.id(action.lpTreasuryCapId),
+            tx.pure.id(action.lpMetadataId),
           ],
         });
         break;
@@ -1003,50 +1002,7 @@ export class ProposalWorkflow {
   }
 
   // ============================================================================
-  // STEP 7: EXECUTE ACTIONS
-  // ============================================================================
-
-  /**
-   * Execute actions for winning outcome
-   */
-  executeActions(config: ExecuteProposalActionsConfig): WorkflowTransaction {
-    return this.intentExecutor.execute({
-      intentType: 'proposal',
-      accountId: config.daoAccountId,
-      proposalId: config.proposalId,
-      escrowId: config.escrowId,
-      spotPoolId: config.spotPoolId,
-      assetType: config.assetType,
-      stableType: config.stableType,
-      lpType: config.lpType,
-      clockId: config.clockId,
-      actions: config.actionTypes.map((at) => {
-        switch (at.type) {
-          case 'create_stream':
-            return { action: 'create_stream' as const, coinType: at.coinType };
-          case 'mint':
-            return { action: 'mint' as const, coinType: at.coinType };
-          case 'burn':
-            return { action: 'burn' as const, coinType: at.coinType };
-          case 'deposit':
-            return { action: 'deposit' as const, coinType: at.coinType };
-          case 'spend':
-            return { action: 'spend' as const, coinType: at.coinType };
-          case 'transfer':
-            return { action: 'transfer' as const, objectType: at.objectType };
-          case 'transfer_to_sender':
-            return { action: 'transfer_to_sender' as const, objectType: at.objectType };
-          case 'memo':
-            return { action: 'memo' as const };
-          default:
-            throw new Error(`Unknown action type: ${(at as { type?: string }).type}`);
-        }
-      }),
-    });
-  }
-
-  // ============================================================================
-  // STEP 8: REDEEM CONDITIONAL TOKENS
+  // STEP 7: REDEEM CONDITIONAL TOKENS
   // ============================================================================
 
   /**

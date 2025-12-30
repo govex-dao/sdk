@@ -86,15 +86,14 @@ export interface ContributeConfig extends WorkflowBaseConfig {
 }
 
 /**
- * Configuration for completing a raise with atomic action execution.
+ * Configuration for completing a raise.
  *
- * This performs everything in a single PTB:
+ * This performs the core raise completion in a single PTB:
  * 1. settle_raise
  * 2. begin_dao_creation (creates intents)
- * 3. Execute all staged actions
- * 4. finalize_and_share_dao
+ * 3. finalize_and_share_dao
  *
- * If any step fails, the entire transaction rolls back.
+ * Actions are executed separately via AutoExecutor.
  */
 export interface CompleteRaiseConfig extends WorkflowBaseConfig {
   /** Raise object ID or full ObjectRef */
@@ -103,24 +102,5 @@ export interface CompleteRaiseConfig extends WorkflowBaseConfig {
   assetType: string;
   /** Stable type */
   stableType: string;
-  /** Action types to execute (in order) - must match staged actions */
-  actionTypes: LaunchpadActionType[];
 }
-
-
-/**
- * Supported launchpad action types for execution
- */
-export type LaunchpadActionType =
-  | { type: 'create_stream'; coinType: string }
-  | { type: 'create_pool_with_mint'; assetType: string; stableType: string; lpType: string; lpTreasuryCapId: string; lpMetadataId: string }
-  | { type: 'update_trading_params' }
-  | { type: 'update_twap_config' }
-  | { type: 'update_governance' }
-  | { type: 'return_treasury_cap'; coinType: string }
-  | { type: 'return_metadata'; coinType: string }
-  | { type: 'mint'; coinType: string }
-  | { type: 'transfer_coin'; coinType: string }
-  | { type: 'deposit'; coinType: string }
-  | { type: 'deposit_from_resources'; coinType: string };
 

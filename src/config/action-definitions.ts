@@ -31,8 +31,6 @@ export type ParamType =
   | 'option<bool>'
   | 'option<string>'
   | 'option<vector<u8>>'
-  | 'option<signed_u128>'
-  | 'signed_u128'
   | 'tier_specs'
   | 'conditional_metadata';
 
@@ -731,7 +729,7 @@ export const CONFIG_ACTIONS: ActionDefinition[] = [
       { name: 'startDelay', type: 'option<u64>', description: 'TWAP start delay', optional: true },
       { name: 'stepMax', type: 'option<u64>', description: 'Maximum TWAP step', optional: true },
       { name: 'initialObservation', type: 'option<u128>', description: 'Initial observation', optional: true },
-      { name: 'threshold', type: 'option<signed_u128>', description: 'TWAP threshold', optional: true },
+      { name: 'threshold', type: 'option<u128>', description: 'TWAP threshold', optional: true },
     ],
     description: 'Update TWAP configuration',
     launchpadSupported: true,
@@ -836,21 +834,9 @@ export const CONFIG_ACTIONS: ActionDefinition[] = [
     params: [
       { name: 'enabled', type: 'option<bool>', description: 'Sponsorship enabled', optional: true },
       {
-        name: 'sponsoredThreshold',
-        type: 'option<signed_u128>',
-        description: 'Sponsored threshold',
-        optional: true,
-      },
-      {
         name: 'waiveAdvancementFees',
         type: 'option<bool>',
         description: 'Waive advancement fees',
-        optional: true,
-      },
-      {
-        name: 'defaultSponsorQuotaAmount',
-        type: 'option<u64>',
-        description: 'Default sponsor quota',
         optional: true,
       },
     ],
@@ -909,6 +895,8 @@ export const LIQUIDITY_ACTIONS: ActionDefinition[] = [
       { name: 'stableAmount', type: 'u64', description: 'Stable amount from vault' },
       { name: 'feeBps', type: 'u64', description: 'AMM fee in basis points' },
       { name: 'launchFeeDurationMs', type: 'u64', description: 'Launch fee duration in ms (0 = no launch fee period)' },
+      { name: 'lpTreasuryCapId', type: 'id', description: 'LP TreasuryCap object ID' },
+      { name: 'lpMetadataId', type: 'id', description: 'LP CoinMetadata object ID' },
     ],
     typeParams: ['AssetType', 'StableType'],
     description: 'Create AMM pool with minted asset and vault stable',

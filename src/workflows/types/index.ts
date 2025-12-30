@@ -10,7 +10,6 @@ export type {
   TierSpec,
   WorkflowBaseConfig,
   WorkflowTransaction,
-  SignedU128,
   OwnedObjectRef,
   TxSharedObjectRef,
   ObjectIdOrRef,
@@ -27,7 +26,6 @@ export type {
   StageActionsConfig,
   ContributeConfig,
   CompleteRaiseConfig,
-  LaunchpadActionType,
 } from './launchpad';
 
 // Proposal workflow types
@@ -39,8 +37,6 @@ export type {
   ConditionalCoinsRegistryConfig,
   AdvanceToTradingConfig,
   FinalizeProposalConfig,
-  ExecuteProposalActionsConfig,
-  ProposalActionType,
   SpotSwapConfig,
   ConditionalSwapConfig,
 } from './proposal';

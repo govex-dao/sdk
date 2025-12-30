@@ -161,6 +161,8 @@ export class LiquidityActions {
       stableAmount: bigint;
       feeBps: number;
       launchFeeDurationMs?: bigint;
+      lpTreasuryCapId: string;
+      lpMetadataId: string;
     }
   ): void {
     tx.moveCall({
@@ -172,6 +174,8 @@ export class LiquidityActions {
         tx.pure.u64(config.stableAmount),
         tx.pure.u64(config.feeBps),
         tx.pure.u64(config.launchFeeDurationMs ?? 0n),
+        tx.pure.id(config.lpTreasuryCapId),
+        tx.pure.id(config.lpMetadataId),
       ],
     });
   }
@@ -309,25 +313,6 @@ export class ConfigActions {
       threshold?: bigint;
     }
   ): void {
-    let thresholdOption: ReturnType<Transaction['moveCall']>;
-    if (config.threshold !== undefined) {
-      const signedThreshold = tx.moveCall({
-        target: `${this.packages.futarchyTypesPackageId}::signed::from_u128`,
-        arguments: [tx.pure.u128(config.threshold)],
-      });
-      thresholdOption = tx.moveCall({
-        target: '0x1::option::some',
-        typeArguments: [`${this.packages.futarchyTypesPackageId}::signed::SignedU128`],
-        arguments: [signedThreshold],
-      });
-    } else {
-      thresholdOption = tx.moveCall({
-        target: '0x1::option::none',
-        typeArguments: [`${this.packages.futarchyTypesPackageId}::signed::SignedU128`],
-        arguments: [],
-      });
-    }
-
     tx.moveCall({
       target: `${this.packages.futarchyActionsPackageId}::futarchy_config_init_actions::add_update_twap_config_spec`,
       arguments: [
@@ -335,7 +320,7 @@ export class ConfigActions {
         tx.pure.option('u64', config.startDelay ? Number(config.startDelay) : null),
         tx.pure.option('u64', config.stepMax ? Number(config.stepMax) : null),
         tx.pure.option('u128', config.initialObservation ?? null),
-        thresholdOption,
+        tx.pure.option('u128', config.threshold ?? null),
       ],
     });
   }

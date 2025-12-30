@@ -16,7 +16,6 @@ import type {
   AdvanceToReviewConfig,
   AdvanceToTradingConfig,
   FinalizeProposalConfig,
-  ExecuteProposalActionsConfig,
   SpotSwapConfig,
   ConditionalSwapConfig,
   WorkflowTransaction,
@@ -158,13 +157,6 @@ export class ProposalService {
    */
   finalizeProposal(config: FinalizeProposalConfig): WorkflowTransaction {
     return this.workflow.finalizeProposal(config);
-  }
-
-  /**
-   * Execute actions for winning outcome
-   */
-  executeActions(config: ExecuteProposalActionsConfig): WorkflowTransaction {
-    return this.workflow.executeActions(config);
   }
 
   // ============================================================================

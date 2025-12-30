@@ -513,7 +513,15 @@ export class IntentExecutor {
       case 'return_metadata': {
         // Determine the key type based on context
         // Launchpad uses factory::CoinMetadataKey, governance uses currency::CoinMetadataKey
-        const keyType = action.keyType;
+        // If keyType is not provided, derive it based on intentType
+        let keyType = action.keyType;
+        if (!keyType) {
+          if (config.intentType === 'launchpad') {
+            keyType = `${this.packages.futarchyFactoryPackageId}::factory::CoinMetadataKey`;
+          } else {
+            keyType = `${accountActionsPackageId}::currency::CoinMetadataKey`;
+          }
+        }
 
         // Create metadata key witness using the appropriate module
         const keyModule = keyType.includes('::factory::')

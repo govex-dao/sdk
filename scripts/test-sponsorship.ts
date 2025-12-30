@@ -214,57 +214,15 @@ async function main() {
   }
   console.log();
 
-  // ============================================================================
-  // STEP 4: Test sponsor_proposal_to_zero (should also fail)
-  // ============================================================================
-  logStep(4, "ATTEMPT SPONSOR_PROPOSAL_TO_ZERO (EXPECT FAILURE)");
-
-  logInfo("Testing the 'free sponsorship' variant - should also fail when disabled");
-  console.log();
-
-  const sponsorZeroTx = new Transaction();
-
-  sponsorZeroTx.moveCall({
-    target: `${governancePackageId}::proposal_sponsorship::sponsor_proposal_to_zero`,
-    typeArguments: [assetType, stableType],
-    arguments: [
-      sponsorZeroTx.object(proposalId),
-      sponsorZeroTx.object(daoAccountId),
-      sponsorZeroTx.object(registryId),
-      sponsorZeroTx.sharedObjectRef({
-        objectId: "0x6",
-        initialSharedVersion: 1,
-        mutable: false,
-      }),
-    ],
-  });
-
-  let sponsorZeroFailed = false;
-
-  try {
-    await executeTransaction(sdk, sponsorZeroTx, {
-      network: "devnet",
-      suppressErrors: true,
-    });
-    logError("sponsor_proposal_to_zero succeeded unexpectedly!");
-  } catch (error: any) {
-    sponsorZeroFailed = true;
-    const msg = error.message || String(error);
-
-    if (msg.includes("ESponsorshipNotEnabled") || (msg.includes("abort_code") && msg.includes("1"))) {
-      logSuccess("sponsor_proposal_to_zero correctly failed with ESponsorshipNotEnabled!");
-    } else if (msg.includes("ENoSponsorQuota")) {
-      logSuccess("sponsor_proposal_to_zero failed with ENoSponsorQuota");
-    } else {
-      logInfo(`sponsor_proposal_to_zero failed with: ${msg.substring(0, 100)}...`);
-    }
-  }
-  console.log();
+  // Note: sponsor_proposal_to_zero and sponsor_outcome have been removed
+  // The simplified sponsorship system now only has sponsor_proposal which:
+  // - Uses one quota to sponsor ALL pass outcomes on a proposal
+  // - Sponsored outcomes bypass TWAP threshold (just need TWAP >= reject TWAP)
 
   // ============================================================================
-  // STEP 5: Document how to enable sponsorship
+  // STEP 4: Document how to enable sponsorship
   // ============================================================================
-  logStep(5, "ENABLING SPONSORSHIP (DOCUMENTATION)");
+  logStep(4, "ENABLING SPONSORSHIP (DOCUMENTATION)");
 
   console.log("To enable sponsorship for your DAO, you need to:");
   console.log();
@@ -272,8 +230,7 @@ async function main() {
   console.log("   {");
   console.log("     type: 'update_sponsorship_config',");
   console.log("     enabled: true,");
-  console.log("     sponsored_threshold_magnitude: 0n,  // 0% threshold");
-  console.log("     sponsored_threshold_is_negative: false,");
+  console.log("     waiveAdvancementFees: false,");
   console.log("   }");
   console.log();
   console.log("2. Grant sponsor quota to team members:");
@@ -281,9 +238,9 @@ async function main() {
   console.log("   - Or set up default quota via DAO config");
   console.log();
   console.log("3. Once enabled, sponsors can:");
-  console.log("   - sponsor_proposal: Use quota to apply DAO's sponsored_threshold");
-  console.log("   - sponsor_proposal_to_zero: FREE, sets threshold to 0%");
-  console.log("   - sponsor_outcome: Sponsor specific outcome with custom threshold");
+  console.log("   - sponsor_proposal: Uses ONE quota to sponsor ALL pass outcomes");
+  console.log("   - Sponsored outcomes bypass TWAP threshold (just need TWAP >= reject TWAP)");
+  console.log("   - Cannot sponsor outcome 0 (reject) - it's the baseline");
   console.log();
 
   // ============================================================================
@@ -293,14 +250,13 @@ async function main() {
   console.log("Summary:");
   console.log("  - Created and initialized test proposal atomically");
   console.log(`  - Validated sponsor_proposal fails when disabled: ${sponsorshipFailed ? "YES" : "NO"}`);
-  console.log(`  - Validated sponsor_proposal_to_zero fails when disabled: ${sponsorZeroFailed ? "YES" : "NO"}`);
   console.log("  - Documented how to enable sponsorship");
   console.log();
 
-  if (sponsorshipFailed && sponsorZeroFailed) {
-    logSuccess("All sponsorship guards working correctly!");
+  if (sponsorshipFailed) {
+    logSuccess("Sponsorship guard working correctly!");
   } else {
-    logInfo("Some unexpected behavior detected - review output above");
+    logInfo("Unexpected behavior detected - review output above");
   }
   console.log();
 }

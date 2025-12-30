@@ -36,14 +36,6 @@ export interface WorkflowTransaction {
   description: string;
 }
 
-/**
- * SignedU128 for TWAP threshold values
- */
-export interface SignedU128 {
-  value: bigint;
-  isNegative: boolean;
-}
-
 // ============================================================================
 // OBJECT REFERENCE TYPES
 // ============================================================================

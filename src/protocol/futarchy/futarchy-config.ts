@@ -1526,7 +1526,7 @@ export class FutarchyConfig {
    *
    * @param tx - Transaction
    * @param config - Configuration
-   * @returns TWAP threshold (SignedU128)
+   * @returns TWAP threshold (u128)
    */
   static twapThreshold(
     tx: Transaction,

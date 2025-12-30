@@ -181,43 +181,6 @@ export interface FinalizeProposalConfig extends WorkflowBaseConfig {
   daoAccountId?: ObjectIdOrRef;
 }
 
-/**
- * Configuration for executing proposal actions
- */
-export interface ExecuteProposalActionsConfig extends WorkflowBaseConfig {
-  /** Proposal object ID or full ObjectRef */
-  proposalId: ObjectIdOrRef;
-  /** DAO account object ID or full ObjectRef */
-  daoAccountId: ObjectIdOrRef;
-  /** Escrow object ID or full ObjectRef */
-  escrowId: ObjectIdOrRef;
-  /** Spot pool object ID or full ObjectRef */
-  spotPoolId: ObjectIdOrRef;
-  /** Asset type */
-  assetType: string;
-  /** Stable type */
-  stableType: string;
-  /** LP coin type for the spot pool */
-  lpType: string;
-  /** Action types to execute (in order) */
-  actionTypes: ProposalActionType[];
-}
-
-/**
- * Supported proposal action types for execution
- */
-export type ProposalActionType =
-  | { type: 'create_stream'; coinType: string }
-  | { type: 'mint'; coinType: string }
-  | { type: 'burn'; coinType: string }
-  | { type: 'deposit'; coinType: string }
-  | { type: 'spend'; coinType: string }
-  | { type: 'transfer'; objectType: string }
-  | { type: 'transfer_to_sender'; objectType: string }
-  | { type: 'transfer_coin'; coinType: string }
-  | { type: 'transfer_coin_to_sender'; coinType: string }
-  | { type: 'memo' };
-
 // ============================================================================
 // SWAP WORKFLOW TYPES
 // ============================================================================

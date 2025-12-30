@@ -379,22 +379,27 @@ async function main() {
   console.log();
 
   // ============================================================================
-  // STEP 7: Execute actions if non-reject won
+  // STEP 7: Execute actions if non-reject won (via AutoExecutor)
   // ============================================================================
-  logStep(7, "EXECUTE ACTIONS (if applicable)");
+  logStep(7, "EXECUTE ACTIONS (if applicable, via AutoExecutor)");
 
   if (winningOutcome > 0) {
     logInfo(`Executing actions for winning outcome ${winningOutcome}...`);
 
-    const executeTx = proposalWorkflow.executeActions({
-      daoAccountId,
-      proposalId,
+    // Wait for indexer to index the proposal with staged actions
+    logInfo("Waiting for indexer to index proposal (5s)...");
+    await sleep(5000);
+
+    // Create AutoExecutor using SDK helper
+    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:9090";
+    const autoExecutor = sdk.createAutoExecutor(backendUrl);
+
+    // Execute winning outcome actions - AutoExecutor fetches action specs from backend
+    const executeTx = await autoExecutor.executeProposal(proposalId, {
+      accountId: daoAccountId,
+      outcome: winningOutcome,
       escrowId,
       spotPoolId,
-      assetType,
-      stableType,
-      lpType,
-      actionTypes: [{ type: "memo" }],
     });
 
     await executeTransaction(sdk, executeTx.transaction, { network: "devnet" });

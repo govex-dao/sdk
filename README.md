@@ -1,814 +1,1425 @@
-# Govex Futarchy SDK
+# Futarchy SDK
 
-TypeScript SDK for interacting with the Govex Futarchy Protocol on Sui blockchain.
-
-## Overview
-
-The Futarchy SDK provides a type-safe, developer-friendly interface for building applications on top of the Futarchy governance protocol. It handles network configuration, deployment management, and provides high-level abstractions for protocol interactions.
-
-## Architecture
-
-The SDK follows a layered architecture with clear separation of concerns:
-
-```
-src/
-├── FutarchySDK.ts # Main SDK entry point
-├── config/        # Network, deployment, and error mapping
-├── types/         # TypeScript types (sui-types, deployment, init-actions)
-├── workflows/     # High-level orchestration
-│   ├── launchpad-workflow.ts  # Launchpad creation and execution
-│   ├── proposal-workflow.ts   # Proposal lifecycle management
-│   ├── intent-executor.ts     # Intent execution (uses action-registry)
-│   ├── action-registry.ts     # Modular action handler registry
-│   ├── types/                 # Workflow type definitions
-│   │   └── actions/           # Domain-specific action configs
-│   └── operations/            # High-level operation helpers
-├── protocol/      # Move module wrappers
-│   ├── account/   # Account protocol bindings
-│   ├── futarchy/  # Futarchy core bindings
-│   └── markets/   # Markets core bindings
-├── services/      # Service classes for protocol interactions
-│   ├── admin/     # Admin operations
-│   ├── dao/       # DAO, vault, oracle services
-│   ├── market/    # Market and pool services
-│   ├── proposal/  # Proposal services
-│   └── utils/     # Query helpers, transaction builder
-├── ptb/           # PTB composition helpers
-└── utils/         # BCS, hex, validation utilities
-```
-
-### Current Features
-
-**Phase 1: Foundation**
-- ✅ Network configuration (mainnet, testnet, devnet, localnet, custom RPC)
-- ✅ Deployment data management
-- ✅ Type-safe package and object ID access
-- ✅ SuiClient integration
-- ✅ Dual ESM/CJS build output
-
-**Phase 2: Core Operations**
-- ✅ Transaction builder utilities
-- ✅ DAO creation (Factory operations)
-- ✅ Query helpers for on-chain data
-- ✅ Event querying
-- ✅ Balance checking
-- ✅ Object queries with type filtering
-
-**Phase 3: Cross-Package Action Orchestration** 🆕
-- ✅ InitActionSpec pattern for DAO initialization
-- ✅ ConfigActions - DAO configuration (metadata, trading params, proposals)
-- ✅ LiquidityActions - Pool operations (create, add/remove liquidity)
-- ✅ GovernanceActions - Governance settings (voting power, quorum, delegation)
-- ✅ VaultActions - Stream management (team vesting, advisor compensation)
-- ✅ BCS serialization matching Move struct layouts
-- ✅ Type-safe action builders with full parameter validation
-
-**Phase 4: Futarchy Markets Core** 🆕
-- ✅ Complete TypeScript SDK for futarchy_markets_core (226 functions)
-- ✅ Liquidity initialization with TreasuryCap-based conditional coins
-- ✅ Unified arbitrage for N-outcome markets
-- ✅ Swap core primitives with hot potato session management
-- ✅ Quantum LP manager with automatic participation
-- ✅ Conditional coin utilities and validation
-- ✅ Arbitrage core primitives and math (B-parameterization, ternary search)
-- ✅ Protocol fee management and withdrawal
-- ✅ Unified spot pool with bucket-based LP management
-- ✅ Proposal lifecycle management (PREMARKET → REVIEW → LIVE → FINALIZED)
-
-**Phase 5: Futarchy Core Configuration** 🆕
-- ✅ Complete TypeScript SDK for futarchy_core (229 functions)
-- ✅ FutarchyConfig - Main DAO configuration with state management (108 functions)
-- ✅ DaoConfig - Centralized configuration with validation (82 functions)
-- ✅ ProposalQuotaRegistry - Recurring quotas with sponsorship (20 functions)
-- ✅ ResourceRequests - Hot potato pattern for type-safe resources (12 functions)
-- ✅ ExecutableResources - Resource bag management (4 functions)
-- ✅ Version - Protocol version tracking (2 functions)
-- ✅ ActionValidation - Type validation for action specs (1 function)
-
-**Phase 6: Move Framework - Account Protocol & Actions**
-- ✅ Complete TypeScript SDK for account_protocol (122 functions)
-  - ✅ Account - Account creation, ownership, managed data/assets (39 functions)
-  - ✅ Intents - Intent lifecycle with action specs and expiration (47 functions)
-  - ✅ PackageRegistry - Package management with pause control (36 functions)
-- ✅ Complete TypeScript SDK for account_actions (157 functions)
-  - ✅ Memo - Transaction memo emissions (4 functions)
-  - ✅ Transfer - Object transfer operations (9 functions)
-  - ✅ AccessControl - Capability borrow/return pattern (11 functions)
-  - ✅ PackageUpgradeAuditable - Auditable upgrade proposals (4 functions)
-  - ✅ Currency - Minting, burning, metadata updates (37 functions)
-  - ✅ Vault - Multi-coin storage with vesting streams (47 functions)
-  - ✅ PackageUpgrade - Timelock-based upgrade governance (50 functions)
-
-**Phase 7: Type Safety & Code Quality**
-- ✅ Zero `as any` casts - fully type-safe codebase
-- ✅ Type-safe Sui object access (`sui-types.ts` helpers)
-- ✅ Modular action registry pattern (IntentExecutor refactored)
-- ✅ Domain-specific workflow types (10 files vs 1 monolithic file)
-- ✅ Human-readable Move error translation
-- ✅ Granular service types (config, execution, intents, etc.)
-
-### Roadmap
-
-- [ ] Auto-generated Move bindings (.gen layer)
-- [x] Market operations (create, trade, resolve) - **Completed via markets_core**
-- [x] Proposal voting and execution - **Completed via markets_core**
-- [x] Init action execution helpers - **Completed via IntentExecutor**
-- [ ] Event subscriptions and listeners
-- [ ] Caching layer for on-chain data
-- [ ] Batch transaction builders
-
-## Installation
-
-```bash
-npm install @govex/futarchy-sdk
-# or
-yarn add @govex/futarchy-sdk
-# or
-pnpm add @govex/futarchy-sdk
-```
+> Comprehensive documentation for AI agents and developers to understand the SDK structure, patterns, and usage.
 
 ## Quick Start
-
-```typescript
-import { FutarchySDK, TransactionUtils } from '@govex/futarchy-sdk';
-import { ConfigActions, VaultActions } from '@govex/futarchy-sdk/actions';
-import deployments from './deployments.json';
-
-// Initialize SDK
-const sdk = await FutarchySDK.init({
-  network: 'devnet',
-  deployments,
-});
-
-// === Query Operations ===
-
-// Get all DAOs
-const allDAOs = await sdk.query.getAllDAOs(
-  sdk.getPackageId('futarchy_factory')!
-);
-
-// Get specific DAO
-const dao = await sdk.query.getDAO(allDAOs[0].account_id);
-
-// Check balances
-const balance = await sdk.query.getBalance(address, '0x2::sui::SUI');
-
-// === Create a DAO (Simple) ===
-
-const tx = sdk.factory.createDAOWithDefaults({
-  assetType: '0xPKG::coin::MYCOIN',
-  stableType: '0x2::sui::SUI',
-  treasuryCap: '0xCAP_ID',
-  coinMetadata: '0xMETADATA_ID',
-  daoName: 'My DAO',
-  iconUrl: 'https://example.com/icon.png',
-  description: 'A futarchy DAO',
-});
-
-// === Create a DAO with Init Actions (Advanced) ===
-
-const now = Date.now();
-const oneYear = 365 * 24 * 60 * 60 * 1000;
-
-const txWithActions = sdk.factory.createDAOWithInitSpecs(
-  {
-    assetType: '0xPKG::coin::MYCOIN',
-    stableType: '0x2::sui::SUI',
-    treasuryCap: '0xCAP_ID',
-    coinMetadata: '0xMETADATA_ID',
-    daoName: 'My DAO',
-    // ... other config
-  },
-  [
-    // Configure DAO metadata
-    ConfigActions.updateMetadata({
-      daoName: "My DAO",
-      description: "DAO with team vesting",
-    }),
-
-    // Create team vesting stream
-    VaultActions.createStream({
-      vaultName: "team_vesting",
-      beneficiary: "0xBENEFICIARY",
-      totalAmount: 1_000_000n,
-      startTime: now,
-      endTime: now + oneYear,
-      cliffTime: now + (90 * 24 * 60 * 60 * 1000), // 3-month cliff
-      maxPerWithdrawal: 50_000n,
-      minIntervalMs: 86400000, // 1 day
-      maxBeneficiaries: 1,
-    }),
-  ]
-);
-
-// Sign and execute
-// const result = await sdk.client.signAndExecuteTransaction({
-//   transaction: txWithActions,
-//   signer: keypair,
-// });
-```
-
-## Configuration
-
-### Network Options
-
-The SDK supports multiple network configurations:
-
-```typescript
-// Standard networks
-await FutarchySDK.init({ network: 'mainnet', deployments });
-await FutarchySDK.init({ network: 'testnet', deployments });
-await FutarchySDK.init({ network: 'devnet', deployments });
-await FutarchySDK.init({ network: 'localnet', deployments });
-
-// Custom RPC
-await FutarchySDK.init({
-  network: 'https://custom-rpc.example.com',
-  deployments
-});
-```
-
-### Deployment Configuration
-
-The deployment configuration contains package IDs, shared objects, and admin capabilities for each deployed package. This is auto-generated during deployment:
-
-```typescript
-{
-  "futarchy_factory": {
-    "packageId": "0x...",
-    "upgradeCap": { ... },
-    "adminCaps": [ ... ],
-    "sharedObjects": [
-      {
-        "name": "Factory",
-        "objectId": "0x...",
-        "initialSharedVersion": 4
-      }
-    ]
-  },
-  ...
-}
-```
-
-## API Reference
-
-### FutarchySDK
-
-Main SDK class for protocol interactions.
-
-#### `FutarchySDK.init(config)`
-
-Initialize the SDK with network and deployment configuration.
-
-**Parameters:**
-- `config.network` - Network type or custom RPC URL
-- `config.deployments` - Deployment configuration object
-
-**Returns:** `Promise<FutarchySDK>`
-
-#### Instance Properties
-
-- `client: SuiClient` - Underlying Sui client instance
-- `network: NetworkConfig` - Network configuration
-- `deployments: DeploymentManager` - Deployment data manager
-- `factory: FactoryOperations` - DAO creation operations
-- `query: QueryHelper` - Query helpers for on-chain data
-
-#### Instance Methods
-
-- `getPackageId(packageName: string)` - Get package ID by name
-- `getAllPackageIds()` - Get all package IDs as a map
-- `refresh()` - Refresh cached data (future use)
-
-### DeploymentManager
-
-Manages deployment data and provides convenient access methods.
-
-#### Methods
-
-- `getPackage(name)` - Get full deployment info for a package
-- `getPackageId(name)` - Get package ID
-- `getFactory()` - Get Factory shared object
-- `getPackageRegistry()` - Get PackageRegistry shared object
-- `getAllSharedObjects()` - Get all shared objects across packages
-- `getAllAdminCaps()` - Get all admin capabilities
-
-### FactoryOperations
-
-Handles DAO creation operations.
-
-#### Methods
-
-##### `createDAO(config: DAOConfig): Transaction`
-
-Create a new DAO with full configuration control.
-
-**Parameters:**
-- `config.assetType` - Full type path for DAO token
-- `config.stableType` - Full type path for stable coin
-- `config.treasuryCap` - Object ID of TreasuryCap
-- `config.coinMetadata` - Object ID of CoinMetadata
-- `config.daoName` - DAO name (ASCII string)
-- `config.iconUrl` - Icon URL (ASCII string)
-- `config.description` - Description (UTF-8 string)
-- `config.minAssetAmount` - Minimum asset amount for markets
-- `config.minStableAmount` - Minimum stable amount
-- `config.reviewPeriodMs` - Review period in milliseconds
-- `config.tradingPeriodMs` - Trading period in milliseconds
-- `config.twapStartDelay` - TWAP start delay
-- `config.twapStepMax` - TWAP window cap
-- `config.twapInitialObservation` - Initial TWAP observation
-- `config.twapThreshold` - TWAP threshold (signed)
-- `config.ammTotalFeeBps` - AMM fee in basis points
-- `config.maxOutcomes` - Maximum outcomes per proposal
-- `config.paymentAmount` - Creation fee in MIST
-
-**Returns:** Transaction object ready to sign
-
-##### `createDAOWithDefaults(config): Transaction`
-
-Create a DAO with sensible defaults. Only requires essential parameters.
-
-### QueryHelper
-
-Query utilities for reading on-chain data.
-
-#### Methods
-
-- `getObject(objectId)` - Get object with full content
-- `getObjects(objectIds[])` - Get multiple objects
-- `getOwnedObjects(address, filter?)` - Get objects owned by address
-- `getDynamicFields(parentObjectId)` - Get dynamic fields
-- `queryEvents(filter)` - Query events by filter
-- `extractField(object, fieldPath)` - Extract field from object
-- `getAllDAOs(factoryPackageId)` - Get all DAOs from events
-- `getDAOsCreatedByAddress(factoryPackageId, creator)` - Get DAOs by creator
-- `getDAO(accountId)` - Get DAO object
-- `getProposal(proposalId)` - Get proposal object
-- `getMarket(marketId)` - Get market object
-- `getBalance(address, coinType)` - Get token balance
-- `getAllBalances(address)` - Get all balances
-
-### TransactionUtils
-
-Utility functions for transaction building.
-
-#### Methods
-
-- `suiToMist(sui: number)` - Convert SUI to MIST
-- `mistToSui(mist: bigint)` - Convert MIST to SUI
-- `buildTarget(packageId, module, function)` - Build function target
-- `buildType(packageId, module, type)` - Build type parameter
-
-### Action Builders 🆕
-
-Type-safe builders for creating initialization actions. All action builders return `InitActionSpec` objects that can be passed to `factory.createDAOWithInitSpecs()`.
-
-#### ConfigActions
-
-Configure DAO settings during initialization.
-
-**Methods:**
-
-- `updateMetadata({ daoName?, iconUrl?, description? })` - Update DAO metadata
-- `updateMetadataTable([{ key, value }, ...])` - Add custom metadata key-value pairs
-- `setProposalsEnabled(enabled: boolean)` - Enable/disable proposals
-- `updateTradingParams({ minAssetAmount?, minStableAmount?, ammTotalFeeBps? })` - Update trading parameters
-- `updateProposalParams({ reviewPeriodMs?, tradingPeriodMs?, maxOutcomes? })` - Update proposal parameters
-- `updateTwapParams({ twapStartDelay?, twapStepMax?, twapInitialObservation?, twapThreshold? })` - Update TWAP settings
-- `setAssetAvailability(vaultName: string, available: boolean)` - Control asset withdrawals
-- `setStableAvailability(vaultName: string, available: boolean)` - Control stable withdrawals
-- `setAssetLimitPerWithdrawal(vaultName: string, limit: bigint)` - Set withdrawal limits
-
-#### VaultActions
-
-Manage payment streams and vesting schedules.
-
-**Methods:**
-
-- `createStream({ vaultName, beneficiary, totalAmount, startTime, endTime, cliffTime?, maxPerWithdrawal?, minIntervalMs?, maxBeneficiaries? })` - Create a payment stream with linear vesting
-- `createMultipleStreams([streamConfig, ...])` - Create multiple streams at once
-
-**Stream Features:**
-- Linear vesting between start and end time
-- Optional cliff period (funds locked until cliff time)
-- Rate limiting (max per withdrawal, min interval)
-- Multiple beneficiaries support (1-100)
-
-**Example:**
-```typescript
-VaultActions.createStream({
-  vaultName: "team_vesting",
-  beneficiary: "0x...",
-  totalAmount: 1_000_000n,
-  startTime: Date.now(),
-  endTime: Date.now() + (365 * 24 * 60 * 60 * 1000), // 1 year
-  cliffTime: Date.now() + (90 * 24 * 60 * 60 * 1000), // 3-month cliff
-  maxPerWithdrawal: 50_000n, // Max 50k per withdrawal
-  minIntervalMs: 86400000, // Min 1 day between withdrawals
-  maxBeneficiaries: 1,
-})
-```
-
-#### LiquidityActions
-
-Create and manage liquidity pools.
-
-**Methods:**
-
-- `createPool({ poolName, assetAmount, stableAmount, ammTotalFeeBps? })` - Create a new liquidity pool
-- `addLiquidity({ poolName, assetAmount, stableAmount })` - Add liquidity to existing pool
-- `removeLiquidity({ poolName, lpTokenAmount })` - Remove liquidity
-- `withdrawLpToken({ poolName, amount, recipient })` - Withdraw LP tokens
-- `updatePoolParams({ poolName, ammTotalFeeBps })` - Update pool fee parameters
-
-#### GovernanceActions
-
-Configure governance and voting parameters.
-
-**Methods:**
-
-- `setMinVotingPower(amount: bigint)` - Set minimum voting power required
-- `setQuorum(amount: bigint)` - Set quorum threshold
-- `updateVotingPeriod(periodMs: number)` - Set voting period duration
-- `setDelegationEnabled(enabled: boolean)` - Enable/disable vote delegation
-- `updateProposalDeposit(amount: bigint)` - Set proposal deposit requirement
-
-### Markets Core Modules 🆕
-
-Complete TypeScript SDK for futarchy_markets_core package with 226 public functions across 10 modules.
-
-#### Proposal
-
-Core proposal lifecycle management (92 functions).
-
-**Key Methods:**
-- `newPremarket(tx, config)` - Create a new proposal in PREMARKET state
-- `createEscrowForMarket(tx, config)` - Initialize conditional token escrow
-- `registerOutcomeCapsWithEscrow(tx, config)` - Register TreasuryCaps for outcome tokens
-- `createConditionalAmmPools(tx, config)` - Create AMM pools for each outcome
-- `getTwapsForProposal(tx, config)` - Fetch TWAP prices for all outcomes
-- `finalizeProposal(tx, config)` - Determine winner and finalize proposal
-- `getIntentSpecForOutcome(tx, config)` - Get executable actions for winning outcome
-- `setSponsorship(tx, config)` - Reduce TWAP threshold via sponsorship
-
-**Lifecycle:** PREMARKET → REVIEW → LIVE → FINALIZED
-
-#### UnifiedSpotPool
-
-Unified AMM pool with bucket-based LP management (52 functions).
-
-**Key Methods:**
-- `new(tx, config)` - Create new pool with TWAP oracle and escrow tracking
-- `addLiquidity(tx, config)` - Add liquidity (routes to LIVE or PENDING bucket)
-- `markLpForWithdrawal(tx, config)` - Mark LP for withdrawal (LIVE → TRANSITIONING)
-- `swapStableForAsset(tx, config)` - Swap using constant product formula
-- `swapAssetForStable(tx, config)` - Swap in reverse direction
-- `getTwapWithConditional(tx, config)` - Get TWAP from conditional or spot markets
-
-**Buckets:** LIVE, TRANSITIONING, WITHDRAW_ONLY, PENDING
-
-#### Fee
-
-Protocol fee management and withdrawal (30 functions).
-
-**Key Methods:**
-- `depositDaoCreationPayment(tx, config)` - Collect SUI for DAO creation
-- `depositStableFees(tx, config)` - Collect AMM trading fees
-- `updateCoinCreationFee(tx, config)` - Update fees (6-month delay + 10x cap)
-- `applyPendingCoinFees(tx, config)` - Activate pending fee changes
-- `withdrawFeesSui(tx, config)` - Withdraw collected SUI fees
-- `withdrawFeesStable(tx, config)` - Withdraw collected stable fees
-
-#### ArbitrageMath
-
-N-outcome arbitrage optimization (13 functions).
-
-**Key Methods:**
-- `computeOptimalArbitrageForNOutcomes(tx, config)` - Ternary search for optimal arb
-- `computeSpotDeltaForBuyB(tx, config)` - Calculate spot impact for B amount
-- `computeProfitForBuyB(tx, config)` - Calculate profit for given B parameter
-
-**Features:** B-parameterization (eliminates square roots), smart bounding (95%+ gas reduction)
-
-#### ArbitrageCore
-
-Low-level arbitrage primitives (10 functions).
-
-**Key Methods:**
-- `validateProfitable(tx, config)` - Validate minimum profit before execution
-- `depositAssetForQuantumMint(tx, config)` - Mint complete set of conditional tokens
-- `findMinValue(tx, config)` - Determine complete set size from balances
-- `burnAndWithdrawConditionalAsset(tx, config)` - Convert conditional → spot tokens
-
-#### ConditionalCoinUtils
-
-Validation and metadata for conditional tokens (9 functions).
-
-**Key Methods:**
-- `validateConditionalCoinForMarket(tx, config)` - Validate coin belongs to market
-- `getConditionalCoinMetadata(tx, config)` - Get metadata for conditional token
-- `formatConditionalCoinName(tx, config)` - Generate name: `c_<outcome_index>_<SYMBOL>`
-
-#### QuantumLPManager
-
-Simplified quantum LP management (8 functions).
-
-**Key Methods:**
-- `autoQuantumSplitOnProposalStart(tx, config)` - Auto-split spot LP to conditional AMMs
-- `autoRedeemOnProposalEnd(tx, config)` - Recombine winning conditional LP to spot
-- `withdrawWithLockCheck(tx, config)` - Auto-lock if withdrawal violates min liquidity
-
-**Quantum Liquidity:** LP splits to ALL outcomes simultaneously, automatically recombines after resolution
-
-#### SwapCore
-
-Core swap primitives with hot potato pattern (8 functions).
-
-**Key Methods:**
-- `beginSwapSession(tx, config)` - Create SwapSession hot potato
-- `finalizeSwapSession(tx, config)` - Consume hot potato and complete swap
-- `swapBalanceAssetToStable(tx, config)` - Swap for ANY outcome count
-- `swapBalanceStableToAsset(tx, config)` - Reverse swap for ANY outcome count
-
-**Hot Potato:** Ensures proper session lifecycle management within single transaction
-
-#### Arbitrage
-
-Unified arbitrage execution (3 functions).
-
-**Key Methods:**
-- `executeOptimalSpotArbitrage(tx, config)` - Execute optimal arb with auto-merge support
-- `executeTargetedArbitrage(tx, config)` - Execute with specific target amount
-- `estimateArbitragePotential(tx, config)` - Calculate potential profit
-
-**Features:** Works for ANY outcome count, DCA bot support via dust accumulation
-
-#### LiquidityInitialize
-
-Initialize AMM liquidity using TreasuryCap (1 function).
-
-**Key Methods:**
-- `createOutcomeMarkets(tx, config)` - Create all outcome markets with initial liquidity
-
-**Requirements:** TreasuryCaps must be registered with escrow before calling
-
-### Futarchy Core Modules 🆕
-
-Complete TypeScript SDK for futarchy_core package with 229 public functions across 7 modules.
-
-#### FutarchyConfig
-
-Main futarchy configuration with DAO state management (108 functions).
-
-**Key Methods:**
-- `new(tx, config)` - Create FutarchyConfig with asset/stable types
-- `newDaoState(tx, config)` - Create DaoState
-- `newEarlyResolveConfig(tx, config)` - Configure early resolution
-- `setVerificationLevel(tx, config)` - Set DAO verification level
-- `setDaoScore(tx, config)` - Update DAO score
-- `incrementActiveProposals(tx, config)` - Track active proposals
-- `assertNotTerminated(tx, config)` - Validate DAO is operational
-- `newWithPackageRegistry(tx, config)` - Create Account with FutarchyConfig
-
-**Features:** Complete DAO state machine, early resolve support, verification system, launchpad integration
-
-#### DaoConfig
-
-Centralized DAO configuration with validation (82 functions).
-
-**Key Methods:**
-- `newDaoConfig(tx, config)` - Create complete DAO configuration
-- `newTradingParams(tx, config)` - Configure trading parameters
-- `newTwapConfig(tx, config)` - Configure TWAP oracle
-- `newGovernanceConfig(tx, config)` - Configure governance rules
-- `newMetadataConfig(tx, config)` - Configure DAO metadata
-- `validateConfigUpdate(tx, config)` - Validate configuration changes
-- `defaultTradingParams(tx, config)` - Get sensible defaults
-
-**Configuration Domains:** Trading, TWAP, Governance, Metadata, Conditional Coins, Quotas, Sponsorship
-
-#### ProposalQuotaRegistry
-
-Recurring proposal quotas with sponsorship support (20 functions).
-
-**Key Methods:**
-- `new(tx, config)` - Create quota registry for DAO
-- `setQuotas(tx, config)` - Set quotas for multiple users (batch)
-- `checkQuotaAvailable(tx, config)` - Check quota availability (read-only)
-- `useQuota(tx, config)` - Use quota slot after proposal succeeds
-- `refundQuota(tx, config)` - Refund quota when proposal evicted
-- `setSponsorQuotas(tx, config)` - Set sponsorship quotas
-- `useSponsorQuota(tx, config)` - Use sponsorship slot
-- `getQuotaStatus(tx, config)` - Get quota info with remaining count
-
-**Features:** Period alignment (no drift), batch operations, sponsorship support, reduced fees
-
-#### ResourceRequests
-
-Hot potato pattern for type-safe resource requests (12 functions).
-
-**Key Methods:**
-- `newRequest(tx, config)` - Create ResourceRequest<T> hot potato
-- `addContext(tx, config)` - Add context data to request
-- `getContext(tx, config)` - Read context data
-- `fulfill(tx, config)` - Consume request and return receipt
-- `extractAction(tx, config)` - Extract action from request
-
-**Pattern:** Request → Add Context → Fulfill → Receipt ensures type-safe resource provision
-
-#### ExecutableResources
-
-Resource bag management for intent execution (4 functions).
-
-**Key Methods:**
-- `provideCoin(tx, config)` - Provision coin into executable's bag
-- `takeCoin(tx, config)` - Take coin from bag during execution
-- `hasCoin(tx, config)` - Check if coin resource exists
-- `destroyResources(tx, config)` - Destroy bag (must be empty)
-
-**Pattern:** Attach Bag → Actions take resources → Bag must be empty when complete
-
-#### Version
-
-Protocol version tracking (2 functions).
-
-**Key Methods:**
-- `current(tx, config)` - Get current version witness
-- `get(tx, config)` - Get version number
-
-#### ActionValidation
-
-Type validation for action specs (1 function).
-
-**Key Methods:**
-- `assertActionType(tx, config)` - Validate action spec matches expected type
-
-**Purpose:** Runtime type safety for action specifications in intents
-
-## Examples
-
-See the `scripts/` directory for complete usage examples:
-
-**Basic Usage:**
-- `execute-tx.ts` - Helper utilities for transaction execution
-- `query-data.ts` - Querying DAOs, events, and balances
-
-**DAO Creation:**
-- `create-dao-with-init-actions.ts` - Create DAO with config actions
-- `create-dao-with-stream.ts` - Create DAO with team vesting stream
-- `create-dao-with-stream-sui.ts` - Demonstration of stream init actions
-
-**Documentation:**
-- `STREAM_IMPLEMENTATION.md` - Full implementation guide for stream init actions
-- `STREAM_INIT_ACTIONS_VERIFIED.md` - Verification report with examples
-- `CROSS_PACKAGE_ACTIONS_IMPLEMENTATION.md` - Cross-package orchestration guide
-
-## Development
 
 ```bash
 # Install dependencies
 npm install
 
-# Build the SDK
-npm run build
-
-# Type check
-npm run type-check
-
-# Development mode (watch)
-npm run dev
-
-# Clean build artifacts
-npm run clean
+# Run E2E tests on localnet (the primary way to test)
+cd ../  # go to project root
+./sdk/localnet.sh --fresh --e2e  # Full clean slate + all tests
 ```
 
-## Build Output
+---
 
-The SDK is built to support both ESM and CommonJS:
+## Localnet Testing (Primary E2E Entry Point)
+
+**`localnet.sh`** is the core E2E testing orchestrator. Located at `sdk/localnet.sh`, it manages the entire local development environment.
+
+### Usage
+
+```bash
+./localnet.sh              # Start everything (localnet, db, indexer)
+./localnet.sh --deploy     # Also deploy packages
+./localnet.sh --e2e        # Deploy and run all E2E tests
+./localnet.sh --tests-only # Run E2E tests only (assumes already deployed)
+./localnet.sh --test NAME  # Run a single test by name
+./localnet.sh --stop       # Stop all processes
+./localnet.sh --clean      # Stop and clean logs/pids
+./localnet.sh --fresh      # HARD RESET: nuke ~/.sui, db, deployments - total fresh start
+./localnet.sh --status     # Show status of all processes
+```
+
+### What It Does
+
+1. **Starts Sui Localnet** - Full node with faucet, indexer, and GraphQL
+2. **Sets Up Database** - SQLite via Prisma for the gRPC indexer
+3. **Deploys Packages** - All Move packages to localnet
+4. **Runs Indexer** - gRPC streaming indexer that populates the database
+5. **Runs E2E Tests** - Each test gets a fresh DAO setup
+
+### E2E Test Flow (Per Test)
 
 ```
-dist/
-├── esm/           # ES modules (.js + .d.ts)
-└── cjs/           # CommonJS (.js)
+1. create-test-coins        # Fresh TASSET/TSTABLE/LP coins
+2. launchpad-e2e            # Create DAO via launchpad
+3. deploy-conditional-coins # Deploy conditional coins for proposal trading
+4. run test                 # Run the actual test script
 ```
 
-## Recent Updates
+### Available Tests
 
-### Type Safety & Code Quality (Phase 7)
+| Test Name | Description | Outcomes |
+|-----------|-------------|----------|
+| `proposal-with-swaps` | Full proposal lifecycle with trading | 2 |
+| `reject-wins` | Proposal where reject outcome wins | 2 |
+| `memo-action` | Proposal with memo action execution | 2 |
+| `sponsorship` | Proposal sponsorship flow | 2 |
+| `multi-outcome` | Multi-outcome proposal (3+ outcomes) | 3 |
 
-Major engineering improvements for production readiness:
+### Data Flow Architecture
 
-**Type-Safe Sui Object Access:**
+```
+┌──────────────┐     gRPC     ┌───────────────┐    Prisma    ┌───────────┐
+│ Sui Localnet │ ─────────────▶│ grpc-indexer │ ─────────────▶│ SQLite DB │
+│  (port 9000) │              │  (port 9090)  │              │           │
+└──────────────┘              └───────────────┘              └───────────┘
+       ▲                             │
+       │ Sui RPC                     │ HTTP API
+       │                             ▼
+┌──────────────┐              ┌───────────────┐
+│  E2E Tests   │◀─────────────│  /proposals/  │
+│  (SDK)       │              │  /launchpads/ │
+└──────────────┘              │  /daos/       │
+                              └───────────────┘
+```
+
+**Important:** Tests never touch Prisma directly. They either:
+- Hit Sui RPC directly for blockchain operations
+- Call the indexer's HTTP endpoints (which query Prisma internally)
+
+### Logs
+
+```bash
+tail -f /tmp/govex-logs/sui-localnet.log  # Sui node logs
+tail -f /tmp/govex-logs/indexer-v2.log    # Indexer logs
+cat /tmp/govex-logs/tests/<test-name>.log # Individual test logs
+```
+
+---
+
+## Table of Contents
+
+1. [Directory Structure](#1-directory-structure)
+2. [Entry Points & Initialization](#2-entry-points--initialization)
+3. [Core Abstractions](#3-core-abstractions)
+4. [Service Layer](#4-service-layer)
+5. [Workflow Patterns](#5-workflow-patterns)
+6. [Transaction Building](#6-transaction-building)
+7. [Type System](#7-type-system)
+8. [Action System](#8-action-system)
+9. [Configuration & Deployment](#9-configuration--deployment)
+10. [Script/Usage Patterns](#10-scriptusage-patterns)
+11. [Key Concepts](#11-key-concepts)
+
+---
+
+## 1. Directory Structure
+
+```
+sdk/src/
+├── FutarchySDK.ts                  # Main SDK entry point
+├── index.ts                         # Public exports
+├── config/                          # Network & deployment configuration
+│   ├── network.ts                   # Network setup (mainnet, testnet, devnet, localnet)
+│   ├── deployment.ts                # DeploymentManager for package & shared object IDs
+│   └── index.ts
+├── types/                           # Core type definitions
+│   ├── deployment.ts                # Deployment config types
+│   ├── sui-types.ts                 # Sui object types (DAOFields, ProposalFields, etc.)
+│   ├── init-actions.ts              # Action initialization types
+│   └── services/                    # Service-specific types
+│       ├── packages.ts              # Packages & SharedObjects interfaces
+│       ├── results.ts               # Transaction result types
+│       └── swap.ts                  # Swap-related types
+├── workflows/                       # High-level orchestration (atomic operations)
+│   ├── launchpad-workflow.ts        # LaunchpadWorkflow (create, contribute, complete)
+│   ├── proposal-workflow.ts         # ProposalWorkflow (create, trade, finalize)
+│   ├── intent-executor.ts           # IntentExecutor (executes staged actions)
+│   ├── action-converter.ts          # Backend action → SDK format conversion
+│   ├── auto-executor.ts             # Fetches from backend API, builds PTB
+│   └── types/                       # Workflow type definitions
+│       ├── common.ts                # WorkflowTransaction, ObjectIdOrRef
+│       ├── proposal.ts              # Proposal workflow configs
+│       ├── launchpad.ts             # Launchpad workflow configs
+│       ├── intent.ts                # Intent execution configs
+│       └── actions/                 # Action configuration types (60+ action types)
+│           ├── index.ts             # ActionConfig union type
+│           ├── account.ts           # Stream, vault, currency, transfer actions
+│           ├── futarchy.ts          # DAO config, liquidity, dissolution actions
+│           ├── governance.ts        # Governance & fee actions
+│           └── oracle.ts            # Oracle grant actions
+├── services/                        # Service classes for protocol interactions
+│   ├── dao/                         # DAO operations
+│   │   ├── index.ts                 # DAOService, DAOInfoHelper
+│   │   ├── vault.ts                 # VaultService (deposits, streams)
+│   │   └── oracle.ts                # OracleService (price-based grants)
+│   ├── launchpad/                   # Launchpad operations
+│   │   └── index.ts                 # LaunchpadService
+│   ├── proposal/                    # Proposal operations
+│   │   ├── index.ts                 # ProposalService
+│   │   ├── sponsorship.ts           # SponsorshipService
+│   │   ├── trade.ts                 # TradeService (swaps on outcomes)
+│   │   ├── twap.ts                  # TwapService (time-weighted average price)
+│   │   └── escrow.ts                # EscrowService
+│   ├── market/                      # Market operations
+│   │   ├── index.ts                 # MarketService (swaps, pools)
+│   │   └── pool.ts                  # PoolService (liquidity)
+│   ├── admin/                       # Admin operations
+│   │   └── index.ts                 # AdminService, FactoryAdminService
+│   ├── intents/                     # Intent operations
+│   │   └── index.ts                 # IntentService
+│   └── utils/                       # Utility services
+│       ├── index.ts                 # TransactionUtils, BaseTransactionBuilder
+│       ├── queries.ts               # QueryHelper (object queries)
+│       └── currency.ts              # CurrencyUtils (coin metadata, formatting)
+├── protocol/                        # Move module wrappers (low-level)
+│   ├── account/                     # Account protocol bindings
+│   ├── futarchy/                    # Futarchy core bindings
+│   └── markets/                     # Markets core bindings
+├── ptb/                             # PTB (Programmable Transaction Block) helpers
+│   └── transaction-composer.ts      # TransactionComposer & TransactionBuilder
+└── utils/                           # Shared utilities
+    ├── hex.ts                       # Hex encoding
+    ├── bcs.ts                       # BCS serialization
+    └── validation.ts                # Input validation
+```
+
+---
+
+## 2. Entry Points & Initialization
+
+### FutarchySDK Class
+
+**Location:** `src/FutarchySDK.ts`
+
+The main entry point for all SDK operations.
+
 ```typescript
-import { extractFields, DAOFields, isMoveObject } from '@govex/futarchy-sdk';
+import { FutarchySDK } from '@govex/futarchy-sdk';
 
-// Safe field extraction with generics
-const fields = extractFields<DAOFields>(obj);
-if (!fields) throw new Error('Could not extract fields');
-
-const daoName = fields.name;
-const poolId = fields.config?.fields?.spot_pool_id;
-```
-
-**Zero `as any` Casts:**
-- Eliminated all 43 unsafe type casts
-- Added proper interfaces for all Sui object types
-- Helper functions: `extractFields<T>()`, `isMoveObject()`, `txResultAt()`
-
-**Modular Action Registry:**
-```typescript
-// Action handlers are now independent and testable
-import { registerAction, executeAction } from './action-registry';
-
-registerAction('create_stream', (ctx, action) => {
-  // Handler logic here
+const sdk = new FutarchySDK({
+  network: 'devnet',  // 'mainnet' | 'testnet' | 'devnet' | 'localnet' | RPC URL
+  deployments?: DeploymentConfig  // Optional custom deployments
 });
 ```
 
-**Human-Readable Error Messages:**
-```typescript
-import { translateMoveError, isSlippageError } from '@govex/futarchy-sdk';
+### Key Properties
 
-try {
-  await signAndExecute(tx);
-} catch (e) {
-  const error = translateMoveError(e);
-  // "Slippage tolerance exceeded (unified_spot_pool error code 3)"
-  if (isSlippageError(error)) {
-    console.log('Try a smaller trade amount');
-  }
+| Property | Type | Description |
+|----------|------|-------------|
+| `sdk.client` | `SuiClient` | Sui RPC client |
+| `sdk.network` | `NetworkConfig` | Network configuration |
+| `sdk.deployments` | `DeploymentManager` | Package & object managers |
+| `sdk.packages` | `Packages` | All package IDs |
+| `sdk.sharedObjects` | `SharedObjects` | Shared object references |
+
+### Main Services
+
+```typescript
+sdk.dao                 // DAOService: DAO, vault, oracle operations
+sdk.launchpad          // LaunchpadService: Token launch operations
+sdk.proposal           // ProposalService: Governance proposals
+sdk.market             // MarketService: AMM & trading
+sdk.admin              // AdminService: Protocol admin
+sdk.intents            // IntentService: Intent operations
+
+// Utilities
+sdk.utils.transactionBuilder  // BaseTransactionBuilder
+sdk.utils.queryHelper         // QueryHelper
+sdk.utils.currency            // CurrencyUtils
+
+// Low-level workflows
+sdk.workflows.launchpad  // LaunchpadWorkflow
+sdk.workflows.proposal   // ProposalWorkflow
+```
+
+### Top-level Methods
+
+```typescript
+await sdk.getRaises()           // Get all launchpad raises
+await sdk.getDaos()             // Get all DAOs
+await sdk.getProposals()        // Get all proposals
+sdk.getPackageId(name)          // Get package ID by name
+sdk.getAllPackageIds()          // Get all package IDs as Record
+sdk.createAutoExecutor(url)     // Create AutoExecutor for backend API calls
+```
+
+---
+
+## 3. Core Abstractions
+
+### ServiceParams Pattern
+
+All services follow a common constructor pattern:
+
+```typescript
+interface ServiceParams {
+  client: SuiClient;
+  packages: Packages;
+  sharedObjects: SharedObjects;
+}
+
+class AnyService {
+  constructor(params: ServiceParams) { /* ... */ }
 }
 ```
 
-### Cross-Package Action Orchestration (Phase 3)
-
-The SDK now supports **InitActionSpec pattern** for composing actions from multiple packages during DAO initialization:
-
-**What Changed:**
-- ✅ Added `InitActionSpec` interface (TypeName + BCS data)
-- ✅ Added 4 action builder classes: ConfigActions, LiquidityActions, GovernanceActions, VaultActions
-- ✅ Added BCS serialization helpers matching Move struct layouts
-- ✅ Updated Factory with `createDAOWithInitSpecs()` method
-- ✅ Created Move contracts: `vault_actions.move` and `vault_intents.move` in futarchy_actions package
-
-**Move Framework Changes:**
-- ❌ NO changes needed to move-framework (account_actions package)
-- ✅ `vault::create_stream()` already exists and works perfectly
-- ✅ Only added **integration layer** in futarchy_actions to connect streams with InitActionSpecs
-
-**Architecture:**
-```
-SDK Action Builders → InitActionSpec (TypeName + BCS)
-         ↓
-Factory stages as Intents on Account
-         ↓
-Frontend reads staged specs → Constructs PTB
-         ↓
-PTB calls vault_actions::execute_create_stream_init()
-         ↓
-Internally calls account_actions::vault::create_stream()
-         ↓
-Stream created atomically with DAO setup
-```
-
-### Stream Init Actions
-
-Create payment streams during DAO initialization:
+### Packages Interface
 
 ```typescript
-VaultActions.createStream({
-  vaultName: "team_vesting",
-  beneficiary: "0x...",
-  totalAmount: 1_000_000n,
-  startTime: Date.now(),
-  endTime: Date.now() + (365 * 24 * 60 * 60 * 1000),
-  cliffTime: Date.now() + (90 * 24 * 60 * 60 * 1000),
-  maxPerWithdrawal: 50_000n,
-  minIntervalMs: 86400000,
-  maxBeneficiaries: 1,
-})
+interface Packages {
+  accountProtocol: string;           // Account protocol package
+  accountActions: string;            // Account actions package
+  futarchyCore: string;              // Futarchy core package
+  futarchyTypes: string;             // Futarchy types package
+  futarchyFactory: string;           // Factory (launchpad) package
+  futarchyActions: string;           // Futarchy actions package
+  futarchyGovernance: string;        // Governance package
+  futarchyGovernanceActions: string; // Governance actions package
+  futarchyOracleActions: string;     // Oracle actions package
+  futarchyMarketsCore: string;       // Markets core package
+  futarchyMarketsPrimitives: string; // Markets primitives package
+  futarchyMarketsOperations: string; // Markets operations package
+  oneShotUtils?: string;             // Optional one-shot utility package
+}
 ```
 
-**Use Cases:**
-- Team vesting schedules
-- Advisor compensation
-- Grant distributions
-- Time-based token unlocking
+### SharedObjects Interface
 
-**Status:** ✅ Verified working - see `STREAM_INIT_ACTIONS_VERIFIED.md`
+```typescript
+interface SharedObjects {
+  factory: SharedObjectRef;         // Factory shared object
+  packageRegistry: SharedObjectRef; // Package registry shared object
+  feeManager: SharedObjectRef;      // Fee manager shared object
+}
 
-## License
+interface SharedObjectRef {
+  id: string;
+  version: number;
+}
+```
 
-MIT
+### Transaction Result Types
 
-## Contributing
+```typescript
+interface DAOCreationResult {
+  digest: string;
+  daoId: string;
+  packageRegistryId: string;
+  response: SuiTransactionBlockResponse;
+}
 
-Contributions are welcome! Please open an issue or PR.
+interface ProposalCreationResult {
+  digest: string;
+  proposalId: string;
+  escrowId: string;
+  response: SuiTransactionBlockResponse;
+}
 
-## Support
+interface RaiseCreationResult {
+  digest: string;
+  raiseId: string;
+  daoId: string;
+  response: SuiTransactionBlockResponse;
+}
+```
 
-For issues and questions:
-- GitHub Issues: [govex repository]
-- Documentation: [link to docs]
-- Discord: [discord invite]
+---
+
+## 4. Service Layer
+
+### DAOService
+
+**Location:** `src/services/dao/index.ts`
+
+**Sub-services:**
+- `sdk.dao.vault: VaultService` - Deposits, streams, balances
+- `sdk.dao.oracle: OracleService` - Price-based grants
+
+**Methods:**
+```typescript
+// Queries
+async getInfo(daoId: string): Promise<DAOFields>
+async getConfig(daoId: string): Promise<DAOFields>
+async getAll(factoryPackageId: string): Promise<RaiseCompletedEvent[]>
+async getByCreator(factoryPackageId: string, creator: string): Promise<RaiseCompletedEvent[]>
+async getProposals(daoId: string): Promise<ProposalCreatedEvent[]>
+
+// Managed objects
+async addManagedObject(config: { daoId, name, objectId }): Promise<Transaction>
+async removeManagedObject(config: { daoId, name, objectType }): Promise<Transaction>
+async hasManagedObject(daoId: string, name: string): Promise<boolean>
+```
+
+### LaunchpadService
+
+**Location:** `src/services/launchpad/index.ts`
+
+**Methods:**
+```typescript
+// Lifecycle
+createRaise(config: CreateRaiseConfig, successActions?, failureActions?): WorkflowTransaction
+contribute(config: ContributeConfig): WorkflowTransaction
+completeRaise(config: CompleteRaiseConfig): WorkflowTransaction
+
+// Queries
+async getRaise(raiseId: string): Promise<RaiseFields>
+async getAll(): Promise<RaiseCreatedEvent[]>
+async getByCreator(creator: string): Promise<RaiseCreatedEvent[]>
+async isSettled(raiseId: string): Promise<boolean>
+async getState(raiseId: string): Promise<number>
+```
+
+### ProposalService
+
+**Location:** `src/services/proposal/index.ts`
+
+**Sub-services:**
+- `sdk.proposal.sponsorship: SponsorshipService`
+- `sdk.proposal.trade: TradeService`
+- `sdk.proposal.twap: TwapService`
+- `sdk.proposal.escrow: EscrowService`
+
+**Methods:**
+```typescript
+// Lifecycle
+createAndInitializeProposal(config): WorkflowTransaction
+addActionsToOutcome(config): WorkflowTransaction
+advanceToTrading(config): WorkflowTransaction
+finalizeProposal(config): WorkflowTransaction
+
+// Queries
+async getProposal(proposalId: string): Promise<ProposalFields>
+async getAll(): Promise<ProposalCreatedEvent[]>
+async getProposalMarketState(proposalId: string): Promise<MarketState>
+```
+
+### MarketService
+
+**Location:** `src/services/market/index.ts`
+
+**Sub-service:** `sdk.market.pool: PoolService`
+
+**Methods:**
+```typescript
+// Swaps
+swapAssetForStable(config: SwapConfig): Transaction
+swapStableForAsset(config: SwapConfig): Transaction
+swapSuiForAsset(config): Transaction
+
+// Queries
+async getQuote(config): Promise<bigint>
+```
+
+### AdminService
+
+**Location:** `src/services/admin/index.ts`
+
+**Sub-services:**
+- `sdk.admin.factory: FactoryAdminService`
+- `sdk.admin.verification: VerificationService`
+- `sdk.admin.packageRegistry: PackageRegistryService`
+- `sdk.admin.feeManager: FeeManagerService`
+
+---
+
+## 5. Workflow Patterns
+
+### Launchpad Workflow
+
+**Location:** `src/workflows/launchpad-workflow.ts`
+
+**Atomic Creation Flow (Single PTB):**
+```
+1. create_raise() → UnsharedRaise (hot potato)
+2. stage_success_intent(UnsharedRaise, actions)
+3. stage_failure_intent(UnsharedRaise, actions)
+4. lock_and_share_raise(UnsharedRaise) → Shared Raise
+```
+
+**Complete Raise Flow (Single PTB):**
+```
+1. settle_raise(raiseId) → returns raised amount
+2. create_dao(...) → returns DAO account
+3. execute_init_actions(...) → executes success/failure actions
+4. share_dao(...) → shares DAO account
+```
+
+### Proposal Workflow
+
+**Location:** `src/workflows/proposal-workflow.ts`
+
+**Atomic Proposal Creation (Single PTB):**
+```
+1. begin_proposal() → [Proposal, TokenEscrow] (both unshared)
+2. add_outcome_coins_N() → registers conditional coins
+3. finalize_proposal() → creates AMM pools, shares both objects
+```
+
+**State Transitions:**
+```
+PREMARKET → REVIEW → TRADING → AWAITING_EXECUTION → FINALIZED
+```
+
+### Intent Execution Pattern
+
+**Location:** `src/workflows/intent-executor.ts`
+
+**3-Layer Execution:**
+```
+1. begin_execution() → creates Executable (hot potato)
+2. N × do_init_*() → execute each action in order
+3. finalize_execution() → confirms completion
+```
+
+---
+
+## 6. Transaction Building
+
+### WorkflowTransaction Type
+
+All workflow methods return:
+
+```typescript
+interface WorkflowTransaction {
+  transaction: Transaction;
+  description: string;
+}
+```
+
+### Object Reference Types
+
+To avoid RPC lookups (critical for localnet):
+
+```typescript
+type ObjectIdOrRef = string | OwnedObjectRef | TxSharedObjectRef;
+
+interface OwnedObjectRef {
+  objectId: string;
+  version: string | number;
+  digest: string;
+}
+
+interface TxSharedObjectRef {
+  objectId: string;
+  initialSharedVersion: string | number;
+  mutable: boolean;
+}
+```
+
+### TransactionComposer
+
+**Location:** `src/ptb/transaction-composer.ts`
+
+```typescript
+const composer = new TransactionComposer(packages, sharedObjects);
+
+const tx = composer
+  .new()
+  .addStream({ vaultName, beneficiary, ... })
+  .addPoolWithMint({ vaultName, assetAmount, ... })
+  .stageToLaunchpad(raiseId, creatorCapId, assetType, stableType, 'success')
+  .build();
+```
+
+---
+
+## 7. Type System
+
+### Sui Object Types
+
+**Location:** `types/sui-types.ts`
+
+```typescript
+interface DAOFields {
+  id: { id: string };
+  name: string;
+  metadata?: { fields?: { name?, description?, icon_url? } };
+  config?: { fields: { spot_pool_id?, trading_period_ms?, ... } };
+}
+
+interface ProposalFields {
+  id: { id: string };
+  title: string;
+  state: number;  // ProposalState enum
+  market_state?: unknown;
+  dao_id?: string;
+  winning_outcome?: number;
+}
+
+interface RaiseFields {
+  id: { id: string };
+  state: number;  // 0=PENDING, 1=ACTIVE, 2=SUCCESS, 3=FAILED
+  total_raised?: string;
+  creator?: string;
+  tokens_for_sale?: string;
+}
+```
+
+### Event Types
+
+```typescript
+interface RaiseCreatedEvent {
+  raise_id: string;
+  creator: string;
+  tokens_for_sale: string;
+  min_raise_amount: string;
+}
+
+interface ProposalCreatedEvent {
+  proposal_id: string;
+  dao_id: string;
+  proposer: string;
+  title: string;
+}
+```
+
+---
+
+## 8. Action System
+
+### Action Categories
+
+**Location:** `workflows/types/actions/`
+
+**Account Actions:** (`account.ts`)
+- `create_stream` - Create vesting stream
+- `cancel_stream` - Cancel existing stream
+- `deposit` - Deposit to vault
+- `spend` - Withdraw from vault
+- `approve_coin_type` - Approve coin for deposits
+- `mint` - Mint tokens
+- `burn` - Burn tokens
+- `transfer` - Transfer object
+- `transfer_coin` - Transfer coin
+- 20+ more...
+
+**Futarchy Actions:** (`futarchy.ts`)
+- `update_trading_params` - DAO trading parameters
+- `update_twap_config` - TWAP configuration
+- `update_dao_metadata` - DAO metadata
+- `create_pool_with_mint` - Create AMM pool
+- `add_liquidity` - Add liquidity
+- `swap` - Swap tokens
+
+**Governance Actions:** (`governance.ts`)
+- `add_package` - Add package to whitelist
+- `update_dao_creation_fee` - Update DAO fee
+- `update_proposal_fee` - Update proposal fee
+- `pause_account_creation` - Pause account creation
+
+**Oracle Actions:** (`oracle.ts`)
+- `create_oracle_grant` - Create price grant
+- `cancel_oracle_grant` - Cancel grant
+
+### Action Configuration Example
+
+```typescript
+type ActionConfig = CreateStreamActionConfig | MintActionConfig | ... // Union of 60+ types
+
+interface CreateStreamActionConfig {
+  type: 'create_stream';
+  coinType?: string;
+  vaultName: string;
+  beneficiary: string;
+  amountPerIteration: bigint;
+  startTime: number;
+  iterationsTotal: bigint;
+  iterationPeriodMs: bigint;
+  maxPerWithdrawal: bigint;
+}
+
+// Usage:
+const actions: ActionConfig[] = [
+  {
+    type: 'create_stream',
+    vaultName: 'treasury',
+    beneficiary: '0x...',
+    amountPerIteration: 100_000_000n,
+    startTime: Date.now() + 300_000,
+    iterationsTotal: 12n,
+    iterationPeriodMs: 2_592_000_000n,
+    maxPerWithdrawal: 100_000_000n,
+  },
+  {
+    type: 'mint',
+    coinType: '0x...::coin::COIN',
+    amount: 1_000_000_000n,
+    resourceName: 'team_tokens'
+  }
+];
+```
+
+---
+
+## 9. Configuration & Deployment
+
+### Network Configuration
+
+**Location:** `config/network.ts`
+
+```typescript
+type NetworkType = 'mainnet' | 'testnet' | 'devnet' | 'localnet';
+
+const config = createNetworkConfig('devnet');
+// or custom RPC
+const config = createNetworkConfig('http://localhost:9000');
+```
+
+### Deployment Management
+
+**Location:** `config/deployment.ts`
+
+```typescript
+class DeploymentManager {
+  static fromConfig(config: DeploymentConfig): DeploymentManager
+  getPackage(packageName: string): PackageDeployment | undefined
+  getPackageId(packageName: string): string | undefined
+  getFactory(): SharedObject | undefined
+  getPackageRegistry(): SharedObject | undefined
+  getFeeAdminCap(): AdminCap | undefined
+  getAllPackageIds(): Record<string, string>
+}
+```
+
+### Bundled Deployments
+
+Currently bundled:
+- ✅ devnet
+- ❌ testnet (not yet)
+- ❌ mainnet (not yet)
+- ⚠️ localnet (dynamic via environment)
+
+---
+
+## 10. Script/Usage Patterns
+
+### Complete Launchpad Example
+
+```typescript
+import { FutarchySDK } from '@govex/futarchy-sdk';
+
+// 1. Initialize SDK
+const sdk = new FutarchySDK({ network: 'devnet' });
+const launchpadWorkflow = sdk.workflows.launchpad;
+
+// 2. Create raise with actions (ATOMIC - single PTB)
+const createTx = launchpadWorkflow.createRaise(
+  {
+    assetType: '0x...::coin::ASSET',
+    stableType: '0x...::coin::STABLE',
+    treasuryCap: treasuryCapId,
+    coinMetadata: metadataId,
+    tokensForSale: 1_000_000_000n,
+    minRaiseAmount: 100_000_000n,
+    allowedCaps: [1_000_000_000n, 10_000_000_000n],
+    allowEarlyCompletion: true,
+    description: 'My token launch',
+    launchpadFee: 100n,
+  },
+  // Success actions (executed if raise succeeds)
+  [
+    { type: 'create_pool_with_mint', vaultName: 'treasury', ... },
+    { type: 'create_stream', vaultName: 'treasury', ... },
+  ],
+  // Failure actions (executed if raise fails)
+  []
+);
+
+const result = await executeTransaction(createTx.transaction);
+const raiseId = extractRaiseId(result);
+
+// 3. Contribute to raise
+const contributeTx = launchpadWorkflow.contribute({
+  raiseId,
+  contributorCapId: capId,
+  assetType: '0x...::coin::ASSET',
+  stableType: '0x...::coin::STABLE',
+  amounts: [1_000_000_000n],
+});
+
+// 4. Complete raise (ATOMIC: settle + create DAO + execute actions + share)
+const completeTx = launchpadWorkflow.completeRaise({
+  raiseId,
+  assetType: '0x...::coin::ASSET',
+  stableType: '0x...::coin::STABLE',
+  spotPoolId,
+});
+```
+
+### Complete Proposal Example
+
+```typescript
+// 1. Create and initialize proposal (ATOMIC)
+const createTx = sdk.proposal.createAndInitializeProposal({
+  daoAccountId: daoId,
+  assetType: '0x...::coin::ASSET',
+  stableType: '0x...::coin::STABLE',
+  lpType: '0x...::lp::LP',
+  title: 'Fund Development',
+  introduction: 'Allocate funds for Q1',
+  metadata: JSON.stringify({ category: 'funding' }),
+  outcomeMessages: ['Reject', 'Accept'],
+  outcomeDetails: ['Do nothing', 'Approve funding'],
+  proposer: senderAddress,
+  treasuryAddress: treasuryAddress,
+  usedQuota: false,
+  feeCoins: [feeCoinId],
+  feeAmount: 1_000_000_000n,
+  registryId: registryId,
+  spotPoolId: spotPoolId,
+  senderAddress: senderAddress,
+  baseStableMetadataId: stableMetadataId,
+  // Optional: conditional coin registry
+  conditionalCoinsRegistry: {
+    registryId: registryId,
+    coinSets: [...]
+  },
+  // Optional: actions for outcomes
+  outcomeActions: [
+    {
+      outcomeIndex: 1,  // Accept
+      actions: [
+        {
+          type: 'create_stream',
+          vaultName: 'treasury',
+          beneficiary: teamAddress,
+          amountPerIteration: 10_000_000n,
+          startTime: Date.now() + 300_000,
+          iterationsTotal: 12n,
+          iterationPeriodMs: 2_592_000_000n,
+          maxPerWithdrawal: 10_000_000n,
+        }
+      ],
+    }
+  ],
+});
+
+// 2. Advance to trading
+const advanceTx = sdk.workflows.proposal.advanceToTrading({
+  proposalId: proposalRef,
+  daoAccountId: daoAccountRef,
+  escrowId: escrowRef,
+  spotPoolId: spotPoolRef,
+  assetType, stableType, lpType,
+});
+
+// 3. Perform swaps during trading
+const swapTx = sdk.workflows.proposal.conditionalSwap({
+  proposalId: proposalRef,
+  escrowId: escrowRef,
+  spotPoolId: spotPoolRef,
+  assetType, stableType, lpType,
+  stableCoins: [stableCoinId],
+  amountIn: 1_000_000_000n,
+  minAmountOut: 0n,
+  direction: 'stable_to_asset',
+  outcomeIndex: 1,  // ACCEPT
+  allOutcomeCoins: [...],
+  recipient: senderAddress,
+});
+
+// 4. Finalize proposal
+const finalizeTx = sdk.workflows.proposal.finalizeProposal({
+  proposalId: proposalRef,
+  escrowId: escrowRef,
+  spotPoolId: spotPoolRef,
+  assetType, stableType, lpType,
+});
+
+// 5. Execute winning outcome actions (via AutoExecutor)
+const autoExecutor = sdk.createAutoExecutor('http://localhost:9090');
+const executeTx = await autoExecutor.executeProposal(proposalId, {
+  accountId: daoAccountRef,
+  outcome: winningOutcome,
+  escrowId: escrowRef,
+  spotPoolId: spotPoolRef,
+});
+```
+
+---
+
+## 11. Key Concepts
+
+### Hot Potato Pattern
+
+The SDK uses Move's "hot potato" pattern where objects must be consumed within the same transaction:
+
+```
+create_raise() → UnsharedRaise (must pass to next step)
+    ↓
+stage_success_intent(UnsharedRaise) → UnsharedRaise
+    ↓
+stage_failure_intent(UnsharedRaise) → UnsharedRaise
+    ↓
+lock_and_share_raise(UnsharedRaise) → consumes it, shares Raise
+```
+
+### Atomic Transaction Blocks
+
+Modern operations are atomic (single PTB):
+- **Raise Creation**: create + stage actions + lock
+- **Proposal Creation**: begin + register coins + create AMMs + share
+- **Raise Completion**: settle + create DAO + execute actions + share
+
+### Type Arguments in Move Calls
+
+Generic types must be passed as `typeArguments`:
+
+```typescript
+tx.moveCall({
+  target: `${packageId}::module::function`,
+  typeArguments: [assetType, stableType, lpType],
+  arguments: [/* Move arguments */]
+});
+```
+
+### Object Reference Management
+
+For localnet (or to avoid RPC lookups), pass full object references:
+
+```typescript
+// Instead of just object ID
+const ref: TxSharedObjectRef = {
+  objectId: '0x...',
+  initialSharedVersion: 123,
+  mutable: true,
+};
+
+// Use in workflow
+sdk.workflows.proposal.advanceToTrading({
+  proposalId: ref,  // Pass ref instead of string
+  ...
+});
+```
+
+### Intent Execution System
+
+Staged actions flow:
+```
+Staged Actions → Intent (serialized) → Backend verification → Execution (3-layer PTB)
+```
+
+The 3-layer pattern:
+1. `begin_execution()` → Executable (hot potato)
+2. N × `do_init_*()` → action results
+3. `finalize_execution()` → confirmation
+
+---
+
+## Quick Reference Table
+
+| Component | Purpose | Access |
+|-----------|---------|--------|
+| **FutarchySDK** | Main entry point | `new FutarchySDK({...})` |
+| **DAOService** | DAO operations | `sdk.dao` |
+| **LaunchpadService** | Token launch | `sdk.launchpad` |
+| **ProposalService** | Governance | `sdk.proposal` |
+| **MarketService** | AMM & trading | `sdk.market` |
+| **AdminService** | Admin ops | `sdk.admin` |
+| **LaunchpadWorkflow** | Low-level launch | `sdk.workflows.launchpad` |
+| **ProposalWorkflow** | Low-level proposal | `sdk.workflows.proposal` |
+| **IntentExecutor** | Action execution | `sdk.workflows.intentExecutor` |
+| **QueryHelper** | Object queries | `sdk.utils.queryHelper` |
+| **CurrencyUtils** | Coin operations | `sdk.utils.currency` |
+| **AutoExecutor** | Backend integration | `sdk.createAutoExecutor(url)` |
+
+---
+
+## Data Flow Summary
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            APPLICATION LAYER                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│  FutarchySDK                                                            │
+│    ├─ Services (high-level API)                                         │
+│    │   ├─ dao, launchpad, proposal, market, admin                       │
+│    │   └─ Return: WorkflowTransaction { transaction, description }      │
+│    ├─ Workflows (low-level orchestration)                               │
+│    │   ├─ LaunchpadWorkflow, ProposalWorkflow                           │
+│    │   └─ Build atomic PTBs with hot potato handling                    │
+│    └─ Utils (helpers)                                                   │
+│        └─ queryHelper, currency, transactionBuilder                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                            PROTOCOL LAYER                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│  protocol/                                                              │
+│    ├─ account/ (Account protocol bindings)                              │
+│    ├─ futarchy/ (Futarchy core bindings)                                │
+│    └─ markets/ (Markets core bindings)                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                            INFRASTRUCTURE                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│  config/                                                                │
+│    ├─ NetworkConfig (RPC URL, client)                                   │
+│    └─ DeploymentManager (package IDs, shared objects)                   │
+│  types/                                                                 │
+│    ├─ sui-types.ts (DAOFields, ProposalFields, etc.)                    │
+│    └─ services/ (Packages, SharedObjects, Results)                      │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            SUI BLOCKCHAIN                                │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │   Factory   │  │  Registry   │  │ FeeManager  │  │    DAOs     │     │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘     │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                      │
+│  │   Raises    │  │  Proposals  │  │    Pools    │                      │
+│  └─────────────┘  └─────────────┘  └─────────────┘                      │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Scripts Directory
+
+The `sdk/scripts/` directory contains all test and utility scripts:
+
+```
+sdk/scripts/
+├── execute-tx.ts              # Transaction execution helpers (initSDK, executeTransaction)
+├── test-utils.ts              # Shared test utilities (sleep, waitForIndexer, loadDaoInfo)
+├── e2e-test-utils.ts          # SDK-dependent test utilities
+
+# Setup Scripts (run by localnet.sh)
+├── protocol-init.ts           # One-time protocol initialization
+├── protocol-setup.ts          # Legacy: init + create coins
+├── create-test-coins.ts       # Create fresh TASSET/TSTABLE/LP coins
+├── deploy-conditional-coins.ts # Deploy conditional coins for proposals
+├── generate-conditional-coins.ts # Generate conditional coin Move code
+
+# E2E Test Scripts
+├── launchpad-e2e.ts           # Create DAO via launchpad (2-outcome)
+├── proposal-e2e-with-swaps.ts # Full proposal lifecycle test
+├── test-reject-wins.ts        # Proposal where reject wins
+├── test-memo-action.ts        # Proposal with memo action
+├── test-sponsorship.ts        # Proposal sponsorship flow
+├── test-multi-outcome.ts      # 3+ outcome proposal test
+
+# Utility Scripts
+├── create-dao-direct.ts       # Create DAO directly (not via launchpad)
+├── register-new-packages.ts   # Register packages in registry
+├── process-deployments.ts     # Process deployment JSON files
+├── validate-deployments.ts    # Validate deployment configuration
+```
+
+### Key Script Patterns
+
+**SDK Initialization (all scripts use this):**
+```typescript
+import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
+
+const sdk = await initSDK();
+const activeAddress = getActiveAddress();
+```
+
+**Loading Test Fixtures:**
+```typescript
+import { loadDaoInfo, loadConditionalCoinsInfo } from "./test-utils";
+
+const daoInfo = loadDaoInfo();  // Reads test-dao-info.json
+const conditionalCoins = loadConditionalCoinsInfo();  // Reads conditional-coins-info.json
+```
+
+**Waiting for Indexer:**
+```typescript
+import { waitForIndexer, waitForTimePeriod } from "./test-utils";
+
+await waitForIndexer(network, { description: "proposal created" });
+await waitForTimePeriod(TEST_CONFIG.TRADING_PERIOD_MS + 2000, { description: "trading period" });
+```
+
+---
+
+## npm Scripts
+
+Available in `sdk/package.json`:
+
+```bash
+# Setup
+npm run protocol-init          # One-time protocol initialization
+npm run create-test-coins      # Create fresh test coins
+npm run deploy-conditional-coins # Deploy conditional coins
+
+# DAO Creation
+npm run launchpad-e2e-two-outcome  # Create DAO via launchpad
+npm run create-dao-direct          # Create DAO directly
+
+# E2E Tests
+npm run test:proposal-with-swaps   # Full proposal test
+npm run test:reject-wins           # Reject outcome wins
+npm run test:memo-action           # Memo action execution
+npm run test:sponsorship           # Sponsorship flow
+npm run test:multi-outcome         # Multi-outcome proposal
+```
+
+---
+
+## File Artifacts
+
+During testing, the following JSON files are created:
+
+| File | Purpose | Created By |
+|------|---------|------------|
+| `test-coins-info.json` | Test coin types and treasury caps | `create-test-coins.ts` |
+| `test-dao-info.json` | DAO account, pool, and type info | `launchpad-e2e.ts` |
+| `conditional-coins-info.json` | Conditional coin registry and types | `deploy-conditional-coins.ts` |
+
+These are read by subsequent test scripts to chain operations together.
+
+---
+
+## Move Packages (On-Chain Smart Contracts)
+
+The Futarchy platform consists of **13 core Move packages** deployed to Sui. These are the on-chain smart contracts that the SDK interacts with.
+
+### Package Dependency Graph
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         FRAMEWORK LAYER                                      │
+│  ┌─────────────────────────────┐  ┌─────────────────────────────┐           │
+│  │     AccountProtocol         │  │      AccountActions         │           │
+│  │  (account, intents, exec)   │──│  (vault, stream, currency)  │           │
+│  └─────────────────────────────┘  └─────────────────────────────┘           │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           CORE LAYER                                         │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────────────┐            │
+│  │ futarchy_types│  │futarchy_core  │  │futarchy_one_shot_utils│            │
+│  │   (USDC)      │  │  (DaoConfig)  │  │  (constants, math)    │            │
+│  └───────────────┘  └───────────────┘  └───────────────────────┘            │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          MARKETS LAYER                                       │
+│  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐        │
+│  │futarchy_markets_  │  │futarchy_markets_  │  │futarchy_markets_  │        │
+│  │   primitives      │──│      core         │──│   operations      │        │
+│  │ (AMM, TWAP, escrow│  │(proposal, spot)   │  │ (swap, liquidity) │        │
+│  └───────────────────┘  └───────────────────┘  └───────────────────┘        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         APPLICATION LAYER                                    │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌──────────────┐  │
+│  │futarchy_      │  │futarchy_      │  │futarchy_      │  │futarchy_     │  │
+│  │  actions      │  │  factory      │  │ governance_   │  │ governance   │  │
+│  │(config, liq)  │  │(DAO, launch)  │  │   actions     │  │(lifecycle)   │  │
+│  └───────────────┘  └───────────────┘  └───────────────┘  └──────────────┘  │
+│                                                                              │
+│  ┌───────────────────────────┐                                              │
+│  │  futarchy_oracle_actions  │                                              │
+│  │   (price-based grants)    │                                              │
+│  └───────────────────────────┘                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Package Directory
+
+| Package | Location | Purpose |
+|---------|----------|---------|
+| **AccountProtocol** | `move-framework/packages/protocol` | Core account, intents, executables |
+| **AccountActions** | `move-framework/packages/actions` | Vault, stream, currency, transfer |
+| **futarchy_types** | `futarchy_types/` | USDC witness type |
+| **futarchy_one_shot_utils** | `futarchy_one_shot_utils/` | Constants, math, utilities |
+| **futarchy_core** | `futarchy_core/` | DaoConfig, FutarchyConfig |
+| **futarchy_markets_primitives** | `futarchy_markets_primitives/` | AMM, TWAP oracle, escrow |
+| **futarchy_markets_core** | `futarchy_markets_core/` | Proposal, spot pool, fees |
+| **futarchy_markets_operations** | `futarchy_markets_operations/` | User swap/liquidity operations |
+| **futarchy_oracle_actions** | `futarchy_oracle_actions/` | Price-based token grants |
+| **futarchy_actions** | `futarchy_actions/` | Config, liquidity, dissolution |
+| **futarchy_factory** | `futarchy_factory/` | DAO creation, launchpad |
+| **futarchy_governance_actions** | `futarchy_governance_actions/` | Intent execution, registry |
+| **futarchy_governance** | `futarchy_governance/` | Proposal lifecycle, PTB execution |
+
+---
+
+### Framework Layer (2 packages)
+
+#### AccountProtocol
+**Location:** `packages/move-framework/packages/protocol`
+
+Core framework for on-chain accounts with intent-based governance.
+
+**Key Modules:**
+- `account.move` - Main Account struct (shared multisig with dynamic field config)
+- `intents.move` - Intent struct managing action stacks
+- `executable.move` - Hot potato for enforcing action execution
+- `package_registry.move` - Package dependency tracking
+
+**Key Types:**
+```move
+struct Account has key { id: UID, ... }
+struct Intent { actions: vector<ActionSpec>, ... }
+struct Executable { /* hot potato - must be consumed */ }
+```
+
+#### AccountActions
+**Location:** `packages/move-framework/packages/actions`
+
+Standard actions for accounts (vault, streaming, currency).
+
+**Key Modules:**
+- `lib/vault.move` - Vault/escrow management
+- `lib/stream_utils.move` - Payment streaming
+- `lib/currency.move` - Coin management
+- `lib/transfer.move` - Object transfers
+- `lib/memo.move` - Transaction memos
+
+---
+
+### Core Layer (3 packages)
+
+#### futarchy_types
+**Location:** `packages/futarchy_types`
+
+Type definitions (mainly USDC witness).
+
+#### futarchy_one_shot_utils
+**Location:** `packages/futarchy_one_shot_utils`
+
+Protocol constants and math utilities.
+
+**Key Constants:**
+```move
+const PROTOCOL_FEE_BPS: u64 = 50;           // 0.5%
+const MAX_AMM_FEE_BPS: u64 = 500;           // 5%
+const PRICE_PRECISION_SCALE: u128 = 1_000_000_000_000;  // 1e12
+const TWAP_PRICE_CAP_WINDOW: u64 = 60_000;  // 60 seconds
+const LAUNCHPAD_DURATION_MS: u64 = 30_000;  // 30s (test), 4 days (prod)
+const MAX_OUTCOMES: u64 = 50;
+const MAX_ACTIONS: u64 = 50;
+```
+
+#### futarchy_core
+**Location:** `packages/futarchy_core`
+
+DAO configuration and state management.
+
+**Key Types:**
+```move
+struct DaoConfig {
+    trading_params: TradingParams,
+    twap_config: TwapConfig,
+    governance_config: GovernanceConfig,
+    metadata_config: MetadataConfig,
+    conditional_coin_config: ConditionalCoinConfig,
+    quota_config: QuotaConfig,
+    sponsorship_config: SponsorshipConfig,
+}
+
+struct FutarchyConfig {
+    dao_config: DaoConfig,
+    asset_type: TypeName,
+    stable_type: TypeName,
+    dao_state: DaoState,  // active/terminated
+    ...
+}
+```
+
+---
+
+### Markets Layer (3 packages)
+
+#### futarchy_markets_primitives
+**Location:** `packages/futarchy_markets_primitives`
+
+Low-level market primitives.
+
+**Key Modules:**
+- `conditional/conditional_amm.move` - XY=K AMM for conditional tokens
+- `conditional/market_state.move` - Proposal state machine
+- `conditional/coin_escrow.move` - Token escrow
+- `PCW_TWAP_oracle.move` - Manipulation-resistant TWAP
+
+**State Machine:**
+```
+PREMARKET → REVIEW → TRADING → AWAITING_EXECUTION → FINALIZED
+```
+
+**AMM:**
+```move
+struct LiquidityPool {
+    market_id: ID,
+    outcome_idx: u64,
+    asset_reserve: u64,
+    stable_reserve: u64,
+    lp_supply: Supply<LP>,
+    oracle: Oracle,
+    ...
+}
+```
+
+#### futarchy_markets_core
+**Location:** `packages/futarchy_markets_core`
+
+Core proposal and market logic.
+
+**Key Types:**
+```move
+struct Proposal<AssetType, StableType> has key {
+    id: UID,
+    state: u8,
+    outcome_count: u64,
+    outcome_messages: vector<String>,
+    intent_specs: VecMap<u64, IntentSpec>,  // actions per outcome
+    amm_pools: vector<LiquidityPool>,
+    ...
+}
+
+struct UnifiedSpotPool<AssetType, StableType, LpType> has key {
+    id: UID,
+    asset_reserve: Balance<AssetType>,
+    stable_reserve: Balance<StableType>,
+    lp_supply: Supply<LpType>,
+    ...
+}
+```
+
+#### futarchy_markets_operations
+**Location:** `packages/futarchy_markets_operations`
+
+User-facing swap and liquidity operations.
+
+**Entry Functions:**
+```move
+public entry fun swap_asset_for_stable<A, S, L>(...)
+public entry fun swap_stable_for_asset<A, S, L>(...)
+public entry fun add_liquidity<A, S, L>(...)
+public entry fun remove_liquidity<A, S, L>(...)
+```
+
+---
+
+### Application Layer (5 packages)
+
+#### futarchy_actions
+**Location:** `packages/futarchy_actions`
+
+Governance actions for configuration and liquidity.
+
+**Action Types:**
+- `SetProposalsEnabled` - Enable/disable proposals
+- `TradingParamsUpdate` - Update trading parameters
+- `TwapConfigUpdate` - Update TWAP settings
+- `MetadataUpdate` - Update DAO metadata
+- `TerminateDao` - Irreversible DAO termination
+
+#### futarchy_factory
+**Location:** `packages/futarchy_factory`
+
+Factory for creating DAOs and launchpad.
+
+**Key Modules:**
+- `factory.move` - DAO creation, admin capabilities
+- `launchpad.move` - Token sale mechanism
+- `dao_init_executor.move` - Init action execution
+- `protective_bid.move` - Anti-dilution bids
+
+**Launchpad Flow:**
+```
+Create Raise → Contribute → Settle → Create DAO → Execute Init Actions
+```
+
+#### futarchy_oracle_actions
+**Location:** `packages/futarchy_oracle_actions`
+
+Price-based token grants.
+
+**Key Functions:**
+```move
+public fun create_oracle_grant<A, S>(...)  // Create price-conditional grant
+public fun execute_grant<A, S>(...)        // Execute when price met
+public fun cancel_grant<A, S>(...)         // Cancel grant
+```
+
+#### futarchy_governance_actions
+**Location:** `packages/futarchy_governance_actions`
+
+Intent execution and registry management.
+
+**Key Functions:**
+```move
+public fun execute_proposal_intent(...)     // Execute winning outcome
+public fun cleanup_expired_intents(...)     // Remove stale intents
+public fun update_package_registry(...)     // Manage packages
+```
+
+#### futarchy_governance
+**Location:** `packages/futarchy_governance`
+
+Complete proposal lifecycle orchestration.
+
+**Key Modules:**
+- `proposal/proposal_lifecycle.move` - Full proposal flow
+- `execution/ptb_executor.move` - PTB action execution
+
+**Lifecycle Events:**
+```move
+ProposalActivated { proposal_id }
+ProposalMarketFinalized { proposal_id, winning_outcome }
+ProposalIntentExecuted { proposal_id, intent_key }
+ExecutionTimedOut { proposal_id }
+```
+
+**Execution Window:** 30 minutes after TWAP measurement
+
+---
+
+### Key Architectural Patterns
+
+#### 1. Hot Potato Pattern
+Executables must be created and destroyed in same transaction:
+```move
+let exec = begin_execution(...);  // Create hot potato
+do_action_1(exec, ...);
+do_action_2(exec, ...);
+finalize_execution(exec);          // Must consume
+```
+
+#### 2. Intent-Based Execution
+Actions staged in intents, executed with governance approval:
+```
+Stage Actions → Create Intent → Approve → Execute via PTB
+```
+
+#### 3. XY=K Constant Product AMM
+Conditional markets use Uniswap V2 style pools:
+```
+asset_reserve * stable_reserve = K (constant)
+```
+
+#### 4. PCW TWAP Oracle
+Percent-Capped Windowed TWAP prevents manipulation:
+- 1-minute windows
+- Cap grows with TWAP (percentage-based)
+- O(1) gas complexity
+
+#### 5. State Machine
+Proposals flow through defined states:
+```
+PREMARKET (0) → REVIEW (1) → TRADING (2) → AWAITING_EXECUTION (3) → FINALIZED (4)
+```
+
+#### 6. Witness Types
+Authorization via witness patterns:
+```move
+struct ConfigWitness has drop {}
+struct GovernanceWitness has drop {}
+```
+
+---
+
+### Deployment
+
+Packages are deployed via `packages/deploy_verified.sh`:
+
+```bash
+./deploy_verified.sh --network localnet   # Deploy to localnet
+./deploy_verified.sh --network devnet     # Deploy to devnet
+```
+
+Deployment artifacts are written to:
+- `packages/deployments/<package>-<network>.json`
+- `packages/deployments-processed/_all-packages-<network>.json`

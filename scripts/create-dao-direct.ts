@@ -34,8 +34,13 @@ import { Transaction } from "@mysten/sui/transactions";
 import { bcs } from "@mysten/sui/bcs";
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import { TransactionUtils } from "../src/services/transaction";
 import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
+
+// ESM compatibility for __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ============================================================================
 // Types
@@ -102,7 +107,6 @@ async function main() {
   const futarchyFactoryPackageId = sdk.packages.futarchyFactory;
   const futarchyActionsPackageId = sdk.packages.futarchyActions;
   const futarchyCorePackageId = sdk.packages.futarchyCore;
-  const futarchyTypesPackageId = sdk.packages.futarchyTypes;
 
   // Get shared objects
   const factoryObj = sdk.sharedObjects.factory;
@@ -290,6 +294,8 @@ async function main() {
       createDaoTx.pure.u64(poolStableAmount), // stable_amount
       createDaoTx.pure.u64(poolFeeBps), // fee_bps
       createDaoTx.pure.u64(0), // launch_fee_duration_ms
+      createDaoTx.pure.id(testCoins.lp.treasuryCap), // lp_treasury_cap_id
+      createDaoTx.pure.id(testCoins.lp.metadata), // lp_metadata_id
     ],
   });
 
@@ -307,16 +313,6 @@ async function main() {
   });
 
   // === Action 9: Update TWAP Config ===
-  const signedThreshold = createDaoTx.moveCall({
-    target: `${futarchyTypesPackageId}::signed::from_u128`,
-    arguments: [createDaoTx.pure.u128(0n)],
-  });
-  const thresholdOption = createDaoTx.moveCall({
-    target: "0x1::option::some",
-    typeArguments: [`${futarchyTypesPackageId}::signed::SignedU128`],
-    arguments: [signedThreshold],
-  });
-
   createDaoTx.moveCall({
     target: `${futarchyActionsPackageId}::futarchy_config_init_actions::add_update_twap_config_spec`,
     arguments: [
@@ -324,7 +320,7 @@ async function main() {
       createDaoTx.pure.option("u64", 0), // start_delay
       createDaoTx.pure.option("u64", null), // step_max
       createDaoTx.pure.option("u128", null), // initial_observation
-      thresholdOption, // threshold
+      createDaoTx.pure.option("u128", 0n), // threshold (0% = always pass)
     ],
   });
 

@@ -9,6 +9,7 @@
  */
 
 import * as path from "path";
+import { fileURLToPath } from "url";
 import {
   validateAllDeployments,
   validateAllPackagesJson,
@@ -18,6 +19,10 @@ import {
   logError,
   logInfo,
 } from "./test-utils";
+
+// ESM compatibility for __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const DEPLOYMENTS_DIR = path.resolve(__dirname, "../../packages/deployments");
 const PROCESSED_DIR = path.resolve(__dirname, "../../packages/deployments-processed");

@@ -372,11 +372,11 @@ async function main() {
   console.log("\n🏛️  Creating DAO...");
 
   // Step 4a: Create the DAO (separate from action execution due to PTB restrictions)
+  // Actions are executed separately via AutoExecutor which fetches from backend
   const completeTx = launchpadWorkflow.completeRaise({
     raiseId: raiseRef,
     assetType: testCoins.asset.type,
     stableType: testCoins.stable.type,
-    actionTypes: [], // Actions executed separately
   });
 
   const completeResult = await executeTransaction(sdk, completeTx.transaction, {
@@ -441,40 +441,21 @@ async function main() {
     await new Promise((r) => setTimeout(r, 2000));
   }
 
-  // Step 4b: Execute init actions (separate transaction)
-  console.log("\n⚡ Executing init actions...");
+  // Step 4b: Execute init actions via AutoExecutor (fetches from backend API)
+  console.log("\n⚡ Executing init actions via AutoExecutor...");
 
-  const successActionTypes = [
-    { type: 'create_stream' as const, coinType: testCoins.stable.type },
-    { type: 'mint' as const, coinType: testCoins.asset.type },
-    { type: 'transfer_coin' as const, coinType: testCoins.asset.type },
-    { type: 'mint' as const, coinType: testCoins.asset.type },
-    { type: 'deposit' as const, coinType: testCoins.asset.type },
-    { type: 'create_stream' as const, coinType: testCoins.asset.type },
-    {
-      type: 'create_pool_with_mint' as const,
-      assetType: testCoins.asset.type,
-      stableType: testCoins.stable.type,
-      lpType: testCoins.lp.type,
-      lpTreasuryCapId: testCoins.lp.treasuryCap,
-      lpMetadataId: testCoins.lp.metadata,
-    },
-    { type: 'update_trading_params' as const },
-    { type: 'update_twap_config' as const },
-    { type: 'update_governance' as const },
-  ];
+  // Wait for indexer to index the raise (needs staged actions in DB)
+  console.log("   Waiting for indexer to index raise (5s)...");
+  await new Promise((r) => setTimeout(r, 5000));
 
-  const failureActionTypes = [
-    { type: 'return_treasury_cap' as const, coinType: testCoins.asset.type },
-    { type: 'return_metadata' as const, coinType: testCoins.asset.type },
-  ];
+  // Create AutoExecutor using SDK helper
+  const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:9090";
+  const autoExecutor = sdk.createAutoExecutor(backendUrl);
 
-  const actionTypes = shouldRaiseSucceed ? successActionTypes : failureActionTypes;
-
-  const initActionsTx = launchpadWorkflow.executeInitActions({
-    raiseId: raiseRef,
+  // Execute init actions - AutoExecutor fetches action specs from backend
+  const initActionsTx = await autoExecutor.executeLaunchpad(raiseId, {
     accountId,
-    actionTypes,
+    actionType: raiseActuallySucceeded ? 'success' : 'failure',
   });
 
   const initActionsResult = await executeTransaction(sdk, initActionsTx.transaction, {
@@ -499,7 +480,11 @@ async function main() {
     }
   }
 
-  console.log(`   Actions executed: ${actionTypes.length}`)
+  // Log action count from AutoExecutor response
+  const actionsExecuted = raiseActuallySucceeded
+    ? initActionsTx.raise.success_actions?.length || 0
+    : initActionsTx.raise.failure_actions?.length || 0;
+  console.log(`   Actions executed: ${actionsExecuted}`);
 
   // Step 5: Claim tokens (only for successful raises)
   if (raiseActuallySucceeded) {
@@ -550,11 +535,11 @@ async function main() {
 
   if (shouldRaiseSucceed) {
     console.log(`   ✅ Raise SUCCEEDED`);
-    console.log(`   ✅ Completed raise + executed ${actionTypes.length} actions (ATOMIC)`);
+    console.log(`   ✅ Completed raise + executed ${actionsExecuted} actions (via AutoExecutor)`);
     console.log(`   ✅ Claimed tokens`);
   } else {
     console.log(`   ✅ Raise FAILED (as expected)`);
-    console.log(`   ✅ Completed raise + returned caps (ATOMIC)`);
+    console.log(`   ✅ Completed raise + executed ${actionsExecuted} failure actions (via AutoExecutor)`);
   }
 
   console.log(`\n🔗 View raise: https://suiscan.xyz/devnet/object/${raiseId}`);

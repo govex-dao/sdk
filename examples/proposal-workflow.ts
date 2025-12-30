@@ -26,20 +26,21 @@ const CONFIG = {
   BASE_STABLE_METADATA_ID: "0xYOUR_STABLE_METADATA",
 
   // Conditional coins registry (from deploy-conditional-coins)
+  // Module names follow pattern: conditional_N where N = (outcome_index * 2) for asset, (outcome_index * 2 + 1) for stable
   REGISTRY_ID: "0xYOUR_REGISTRY_ID",
   CONDITIONAL_COINS: [
     {
       outcomeIndex: 0,
-      assetCoinType: "0x...::cond0_asset::COND0_ASSET",
+      assetCoinType: "0x...::conditional_0::CONDITIONAL_0",
       assetCapId: "0x...",
-      stableCoinType: "0x...::cond0_stable::COND0_STABLE",
+      stableCoinType: "0x...::conditional_1::CONDITIONAL_1",
       stableCapId: "0x...",
     },
     {
       outcomeIndex: 1,
-      assetCoinType: "0x...::cond1_asset::COND1_ASSET",
+      assetCoinType: "0x...::conditional_2::CONDITIONAL_2",
       assetCapId: "0x...",
-      stableCoinType: "0x...::cond1_stable::COND1_STABLE",
+      stableCoinType: "0x...::conditional_3::CONDITIONAL_3",
       stableCapId: "0x...",
     },
   ],

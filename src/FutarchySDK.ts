@@ -53,6 +53,7 @@ import {
 
 import { LaunchpadWorkflow, LaunchpadWorkflowPackages, LaunchpadWorkflowSharedObjects } from './workflows/launchpad-workflow';
 import { ProposalWorkflow, ProposalWorkflowPackages, ProposalWorkflowSharedObjects } from './workflows/proposal-workflow';
+import { AutoExecutor } from './workflows/auto-executor';
 
 export class FutarchySDK {
   // ========================================================================
@@ -291,6 +292,40 @@ export class FutarchySDK {
 
   getAllPackageIds(): Record<string, string> {
     return this.deployments.getAllPackageIds();
+  }
+
+  /**
+   * Create an AutoExecutor instance for executing actions via backend API
+   *
+   * @example
+   * ```typescript
+   * const autoExecutor = sdk.createAutoExecutor('http://localhost:9090');
+   *
+   * // Execute launchpad init actions
+   * const { transaction } = await autoExecutor.executeLaunchpad(raiseId, { accountId });
+   *
+   * // Execute proposal winning outcome actions
+   * const { transaction } = await autoExecutor.executeProposal(proposalId, { accountId });
+   * ```
+   *
+   * @param backendUrl - The backend API base URL (e.g., 'http://localhost:9090')
+   * @returns AutoExecutor instance configured with SDK packages
+   */
+  createAutoExecutor(backendUrl: string): AutoExecutor {
+    return new AutoExecutor(this.client, {
+      backendUrl,
+      packages: {
+        accountProtocolPackageId: this.packages.accountProtocol,
+        accountActionsPackageId: this.packages.accountActions,
+        futarchyCorePackageId: this.packages.futarchyCore,
+        futarchyActionsPackageId: this.packages.futarchyActions,
+        futarchyFactoryPackageId: this.packages.futarchyFactory,
+        futarchyGovernancePackageId: this.packages.futarchyGovernance,
+        futarchyGovernanceActionsPackageId: this.packages.futarchyGovernanceActions,
+        futarchyOracleActionsPackageId: this.packages.futarchyOracleActions,
+        packageRegistryId: this.sharedObjects.packageRegistry.id,
+      },
+    });
   }
 }
 
