@@ -369,10 +369,81 @@ async function main() {
   console.log("STEP 4: COMPLETE RAISE (ATOMIC ACTION EXECUTION)");
   console.log("=".repeat(80));
 
-  console.log("\n🏛️  Creating DAO and executing all actions atomically...");
+  console.log("\n🏛️  Creating DAO...");
 
-  // Determine which actions to execute based on expected outcome
-  // (The contract will select success_specs or failure_specs based on actual raise result)
+  // Step 4a: Create the DAO (separate from action execution due to PTB restrictions)
+  const completeTx = launchpadWorkflow.completeRaise({
+    raiseId: raiseRef,
+    assetType: testCoins.asset.type,
+    stableType: testCoins.stable.type,
+    actionTypes: [], // Actions executed separately
+  });
+
+  const completeResult = await executeTransaction(sdk, completeTx.transaction, {
+    network: "devnet",
+    dryRun: false,
+    showEffects: true,
+    showObjectChanges: true,
+    showEvents: true,
+  });
+
+  // Check which event occurred
+  const raiseSuccessEvent = completeResult.events?.find((e: any) =>
+    e.type.includes("RaiseSuccessful"),
+  );
+  const raiseFailedEvent = completeResult.events?.find((e: any) =>
+    e.type.includes("RaiseFailed"),
+  );
+
+  let accountId: string | undefined;
+  let poolId: string | undefined;
+  let raiseActuallySucceeded = false;
+
+  if (raiseSuccessEvent) {
+    raiseActuallySucceeded = true;
+    console.log("✅ DAO Created (SUCCESS PATH)!");
+    console.log(`   Transaction: ${completeResult.digest}`);
+    accountId = raiseSuccessEvent.parsedJson?.account_id;
+  } else if (raiseFailedEvent) {
+    raiseActuallySucceeded = false;
+    console.log("✅ DAO Created (FAILURE PATH)!");
+    console.log(`   Transaction: ${completeResult.digest}`);
+    const accountObject = completeResult.objectChanges?.find((c: any) =>
+      c.objectType?.includes("::account::Account"),
+    );
+    if (accountObject) {
+      accountId = accountObject.objectId;
+    }
+  } else {
+    throw new Error("Neither RaiseSuccessful nor RaiseFailed event found");
+  }
+
+  if (!accountId) {
+    const accountObject = completeResult.objectChanges?.find((c: any) =>
+      c.objectType?.includes("::account::Account"),
+    );
+    if (accountObject) {
+      accountId = accountObject.objectId;
+    }
+  }
+
+  if (!accountId) {
+    throw new Error("Could not find Account ID");
+  }
+
+  // Update raiseRef for next steps
+  raiseRef = getObjectRefById(completeResult, raiseId, network);
+  console.log(`   Account ID: ${accountId}`);
+
+  // Wait for RPC to see the newly shared account
+  if (isLocalnet(network)) {
+    console.log("\n⏳ Waiting for RPC to index new account (2s)...");
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  // Step 4b: Execute init actions (separate transaction)
+  console.log("\n⚡ Executing init actions...");
+
   const successActionTypes = [
     { type: 'create_stream' as const, coinType: testCoins.stable.type },
     { type: 'mint' as const, coinType: testCoins.asset.type },
@@ -398,17 +469,15 @@ async function main() {
     { type: 'return_metadata' as const, coinType: testCoins.asset.type },
   ];
 
-  // Use the action types that match the expected outcome
   const actionTypes = shouldRaiseSucceed ? successActionTypes : failureActionTypes;
 
-  const completeTx = launchpadWorkflow.completeRaise({
+  const initActionsTx = launchpadWorkflow.executeInitActions({
     raiseId: raiseRef,
-    assetType: testCoins.asset.type,
-    stableType: testCoins.stable.type,
+    accountId,
     actionTypes,
   });
 
-  const completeResult = await executeTransaction(sdk, completeTx.transaction, {
+  const initActionsResult = await executeTransaction(sdk, initActionsTx.transaction, {
     network: "devnet",
     dryRun: false,
     showEffects: true,
@@ -416,64 +485,20 @@ async function main() {
     showEvents: true,
   });
 
-  // Check which event occurred
-  const raiseSuccessEvent = completeResult.events?.find((e: any) =>
-    e.type.includes("RaiseSuccessful"),
-  );
-  const raiseFailedEvent = completeResult.events?.find((e: any) =>
-    e.type.includes("RaiseFailed"),
-  );
+  console.log(`✅ Init actions executed!`);
+  console.log(`   Transaction: ${initActionsResult.digest}`);
 
-  let accountId: string | undefined;
-  let poolId: string | undefined;
-  let raiseActuallySucceeded = false;
-
-  if (raiseSuccessEvent) {
-    raiseActuallySucceeded = true;
-    console.log("✅ DAO Created & Actions Executed (SUCCESS PATH)!");
-    console.log(`   Transaction: ${completeResult.digest}`);
-    accountId = raiseSuccessEvent.parsedJson?.account_id;
-
-    // Find the pool created by create_pool_with_mint action
-    const poolObject = completeResult.objectChanges?.find((c: any) =>
+  // Find pool if success path
+  if (raiseActuallySucceeded) {
+    const poolObject = initActionsResult.objectChanges?.find((c: any) =>
       c.objectType?.includes("::unified_spot_pool::UnifiedSpotPool"),
     );
     if (poolObject) {
       poolId = poolObject.objectId;
       console.log(`   Pool ID: ${poolId}`);
     }
-  } else if (raiseFailedEvent) {
-    raiseActuallySucceeded = false;
-    console.log("✅ DAO Created & Caps Returned (FAILURE PATH)!");
-    console.log(`   Transaction: ${completeResult.digest}`);
-    // For failed raises, look for account in object changes
-    const accountObject = completeResult.objectChanges?.find((c: any) =>
-      c.objectType?.includes("::account::Account"),
-    );
-    if (accountObject) {
-      accountId = accountObject.objectId;
-    }
-  } else {
-    throw new Error("Neither RaiseSuccessful nor RaiseFailed event found");
   }
 
-  if (!accountId) {
-    const accountObject = completeResult.objectChanges?.find((c: any) =>
-      c.objectType?.includes("::account::Account"),
-    );
-    if (accountObject) {
-      accountId = accountObject.objectId;
-    }
-  }
-
-  if (!accountId) {
-    throw new Error("Could not find Account ID");
-  }
-
-  // Update raiseRef for claiming
-  raiseRef = getObjectRefById(completeResult, raiseId, network);
-
-  console.log(`   Account ID: ${accountId}`);
   console.log(`   Actions executed: ${actionTypes.length}`)
 
   // Step 5: Claim tokens (only for successful raises)

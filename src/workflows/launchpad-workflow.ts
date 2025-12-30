@@ -707,29 +707,23 @@ export class LaunchpadWorkflow {
   }
 
   // ============================================================================
-  // STEP 3: COMPLETE RAISE (ATOMIC WITH ACTION EXECUTION)
+  // STEP 3: COMPLETE RAISE (CREATE DAO)
   // ============================================================================
 
   /**
-   * Complete a raise with atomic action execution.
+   * Complete a raise and create the DAO.
    *
-   * This performs everything in a single PTB:
-   * 1. settle_raise
-   * 2. begin_dao_creation (creates intents from staged actions)
-   * 3. Execute all staged actions via begin_execution → do_* → finalize_execution
-   * 4. finalize_and_share_dao
+   * NOTE: Init actions must be executed in a separate transaction via
+   * executeInitActions() after this transaction completes. This is required
+   * because Sui PTBs cannot get &mut Account from UnsharedDao.
    *
-   * If any step fails, the entire transaction rolls back - no broken DAO state.
+   * Returns account ID in RaiseSuccessful or RaiseFailed event.
    */
   completeRaise(config: CompleteRaiseConfig): WorkflowTransaction {
     const tx = new Transaction();
     const clockId = config.clockId || '0x6';
 
-    const {
-      accountActionsPackageId,
-      futarchyCorePackageId,
-      futarchyFactoryPackageId,
-    } = this.packages;
+    const { futarchyFactoryPackageId } = this.packages;
     const { factoryId, packageRegistryId } = this.sharedObjects;
 
     // 1. Settle raise
@@ -739,7 +733,7 @@ export class LaunchpadWorkflow {
       arguments: [txObject(tx, config.raiseId), tx.object(clockId)],
     });
 
-    // 2. Begin DAO creation (creates intents from staged actions)
+    // 2. Begin DAO creation
     const unsharedDao = tx.moveCall({
       target: `${futarchyFactoryPackageId}::launchpad::begin_dao_creation`,
       typeArguments: [config.assetType, config.stableType],
@@ -751,64 +745,7 @@ export class LaunchpadWorkflow {
       ],
     });
 
-    // 3. Get account reference from UnsharedDao
-    const accountRef = tx.moveCall({
-      target: `${futarchyFactoryPackageId}::launchpad::account_mut`,
-      typeArguments: [config.assetType, config.stableType],
-      arguments: [unsharedDao],
-    });
-
-    // 4. Execute staged actions if any
-    if (config.actionTypes && config.actionTypes.length > 0) {
-      // Begin execution - creates Executable hot potato
-      const executable = tx.moveCall({
-        target: `${futarchyFactoryPackageId}::dao_init_executor::begin_execution_for_launchpad`,
-        arguments: [
-          tx.pure.id(this.getObjectId(config.raiseId)),
-          accountRef,
-          tx.object(packageRegistryId),
-          tx.object(clockId),
-        ],
-      });
-
-      // Create witnesses
-      const versionWitness = tx.moveCall({
-        target: `${accountActionsPackageId}::actions_version::current`,
-        arguments: [],
-      });
-
-      const intentWitness = tx.moveCall({
-        target: `${futarchyFactoryPackageId}::dao_init_executor::dao_init_intent_witness`,
-        arguments: [],
-      });
-
-      // Type context for actions
-      const configType = `${futarchyCorePackageId}::futarchy_config::FutarchyConfig`;
-      const outcomeType = `${futarchyFactoryPackageId}::dao_init_outcome::DaoInitOutcome`;
-      const witnessType = `${futarchyFactoryPackageId}::dao_init_executor::DaoInitIntent`;
-
-      // Execute each action in order
-      for (const actionType of config.actionTypes) {
-        this.executeActionOnUnshared(
-          tx,
-          executable,
-          accountRef,
-          versionWitness,
-          intentWitness,
-          config,
-          actionType,
-          { configType, outcomeType, witnessType, clockId }
-        );
-      }
-
-      // Finalize execution
-      tx.moveCall({
-        target: `${futarchyFactoryPackageId}::dao_init_executor::finalize_execution`,
-        arguments: [accountRef, executable, tx.object(clockId)],
-      });
-    }
-
-    // 5. Finalize and share DAO
+    // 3. Finalize and share DAO
     tx.moveCall({
       target: `${futarchyFactoryPackageId}::launchpad::finalize_and_share_dao`,
       typeArguments: [config.assetType, config.stableType],
@@ -822,13 +759,87 @@ export class LaunchpadWorkflow {
 
     return {
       transaction: tx,
-      description: `Complete raise and execute ${config.actionTypes?.length || 0} init action(s)`,
+      description: `Complete raise and create DAO`,
     };
   }
 
+  // ============================================================================
+  // STEP 4: EXECUTE INIT ACTIONS (SEPARATE TRANSACTION)
+  // ============================================================================
+
   /**
-   * Helper to get object ID from ObjectIdOrRef
+   * Execute init actions on the shared account.
+   *
+   * Must be called after completeRaise() in a separate transaction.
    */
+  executeInitActions(config: {
+    raiseId: ObjectIdOrRef;
+    accountId: string;
+    actionTypes: import('./types').LaunchpadActionType[];
+    clockId?: string;
+  }): WorkflowTransaction {
+    const tx = new Transaction();
+    const clockId = config.clockId || '0x6';
+
+    const {
+      accountActionsPackageId,
+      futarchyCorePackageId,
+      futarchyActionsPackageId,
+      futarchyFactoryPackageId,
+    } = this.packages;
+    const { packageRegistryId } = this.sharedObjects;
+
+    // Type context
+    const configType = `${futarchyCorePackageId}::futarchy_config::FutarchyConfig`;
+    const outcomeType = `${futarchyFactoryPackageId}::dao_init_outcome::DaoInitOutcome`;
+    const witnessType = `${futarchyFactoryPackageId}::dao_init_executor::DaoInitIntent`;
+
+    // Begin execution
+    const executable = tx.moveCall({
+      target: `${futarchyFactoryPackageId}::dao_init_executor::begin_execution_for_launchpad`,
+      arguments: [
+        tx.pure.id(this.getObjectId(config.raiseId)),
+        tx.object(config.accountId),
+        tx.object(packageRegistryId),
+        tx.object(clockId),
+      ],
+    });
+
+    const versionWitness = tx.moveCall({
+      target: `${accountActionsPackageId}::actions_version::current`,
+      arguments: [],
+    });
+
+    const intentWitness = tx.moveCall({
+      target: `${futarchyFactoryPackageId}::dao_init_executor::dao_init_intent_witness`,
+      arguments: [],
+    });
+
+    // Execute each action
+    for (const actionType of config.actionTypes) {
+      this.executeAction(tx, executable, config.accountId, versionWitness, intentWitness, actionType, {
+        configType,
+        outcomeType,
+        witnessType,
+        clockId,
+        accountActionsPackageId,
+        futarchyActionsPackageId,
+        packageRegistryId,
+      });
+    }
+
+    // Finalize
+    tx.moveCall({
+      target: `${futarchyFactoryPackageId}::dao_init_executor::finalize_execution`,
+      arguments: [tx.object(config.accountId), executable, tx.object(clockId)],
+    });
+
+    return {
+      transaction: tx,
+      description: `Execute ${config.actionTypes.length} init action(s)`,
+    };
+  }
+
   private getObjectId(input: ObjectIdOrRef): string {
     if (isOwnedObjectRef(input) || isTxSharedObjectRef(input)) {
       return input.objectId;
@@ -836,68 +847,39 @@ export class LaunchpadWorkflow {
     return input;
   }
 
-  /**
-   * Execute a single action on unshared account
-   */
-  private executeActionOnUnshared(
+  private executeAction(
     tx: Transaction,
     executable: ReturnType<Transaction['moveCall']>,
-    accountRef: ReturnType<Transaction['moveCall']>,
+    accountId: string,
     versionWitness: ReturnType<Transaction['moveCall']>,
     intentWitness: ReturnType<Transaction['moveCall']>,
-    _config: CompleteRaiseConfig, // Reserved for future use
     actionType: import('./types').LaunchpadActionType,
-    typeContext: {
+    ctx: {
       configType: string;
       outcomeType: string;
       witnessType: string;
       clockId: string;
+      accountActionsPackageId: string;
+      futarchyActionsPackageId: string;
+      packageRegistryId: string;
     }
   ): void {
-    const {
-      accountActionsPackageId,
-      futarchyActionsPackageId,
-    } = this.packages;
-    const { packageRegistryId } = this.sharedObjects;
-    const { configType, outcomeType, witnessType, clockId } = typeContext;
+    const { configType, outcomeType, witnessType, clockId, accountActionsPackageId, futarchyActionsPackageId, packageRegistryId } = ctx;
 
     switch (actionType.type) {
       case 'create_stream':
         tx.moveCall({
           target: `${accountActionsPackageId}::vault::do_init_create_stream`,
           typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
-          arguments: [
-            executable,
-            accountRef,
-            tx.object(packageRegistryId),
-            tx.object(clockId),
-            versionWitness,
-            intentWitness,
-          ],
+          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), tx.object(clockId), versionWitness, intentWitness],
         });
         break;
 
       case 'create_pool_with_mint':
         tx.moveCall({
           target: `${futarchyActionsPackageId}::liquidity_init_actions::do_init_create_pool_with_mint`,
-          typeArguments: [
-            configType,
-            outcomeType,
-            actionType.assetType,
-            actionType.stableType,
-            actionType.lpType,
-            witnessType,
-          ],
-          arguments: [
-            executable,
-            accountRef,
-            tx.object(packageRegistryId),
-            tx.object(actionType.lpTreasuryCapId),
-            tx.object(actionType.lpMetadataId),
-            tx.object(clockId),
-            versionWitness,
-            intentWitness,
-          ],
+          typeArguments: [configType, outcomeType, actionType.assetType, actionType.stableType, actionType.lpType, witnessType],
+          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), tx.object(actionType.lpTreasuryCapId), tx.object(actionType.lpMetadataId), tx.object(clockId), versionWitness, intentWitness],
         });
         break;
 
@@ -905,14 +887,7 @@ export class LaunchpadWorkflow {
         tx.moveCall({
           target: `${futarchyActionsPackageId}::config_actions::do_update_trading_params`,
           typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            accountRef,
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness, tx.object(clockId)],
         });
         break;
 
@@ -920,14 +895,7 @@ export class LaunchpadWorkflow {
         tx.moveCall({
           target: `${futarchyActionsPackageId}::config_actions::do_update_twap_config`,
           typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            accountRef,
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness, tx.object(clockId)],
         });
         break;
 
@@ -935,14 +903,7 @@ export class LaunchpadWorkflow {
         tx.moveCall({
           target: `${futarchyActionsPackageId}::config_actions::do_update_governance`,
           typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            accountRef,
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness, tx.object(clockId)],
         });
         break;
 
@@ -950,13 +911,7 @@ export class LaunchpadWorkflow {
         tx.moveCall({
           target: `${accountActionsPackageId}::currency::do_init_remove_treasury_cap`,
           typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
-          arguments: [
-            executable,
-            accountRef,
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-          ],
+          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness],
         });
         break;
 
@@ -970,14 +925,7 @@ export class LaunchpadWorkflow {
         tx.moveCall({
           target: `${accountActionsPackageId}::currency::do_init_remove_metadata`,
           typeArguments: [configType, outcomeType, keyType, actionType.coinType, witnessType],
-          arguments: [
-            executable,
-            accountRef,
-            tx.object(packageRegistryId),
-            metadataKey,
-            versionWitness,
-            intentWitness,
-          ],
+          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), metadataKey, versionWitness, intentWitness],
         });
         break;
       }
@@ -986,13 +934,7 @@ export class LaunchpadWorkflow {
         tx.moveCall({
           target: `${accountActionsPackageId}::currency::do_init_mint`,
           typeArguments: [outcomeType, actionType.coinType, witnessType],
-          arguments: [
-            executable,
-            accountRef,
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-          ],
+          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness],
         });
         break;
 
@@ -1008,13 +950,7 @@ export class LaunchpadWorkflow {
         tx.moveCall({
           target: `${accountActionsPackageId}::vault::do_init_deposit`,
           typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
-          arguments: [
-            executable,
-            accountRef,
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-          ],
+          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness],
         });
         break;
 
@@ -1022,13 +958,7 @@ export class LaunchpadWorkflow {
         tx.moveCall({
           target: `${accountActionsPackageId}::vault::do_init_deposit_from_resources`,
           typeArguments: [configType, outcomeType, actionType.coinType, witnessType],
-          arguments: [
-            executable,
-            accountRef,
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-          ],
+          arguments: [executable, tx.object(accountId), tx.object(packageRegistryId), versionWitness, intentWitness],
         });
         break;
 
