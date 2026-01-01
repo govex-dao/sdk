@@ -35,7 +35,7 @@ export interface ParamSource {
   /** Where to get the value: typeArgs index or args index */
   from: { typeArgs: number } | { args: number };
   /** Optional: expected type for validation */
-  type?: 'string' | 'u64' | 'u128' | 'bool' | 'address' | 'id' | 'option_u64';
+  type?: 'string' | 'u8' | 'u64' | 'u128' | 'bool' | 'address' | 'id' | 'option_u8' | 'option_u64';
 }
 
 /**
@@ -572,34 +572,8 @@ export const ACTION_REGISTRY: ActionDefinition[] = [
       argsPattern: 'standard',
     },
   },
-  {
-    sdkId: 'return_metadata',
-    description: 'Return coin metadata',
-    staging: {
-      package: 'accountActions',
-      module: 'currency_init_actions',
-      fn: 'add_return_metadata_spec',
-      params: [
-        // Note: staging function only has CoinType, NOT KeyType
-        // KeyType is derived at execution time based on context (launchpad vs proposal)
-        { name: 'coinType', from: { typeArgs: 0 } },
-        { name: 'recipient', from: { args: 1 }, type: 'address' },
-      ],
-    },
-    execution: {
-      package: 'accountActions',
-      module: 'currency',
-      fn: 'do_return_metadata',
-      typeArgs: [
-        { from: 'context', key: 'configType' },
-        { from: 'context', key: 'outcomeType' },
-        { from: 'action', key: 'coinType' },
-        { from: 'action', key: 'keyType' },
-        { from: 'context', key: 'witnessType' },
-      ],
-      argsPattern: 'standard',
-    },
-  },
+  // NOTE: 'return_metadata' action removed - CoinMetadata no longer stored in Account
+  // Use sui::coin_registry::Currency<T> for metadata access instead
 
   // ==========================================================================
   // account_actions - Access Control (2 actions)
@@ -832,7 +806,7 @@ export const ACTION_REGISTRY: ActionDefinition[] = [
         { name: 'feeBps', from: { args: 4 }, type: 'u64' },
         { name: 'launchFeeDurationMs', from: { args: 5 }, type: 'u64' },
         { name: 'lpTreasuryCapId', from: { args: 6 }, type: 'id' },
-        { name: 'lpMetadataId', from: { args: 7 }, type: 'id' },
+        { name: 'lpCurrencyId', from: { args: 7 }, type: 'id' },
       ],
     },
     execution: {
@@ -846,7 +820,7 @@ export const ACTION_REGISTRY: ActionDefinition[] = [
         { from: 'context', key: 'account' },
         { from: 'context', key: 'registry' },
         { from: 'action', key: 'lpTreasuryCapId' },
-        { from: 'action', key: 'lpMetadataId' },
+        { from: 'action', key: 'lpCurrencyId' },
         { from: 'context', key: 'clock' },
         { from: 'context', key: 'versionWitness' },
         { from: 'context', key: 'intentWitness' },
@@ -1013,6 +987,7 @@ export const ACTION_REGISTRY: ActionDefinition[] = [
   },
   {
     sdkId: 'update_trading_params',
+    // NOTE: assetDecimals and stableDecimals removed - decimals are immutable in Sui coins
     description: 'Update trading parameters',
     staging: {
       package: 'futarchyActions',

@@ -126,7 +126,7 @@ function buildConfig(def: ActionDefinition, action: ParsedAction): IntentActionC
   // Special case: create_pool_with_mint needs extra required params
   if (sdkId === 'create_pool_with_mint') {
     config.lpTreasuryCapId = getRequiredParam<string>(action, 'lpTreasuryCapId');
-    config.lpMetadataId = getRequiredParam<string>(action, 'lpMetadataId');
+    config.lpCurrencyId = getRequiredParam<string>(action, 'lpCurrencyId');
   }
 
   return config as IntentActionConfig;

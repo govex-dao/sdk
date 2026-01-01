@@ -189,7 +189,7 @@ async function main() {
       feeBps: poolFeeBps,
       lpType: testCoins.lp.type,
       lpTreasuryCapId: testCoins.lp.treasuryCap,
-      lpMetadataId: testCoins.lp.metadata,
+      lpCurrencyId: testCoins.lp.currencyId,
     },
     // === 8. UPDATE TRADING PARAMS ===
     {
@@ -231,7 +231,6 @@ async function main() {
       assetType: testCoins.asset.type,
       stableType: testCoins.stable.type,
       treasuryCap: testCoins.asset.treasuryCap,
-      coinMetadata: testCoins.asset.metadata,
       tokensForSale: 1_000_000n,
       minRaiseAmount: TransactionUtils.suiToMist(1),
       allowedCaps: [
@@ -552,11 +551,11 @@ async function main() {
     stableType: testCoins.stable.type,
     lpType: testCoins.lp.type,
     assetTreasuryCap: testCoins.asset.treasuryCap,
-    assetMetadata: testCoins.asset.metadata,
+    assetCurrencyId: testCoins.asset.currencyId,
     stableTreasuryCap: testCoins.stable.treasuryCap,
-    stableMetadata: testCoins.stable.metadata,
+    stableCurrencyId: testCoins.stable.currencyId,
     lpTreasuryCap: testCoins.lp.treasuryCap,
-    lpMetadata: testCoins.lp.metadata,
+    lpCurrencyId: testCoins.lp.currencyId,
     isStableTreasuryCapShared: testCoins.stable.isSharedTreasuryCap,
     stablePackageId: testCoins.stable.packageId,
     spotPoolId: poolId || "",

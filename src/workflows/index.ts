@@ -13,7 +13,7 @@ export * from './types';
 // Intent execution
 export {
   IntentExecutor,
-  MetadataKeyTypes,
+  // NOTE: MetadataKeyTypes removed - CoinMetadata no longer stored in Account
   type IntentExecutorPackages,
 } from './intent-executor';
 

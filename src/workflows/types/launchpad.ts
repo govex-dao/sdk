@@ -20,8 +20,10 @@ export interface CreateRaiseConfig extends WorkflowBaseConfig {
   stableType: string;
   /** Treasury cap object ID */
   treasuryCap: string;
-  /** Coin metadata object ID */
-  coinMetadata: string;
+  /** Asset Currency<T> object ID from sui::coin_registry */
+  assetCurrency: string;
+  /** Stable Currency<T> object ID from sui::coin_registry */
+  stableCurrency: string;
 
   /** Number of tokens for sale */
   tokensForSale: bigint;
@@ -102,5 +104,9 @@ export interface CompleteRaiseConfig extends WorkflowBaseConfig {
   assetType: string;
   /** Stable type */
   stableType: string;
+  /** Asset Currency<T> object ID from sui::coin_registry */
+  assetCurrency: string;
+  /** Stable Currency<T> object ID from sui::coin_registry */
+  stableCurrency: string;
 }
 

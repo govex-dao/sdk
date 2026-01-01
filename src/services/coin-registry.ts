@@ -22,12 +22,23 @@ import { validateObjectId, validateU64 } from '../utils/validation';
  * Configuration for depositing a coin set
  */
 export interface DepositCoinSetConfig {
-  /** The coin registry object ID */
+  /** The BlankCoinsRegistry object ID */
   registryId: string;
+  /** Sui CoinRegistry object ID (0xc on mainnet) */
+  suiCoinRegistryId: string;
+  /** Currency<T> object ID (shared, from coin_registry::finalize) - needed to read decimals */
+  currencyId: string;
   /** TreasuryCap object ID for the blank coin type */
   treasuryCap: string;
-  /** CoinMetadata object ID for the blank coin type */
-  coinMetadata: string;
+  /** MetadataCap object ID for the blank coin type (from coin_registry::new_currency_with_otw) */
+  metadataCap: string;
+  /**
+   * Expected decimals for the coin (0-18)
+   * This is VALIDATED against the actual Currency<T>.decimals() on-chain.
+   * - Asset tokens typically use 9 decimals
+   * - Stable tokens typically use 6 decimals
+   */
+  expectedDecimals: number;
   /** Fee in SUI MIST to acquire this coin set (max: 10 SUI = 10_000_000_000 MIST) */
   fee: bigint | number;
   /** The coin type (e.g., "0x123::my_coin::MyCoin") */
@@ -42,6 +53,13 @@ export interface DepositCoinSetConfig {
 export interface TakeCoinSetConfig {
   /** The coin registry object ID */
   registryId: string;
+  /**
+   * Desired decimals for the coin set (0-18)
+   * Routes to the correct bucket in the registry.
+   * - Use 9 for asset-conditional coins
+   * - Use 6 for stable-conditional coins
+   */
+  desiredDecimals: number;
   /** ID of the TreasuryCap to acquire */
   capId: string;
   /** Coin<SUI> payment object for the fee */
@@ -53,9 +71,10 @@ export interface TakeCoinSetConfig {
 }
 
 /**
- * Coin Registry SDK Operations
+ * Blank Coins Registry SDK Operations
  *
- * Provides TypeScript wrappers for coin registry operations.
+ * Provides TypeScript wrappers for blank coins registry operations.
+ * Uses the new Sui Currency system (MetadataCap instead of CoinMetadata).
  *
  * @example Share a registry
  * ```typescript
@@ -72,8 +91,9 @@ export interface TakeCoinSetConfig {
  *   oneShotUtilsPackageId: '0x...',
  * }, {
  *   registryId: '0x...',
+ *   suiCoinRegistryId: '0xc',
  *   treasuryCap: '0x...',
- *   coinMetadata: '0x...',
+ *   metadataCap: '0x...', // MetadataCap from coin_registry::new_currency_with_otw
  *   fee: 1_000_000_000n, // 1 SUI
  *   coinType: '0x123::my_coin::MyCoin',
  * });
@@ -140,7 +160,7 @@ export class CoinRegistry {
     registry: ReturnType<Transaction['moveCall']>
   ): void {
     tx.moveCall({
-      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'coin_registry', 'share_registry'),
+      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'blank_coins', 'share_registry'),
       arguments: [registry],
     });
   }
@@ -194,19 +214,29 @@ export class CoinRegistry {
   ): void {
     // Validate inputs
     validateObjectId(depositConfig.registryId, 'registryId');
+    validateObjectId(depositConfig.suiCoinRegistryId, 'suiCoinRegistryId');
+    validateObjectId(depositConfig.currencyId, 'currencyId');
     validateObjectId(depositConfig.treasuryCap, 'treasuryCap');
-    validateObjectId(depositConfig.coinMetadata, 'coinMetadata');
+    validateObjectId(depositConfig.metadataCap, 'metadataCap');
     validateU64(depositConfig.fee, 'fee');
+
+    // Validate decimals is in valid range (0-18)
+    if (depositConfig.expectedDecimals < 0 || depositConfig.expectedDecimals > 18) {
+      throw new Error('expectedDecimals must be between 0 and 18');
+    }
 
     const clock = depositConfig.clock || '0x6';
 
     tx.moveCall({
-      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'coin_registry', 'deposit_coin_set_entry'),
+      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'blank_coins', 'deposit_coin_set_entry'),
       typeArguments: [depositConfig.coinType],
       arguments: [
         tx.object(depositConfig.registryId),
+        tx.object(depositConfig.suiCoinRegistryId),
+        tx.object(depositConfig.currencyId),
         tx.object(depositConfig.treasuryCap),
-        tx.object(depositConfig.coinMetadata),
+        tx.object(depositConfig.metadataCap),
+        tx.pure.u8(depositConfig.expectedDecimals),
         tx.pure.u64(depositConfig.fee),
         tx.object(clock),
       ],
@@ -309,13 +339,19 @@ export class CoinRegistry {
     validateObjectId(takeConfig.registryId, 'registryId');
     validateObjectId(takeConfig.capId, 'capId');
 
+    // Validate decimals is in valid range (0-18)
+    if (takeConfig.desiredDecimals < 0 || takeConfig.desiredDecimals > 18) {
+      throw new Error('desiredDecimals must be between 0 and 18');
+    }
+
     const clock = takeConfig.clock || '0x6';
 
     return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'coin_registry', 'take_coin_set'),
+      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'blank_coins', 'take_coin_set'),
       typeArguments: [takeConfig.coinType],
       arguments: [
         tx.object(takeConfig.registryId),
+        tx.pure.u8(takeConfig.desiredDecimals),
         tx.pure.id(takeConfig.capId),
         takeConfig.feePayment,
         tx.object(clock),
@@ -346,18 +382,51 @@ export class CoinRegistry {
     validateObjectId(registryId, 'registryId');
 
     return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'coin_registry', 'total_sets'),
+      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'blank_coins', 'total_sets'),
       arguments: [tx.object(registryId)],
     });
   }
 
   /**
-   * Check if a specific coin set is available
+   * Get the number of coin sets available for a specific decimal value
+   *
+   * Use this to check if there are coins available matching your asset/stable decimals.
    *
    * @param tx - Transaction instance
    * @param config - Configuration object
    * @param config.oneShotUtilsPackageId - The futarchy_one_shot_utils package ID
    * @param registryId - The coin registry object ID
+   * @param decimals - The decimal value to check (0-18)
+   * @returns Number of coin sets available for that decimal value
+   */
+  static setsAvailableForDecimals(
+    tx: Transaction,
+    config: {
+      oneShotUtilsPackageId: string;
+    },
+    registryId: string,
+    decimals: number
+  ): ReturnType<Transaction['moveCall']> {
+    validateObjectId(registryId, 'registryId');
+
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.oneShotUtilsPackageId,
+        'blank_coins',
+        'sets_available_for_decimals'
+      ),
+      arguments: [tx.object(registryId), tx.pure.u8(decimals)],
+    });
+  }
+
+  /**
+   * Check if a specific coin set is available in a given bucket
+   *
+   * @param tx - Transaction instance
+   * @param config - Configuration object
+   * @param config.oneShotUtilsPackageId - The futarchy_one_shot_utils package ID
+   * @param registryId - The coin registry object ID
+   * @param decimals - The decimal bucket to check (0-18)
    * @param capId - The TreasuryCap ID to check
    * @returns Boolean indicating if the coin set exists
    */
@@ -367,14 +436,15 @@ export class CoinRegistry {
       oneShotUtilsPackageId: string;
     },
     registryId: string,
+    decimals: number,
     capId: string
   ): ReturnType<Transaction['moveCall']> {
     validateObjectId(registryId, 'registryId');
     validateObjectId(capId, 'capId');
 
     return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'coin_registry', 'has_coin_set'),
-      arguments: [tx.object(registryId), tx.pure.id(capId)],
+      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'blank_coins', 'has_coin_set'),
+      arguments: [tx.object(registryId), tx.pure.u8(decimals), tx.pure.id(capId)],
     });
   }
 
@@ -385,6 +455,7 @@ export class CoinRegistry {
    * @param config - Configuration object
    * @param config.oneShotUtilsPackageId - The futarchy_one_shot_utils package ID
    * @param registryId - The coin registry object ID
+   * @param decimals - The decimal bucket (0-18)
    * @param capId - The TreasuryCap ID
    * @param coinType - The coin type
    * @returns Fee amount in SUI MIST
@@ -395,6 +466,7 @@ export class CoinRegistry {
       oneShotUtilsPackageId: string;
     },
     registryId: string,
+    decimals: number,
     capId: string,
     coinType: string
   ): ReturnType<Transaction['moveCall']> {
@@ -402,9 +474,9 @@ export class CoinRegistry {
     validateObjectId(capId, 'capId');
 
     return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'coin_registry', 'get_fee'),
+      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'blank_coins', 'get_fee'),
       typeArguments: [coinType],
-      arguments: [tx.object(registryId), tx.pure.id(capId)],
+      arguments: [tx.object(registryId), tx.pure.u8(decimals), tx.pure.id(capId)],
     });
   }
 
@@ -417,6 +489,7 @@ export class CoinRegistry {
    * @param config - Configuration object
    * @param config.oneShotUtilsPackageId - The futarchy_one_shot_utils package ID
    * @param registryId - The coin registry object ID
+   * @param decimals - The decimal bucket (0-18)
    * @param capId - The TreasuryCap ID
    * @param coinType - The coin type
    * @returns Address of the coin set owner
@@ -427,6 +500,7 @@ export class CoinRegistry {
       oneShotUtilsPackageId: string;
     },
     registryId: string,
+    decimals: number,
     capId: string,
     coinType: string
   ): ReturnType<Transaction['moveCall']> {
@@ -434,9 +508,41 @@ export class CoinRegistry {
     validateObjectId(capId, 'capId');
 
     return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'coin_registry', 'get_owner'),
+      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'blank_coins', 'get_owner'),
       typeArguments: [coinType],
-      arguments: [tx.object(registryId), tx.pure.id(capId)],
+      arguments: [tx.object(registryId), tx.pure.u8(decimals), tx.pure.id(capId)],
+    });
+  }
+
+  /**
+   * Get the decimals of a specific coin set
+   *
+   * @param tx - Transaction instance
+   * @param config - Configuration object
+   * @param config.oneShotUtilsPackageId - The futarchy_one_shot_utils package ID
+   * @param registryId - The coin registry object ID
+   * @param decimals - The decimal bucket (0-18)
+   * @param capId - The TreasuryCap ID
+   * @param coinType - The coin type
+   * @returns Decimals value (should match the bucket)
+   */
+  static getDecimals(
+    tx: Transaction,
+    config: {
+      oneShotUtilsPackageId: string;
+    },
+    registryId: string,
+    decimals: number,
+    capId: string,
+    coinType: string
+  ): ReturnType<Transaction['moveCall']> {
+    validateObjectId(registryId, 'registryId');
+    validateObjectId(capId, 'capId');
+
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.oneShotUtilsPackageId, 'blank_coins', 'get_decimals'),
+      typeArguments: [coinType],
+      arguments: [tx.object(registryId), tx.pure.u8(decimals), tx.pure.id(capId)],
     });
   }
 }

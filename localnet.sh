@@ -835,11 +835,12 @@ run_test() {
     return 1
   fi
 
-  # Calculate coin count: 2 coins per outcome (asset + stable)
-  local coin_count=$((num_outcomes * 2))
+  # Calculate decimals spec: N coins with 9 decimals (asset) + N coins with 6 decimals (stable)
+  # where N = num_outcomes
+  local decimals_spec="9:${num_outcomes},6:${num_outcomes}"
   {
-    echo "--- STEP: deploy-conditional-coins ($coin_count coins for $num_outcomes outcomes) ---"
-    if ! npx tsx scripts/deploy-conditional-coins.ts --count "$coin_count" 2>&1; then
+    echo "--- STEP: deploy-conditional-coins (${decimals_spec} for $num_outcomes outcomes) ---"
+    if ! npx tsx scripts/deploy-conditional-coins.ts --decimals "$decimals_spec" 2>&1; then
       echo "❌ FAILED: deploy-conditional-coins"
       setup_failed=true
     else

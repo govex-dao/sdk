@@ -147,16 +147,6 @@ export interface ReturnTreasuryCapActionConfig {
   recipient: string;
 }
 
-/**
- * Return metadata action configuration
- */
-export interface ReturnMetadataActionConfig {
-  type: 'return_metadata';
-  /** Coin type of the metadata (required for type-safe staging) */
-  coinType?: string;
-  /** Recipient address */
-  recipient: string;
-}
 
 /**
  * Mint tokens action configuration

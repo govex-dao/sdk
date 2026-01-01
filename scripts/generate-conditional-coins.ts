@@ -6,13 +6,21 @@
  * Module names follow the pattern: conditional_0, conditional_1, etc.
  *
  * Usage:
- *   npx tsx scripts/generate-conditional-coins.ts <num_outcomes>
+ *   npx tsx scripts/generate-conditional-coins.ts <num_outcomes> [asset_decimals] [stable_decimals]
  *
  * Example:
  *   npx tsx scripts/generate-conditional-coins.ts 4
- *   # Generates conditional_0, conditional_1, conditional_2, conditional_3,
- *   #          conditional_4, conditional_5, conditional_6, conditional_7
- *   # Mapped as: cond0_asset, cond0_stable, cond1_asset, cond1_stable, etc.
+ *   # Generates 8 modules with default decimals (9 for asset, 6 for stable)
+ *
+ *   npx tsx scripts/generate-conditional-coins.ts 2 9 6
+ *   # Generates 4 modules: asset coins have 9 decimals, stable coins have 6 decimals
+ *
+ * Mapping:
+ *   conditional_0 → outcome 0 asset (uses asset_decimals)
+ *   conditional_1 → outcome 0 stable (uses stable_decimals)
+ *   conditional_2 → outcome 1 asset (uses asset_decimals)
+ *   conditional_3 → outcome 1 stable (uses stable_decimals)
+ *   etc.
  */
 
 import * as fs from "fs";
@@ -27,47 +35,65 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const CONDITIONAL_COIN_PATH = path.join(REPO_ROOT, "packages", "conditional_coin");
 const SOURCES_PATH = path.join(CONDITIONAL_COIN_PATH, "sources");
 
-function generateCoinModule(index: number): string {
+function generateCoinModule(index: number, decimals: number): string {
   const moduleName = `conditional_${index}`;
   const otwName = `CONDITIONAL_${index}`;
+  const isAsset = index % 2 === 0;
+  const coinType = isAsset ? "asset" : "stable";
+  const outcomeIndex = Math.floor(index / 2);
 
   return `// Copyright (c) Govex DAO LLC
 // SPDX-License-Identifier: BUSL-1.1
 
-/// Conditional Coin ${index}
-/// Module name is "conditional_${index}" for CoinRegistry acceptance
+/// Conditional Coin ${index} (Outcome ${outcomeIndex} ${coinType})
+/// Module name is "conditional_${index}" for BlankCoinsRegistry acceptance
+/// Uses coin_registry::new_currency_with_otw() for auto-registration with Sui's CoinRegistry
 module conditional_coin::${moduleName};
 
-use sui::coin;
+use sui::coin_registry;
 
 /// One-Time Witness for ${otwName}
 public struct ${otwName} has drop {}
 
 /// Initialize function called when module is published
+/// Creates Currency<T> (auto-shared) and TreasuryCap<T>
 fun init(witness: ${otwName}, ctx: &mut TxContext) {
-    let (treasury_cap, metadata) = coin::create_currency(
+    let (initializer, treasury_cap) = coin_registry::new_currency_with_otw(
         witness,
-        6, // 6 decimals to match test coins
-        b"", // Empty symbol for CoinRegistry
-        b"", // Empty name for CoinRegistry
-        b"", // Empty description for CoinRegistry
-        option::none(), // No icon for CoinRegistry
+        ${decimals}, // decimals matching base ${coinType} token
+        b"".to_string(), // Empty symbol for blank coins
+        b"".to_string(), // Empty name for blank coins
+        b"".to_string(), // Empty description for blank coins
+        b"".to_string(), // Empty icon_url for blank coins
         ctx,
     );
 
-    // Transfer both to sender
+    // Finalize - this shares Currency<T> automatically
+    let metadata_cap = coin_registry::finalize(initializer, ctx);
+
+    // Transfer TreasuryCap to sender for deposit into BlankCoinsRegistry
     transfer::public_transfer(treasury_cap, ctx.sender());
-    transfer::public_transfer(metadata, ctx.sender());
+    // Transfer MetadataCap to sender - blank coins have empty metadata, cap is not used
+    transfer::public_transfer(metadata_cap, ctx.sender());
 }
 `;
 }
 
 async function main() {
   const numOutcomes = parseInt(process.argv[2] || "2", 10);
+  const assetDecimals = parseInt(process.argv[3] || "9", 10); // Default 9 for Sui-native tokens
+  const stableDecimals = parseInt(process.argv[4] || "6", 10); // Default 6 for USDC-like stables
 
   if (isNaN(numOutcomes) || numOutcomes < 2 || numOutcomes > 10) {
-    console.error("Usage: npx tsx scripts/generate-conditional-coins.ts <num_outcomes>");
+    console.error("Usage: npx tsx scripts/generate-conditional-coins.ts <num_outcomes> [asset_decimals] [stable_decimals]");
     console.error("       num_outcomes must be between 2 and 10");
+    console.error("       asset_decimals defaults to 9 (Sui-native tokens)");
+    console.error("       stable_decimals defaults to 6 (USDC-like stables)");
+    process.exit(1);
+  }
+
+  if (assetDecimals < 0 || assetDecimals > 18 || stableDecimals < 0 || stableDecimals > 18) {
+    console.error("Error: decimals must be between 0 and 18");
     process.exit(1);
   }
 
@@ -76,6 +102,8 @@ async function main() {
 
   console.log("=".repeat(80));
   console.log(`GENERATING CONDITIONAL COINS FOR ${numOutcomes} OUTCOMES (${coinCount} coins)`);
+  console.log(`  Asset decimals: ${assetDecimals}`);
+  console.log(`  Stable decimals: ${stableDecimals}`);
   console.log("=".repeat(80));
   console.log();
 
@@ -106,13 +134,14 @@ async function main() {
   console.log("Generating modules:");
   for (let i = 0; i < coinCount; i++) {
     const fileName = `conditional_${i}.move`;
-    const content = generateCoinModule(i);
+    const isAsset = i % 2 === 0;
+    const decimals = isAsset ? assetDecimals : stableDecimals;
+    const content = generateCoinModule(i, decimals);
     fs.writeFileSync(path.join(SOURCES_PATH, fileName), content);
 
     // Show how this maps to outcome asset/stable
     const outcomeIndex = Math.floor(i / 2);
-    const isAsset = i % 2 === 0;
-    console.log(`   ✅ ${fileName} → cond${outcomeIndex}_${isAsset ? "asset" : "stable"}`);
+    console.log(`   ✅ ${fileName} → cond${outcomeIndex}_${isAsset ? "asset" : "stable"} (${decimals} decimals)`);
   }
   console.log();
 
@@ -126,7 +155,7 @@ async function main() {
   }
   console.log();
   console.log("Next steps:");
-  console.log("  1. Run: npm run deploy-conditional-coins");
+  console.log(`  1. Run: npm run deploy-conditional-coins -- --decimals ${assetDecimals}:${numOutcomes},${stableDecimals}:${numOutcomes}`);
   console.log("  2. Run your tests");
   console.log();
 }

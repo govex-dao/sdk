@@ -38,6 +38,9 @@ export class DaoConfig {
    * @param config - Configuration
    * @returns TradingParams object
    *
+   * NOTE: assetDecimals and stableDecimals removed - decimals are immutable in Sui coins
+   * Read from sui::coin_registry::Currency<T> instead
+   *
    * @example
    * ```typescript
    * const tradingParams = DaoConfig.newTradingParams(tx, {
@@ -753,6 +756,11 @@ export class DaoConfig {
     });
   }
 
+  /**
+   * NOTE: assetDecimals() and stableDecimals() removed - decimals are immutable in Sui coins
+   * Read from sui::coin_registry::Currency<T> instead using coin_registry::decimals(currency)
+   */
+
   // ========================================
   // Getter Functions - TwapConfig
   // ========================================
@@ -1400,17 +1408,17 @@ export class DaoConfig {
   }
 
   /**
-   * Derive conditional metadata from CoinMetadata
+   * Derive conditional metadata from Currency<T>
    *
    * @param tx - Transaction
    * @param config - Configuration
    * @returns Tuple of (decimals, name_prefix, icon_url)
    */
-  static deriveConditionalMetadataFromCoin(
+  static deriveConditionalMetadataFromCurrency(
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
-      coinMetadata: ReturnType<Transaction['moveCall']>;
+      currency: ReturnType<Transaction['moveCall']> | string;
       coinType: string;
     }
   ): ReturnType<Transaction['moveCall']> {
@@ -1418,10 +1426,12 @@ export class DaoConfig {
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'dao_config',
-        'derive_conditional_metadata_from_coin'
+        'derive_conditional_metadata_from_currency'
       ),
       typeArguments: [config.coinType],
-      arguments: [config.coinMetadata],
+      arguments: [
+        typeof config.currency === 'string' ? tx.object(config.currency) : config.currency,
+      ],
     });
   }
 

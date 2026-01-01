@@ -68,8 +68,8 @@ export function loadDeployments(): any {
  * This parses the deployment response instead of hardcoding object IDs (which get deleted on devnet)
  */
 export function loadTestCoins(): {
-    asset: { packageId: string; type: string; treasuryCap: string; metadata: string };
-    stable: { packageId: string; type: string; treasuryCap: string; metadata: string };
+    asset: { packageId: string; type: string; treasuryCap: string; metadataCap: string; currency?: string };
+    stable: { packageId: string; type: string; treasuryCap: string; metadataCap: string; currency?: string };
 } {
     const deploymentsDir = path.join(__dirname, '../deployments');
 
@@ -96,12 +96,17 @@ export function loadTestCoins(): {
             (obj: any) => obj.objectType?.includes('::coin::TreasuryCap')
         );
 
-        // Extract CoinMetadata object
-        const metadataObj = deployment.objectChanges?.find(
-            (obj: any) => obj.objectType?.includes('::coin::CoinMetadata')
+        // Extract MetadataCap object (new coin_registry pattern)
+        const metadataCapObj = deployment.objectChanges?.find(
+            (obj: any) => obj.objectType?.includes('::coin_registry::MetadataCap')
         );
 
-        if (!packageId || !treasuryCapObj || !metadataObj) {
+        // Extract Currency object (shared, from coin_registry::finalize)
+        const currencyObj = deployment.objectChanges?.find(
+            (obj: any) => obj.objectType?.includes('::coin_registry::Currency')
+        );
+
+        if (!packageId || !treasuryCapObj || !metadataCapObj) {
             throw new Error(
                 `❌ Invalid ${coinName} deployment JSON. Missing required objects.\n` +
                 `   Redeploy: ./scripts/deploy-test-coins.sh`
@@ -119,7 +124,8 @@ export function loadTestCoins(): {
             packageId,
             type: coinType,
             treasuryCap: treasuryCapObj.objectId,
-            metadata: metadataObj.objectId,
+            metadataCap: metadataCapObj.objectId,
+            currency: currencyObj?.objectId,
         };
     };
 

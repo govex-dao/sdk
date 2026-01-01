@@ -1,6 +1,4 @@
-import { Transaction } from "@mysten/sui/transactions";
 import { SuiClient } from "@mysten/sui/client";
-import { BaseTransactionBuilder, TransactionUtils } from "./transaction";
 import { extractFields, FactoryFields } from "../types";
 
 /**
@@ -8,24 +6,20 @@ import { extractFields, FactoryFields } from "../types";
  */
 export class FactoryOperations {
     private client: SuiClient;
-    private factoryPackageId: string;
     private factoryObjectId: string;
-    private packageRegistryId: string;
 
     constructor(
         client: SuiClient,
-        factoryPackageId: string,
+        _factoryPackageId: string,  // Kept for API compatibility
         _futarchyTypesPackageId: string,  // Kept for API compatibility
         factoryObjectId: string,
         _factoryInitialSharedVersion: number,  // Kept for API compatibility
-        packageRegistryId: string,
+        _packageRegistryId: string,  // Kept for API compatibility
         _feeManagerId: string,  // Kept for API compatibility
         _feeManagerInitialSharedVersion: number  // Kept for API compatibility
     ) {
         this.client = client;
-        this.factoryPackageId = factoryPackageId;
         this.factoryObjectId = factoryObjectId;
-        this.packageRegistryId = packageRegistryId;
     }
 
     /**
@@ -146,32 +140,5 @@ export class FactoryOperations {
         }
 
         return BigInt(fields.launchpad_settlement_reward || 0);
-    }
-
-    /**
-     * Borrow CoinMetadata from DAO Account
-     * Returns reference to CoinMetadata for reading
-     */
-    borrowCoinMetadata(
-        accountId: string,
-        coinType: string
-    ): Transaction {
-        const builder = new BaseTransactionBuilder(this.client);
-        const tx = builder.getTransaction();
-
-        tx.moveCall({
-            target: TransactionUtils.buildTarget(
-                this.factoryPackageId,
-                'factory',
-                'borrow_coin_metadata'
-            ),
-            typeArguments: [coinType],
-            arguments: [
-                tx.object(accountId), // account
-                tx.object(this.packageRegistryId), // registry
-            ],
-        });
-
-        return tx;
     }
 }

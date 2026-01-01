@@ -128,19 +128,8 @@ export class CurrencyActions {
     });
   }
 
-  /**
-   * Add a return metadata action spec
-   */
-  addReturnMetadata(
-    tx: Transaction,
-    builder: ReturnType<Transaction['moveCall']>,
-    recipient: string
-  ): void {
-    tx.moveCall({
-      target: `${this.packages.accountActionsPackageId}::currency_init_actions::add_return_metadata_spec`,
-      arguments: [builder, tx.pure.address(recipient)],
-    });
-  }
+  // NOTE: addReturnMetadata removed - CoinMetadata no longer stored in Account
+  // Use sui::coin_registry::Currency<T> for metadata access instead
 }
 
 /**
@@ -162,7 +151,7 @@ export class LiquidityActions {
       feeBps: number;
       launchFeeDurationMs?: bigint;
       lpTreasuryCapId: string;
-      lpMetadataId: string;
+      lpCurrencyId: string;
     }
   ): void {
     tx.moveCall({
@@ -175,7 +164,7 @@ export class LiquidityActions {
         tx.pure.u64(config.feeBps),
         tx.pure.u64(config.launchFeeDurationMs ?? 0n),
         tx.pure.id(config.lpTreasuryCapId),
-        tx.pure.id(config.lpMetadataId),
+        tx.pure.id(config.lpCurrencyId),
       ],
     });
   }
@@ -275,6 +264,8 @@ export class ConfigActions {
 
   /**
    * Add an update trading params action spec
+   * NOTE: assetDecimals and stableDecimals removed - decimals are immutable in Sui coins
+   * Read from sui::coin_registry::Currency<T> instead
    */
   addUpdateTradingParams(
     tx: Transaction,

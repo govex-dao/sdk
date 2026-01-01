@@ -26,6 +26,7 @@ export type ParamType =
   | 'vector<u8>'
   | 'vector<string>'
   | 'vector<address>'
+  | 'option<u8>'
   | 'option<u64>'
   | 'option<u128>'
   | 'option<bool>'
@@ -340,22 +341,8 @@ export const CURRENCY_ACTIONS: ActionDefinition[] = [
     launchpadSupported: true,
     proposalSupported: false,
   },
-  {
-    id: 'return_metadata',
-    name: 'Return Metadata',
-    category: 'currency',
-    package: 'accountActions',
-    stagingModule: 'currency_init_actions',
-    stagingFunction: 'add_return_metadata_spec',
-    executionModule: 'currency',
-    executionFunction: 'do_init_remove_metadata',
-    markerType: 'account_actions::currency::RemoveMetadata',
-    typeParams: ['KeyType', 'CoinType'],
-    params: [{ name: 'recipient', type: 'address', description: 'Recipient address' }],
-    description: 'Return CoinMetadata to an address (used in failure intents)',
-    launchpadSupported: true,
-    proposalSupported: false,
-  },
+  // NOTE: 'return_metadata' action removed - CoinMetadata is no longer stored in Account
+  // Use sui::coin_registry::Currency<T> for metadata access instead
   {
     id: 'disable_currency',
     name: 'Disable Currency',
@@ -685,6 +672,8 @@ export const CONFIG_ACTIONS: ActionDefinition[] = [
     executionModule: 'config_actions',
     executionFunction: 'do_update_trading_params',
     markerType: 'futarchy_actions::config_actions::TradingParamsUpdate',
+    // NOTE: assetDecimals and stableDecimals removed - decimals are immutable in Sui coins
+    // Read from sui::coin_registry::Currency<T> instead
     params: [
       { name: 'minAssetAmount', type: 'option<u64>', description: 'Minimum asset amount', optional: true },
       { name: 'minStableAmount', type: 'option<u64>', description: 'Minimum stable amount', optional: true },
@@ -896,7 +885,7 @@ export const LIQUIDITY_ACTIONS: ActionDefinition[] = [
       { name: 'feeBps', type: 'u64', description: 'AMM fee in basis points' },
       { name: 'launchFeeDurationMs', type: 'u64', description: 'Launch fee duration in ms (0 = no launch fee period)' },
       { name: 'lpTreasuryCapId', type: 'id', description: 'LP TreasuryCap object ID' },
-      { name: 'lpMetadataId', type: 'id', description: 'LP CoinMetadata object ID' },
+      { name: 'lpCurrencyId', type: 'id', description: 'LP Currency<LPType> object ID (shared from coin_registry::finalize)' },
     ],
     typeParams: ['AssetType', 'StableType'],
     description: 'Create AMM pool with minted asset and vault stable',

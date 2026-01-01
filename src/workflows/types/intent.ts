@@ -61,7 +61,6 @@ export type IntentActionConfig =
   | { action: 'cancel_vesting'; coinType: string }
   // Account Actions - Currency
   | { action: 'return_treasury_cap'; coinType: string }
-  | { action: 'return_metadata'; coinType: string; keyType: string }
   | { action: 'mint'; coinType: string }
   | { action: 'burn'; coinType: string }
   | { action: 'disable_currency'; coinType: string }
@@ -95,7 +94,7 @@ export type IntentActionConfig =
   // Futarchy Quota Actions
   | { action: 'set_quotas' }
   // Futarchy Liquidity Actions
-  | { action: 'create_pool_with_mint'; assetType: string; stableType: string; lpType: string; lpTreasuryCapId: string; lpMetadataId: string }
+  | { action: 'create_pool_with_mint'; assetType: string; stableType: string; lpType: string; lpTreasuryCapId: string; lpCurrencyId: string }
   | { action: 'add_liquidity'; assetType: string; stableType: string }
   | { action: 'remove_liquidity_to_resources'; assetType: string; stableType: string; lpType: string }
   | { action: 'swap'; assetType: string; stableType: string }

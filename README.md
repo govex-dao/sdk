@@ -703,7 +703,7 @@ const createTx = launchpadWorkflow.createRaise(
     assetType: '0x...::coin::ASSET',
     stableType: '0x...::coin::STABLE',
     treasuryCap: treasuryCapId,
-    coinMetadata: metadataId,
+    metadataCap: metadataCapId,  // MetadataCap<T> from coin_registry::new_currency_with_otw()
     tokensForSale: 1_000_000_000n,
     minRaiseAmount: 100_000_000n,
     allowedCaps: [1_000_000_000n, 10_000_000_000n],

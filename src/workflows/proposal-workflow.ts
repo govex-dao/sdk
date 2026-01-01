@@ -489,7 +489,7 @@ export class ProposalWorkflow {
             tx.pure.u64(action.feeBps),
             tx.pure.u64(action.launchFeeDurationMs ?? 0n),
             tx.pure.id(action.lpTreasuryCapId),
-            tx.pure.id(action.lpMetadataId),
+            tx.pure.id(action.lpCurrencyId),
           ],
         });
         break;
@@ -666,13 +666,8 @@ export class ProposalWorkflow {
         });
         break;
 
-      case 'return_metadata':
-        tx.moveCall({
-          target: `${accountActionsPackageId}::currency_init_actions::add_return_metadata_spec`,
-          typeArguments: [getCoinType(action.coinType, assetType)],
-          arguments: [builder, tx.pure.address(action.recipient)],
-        });
-        break;
+      // NOTE: 'return_metadata' case removed - CoinMetadata no longer stored in Account
+      // Use sui::coin_registry::Currency<T> for metadata access instead
 
       // Launchpad-specific actions not typically used in proposals
       case 'update_trading_params':

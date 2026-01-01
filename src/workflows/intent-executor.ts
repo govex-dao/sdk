@@ -77,26 +77,8 @@ export interface IntentExecutorPackages {
   packageRegistryId: string;
 }
 
-/**
- * Helper to construct metadata key types for different contexts
- */
-export const MetadataKeyTypes = {
-  /**
-   * Construct a launchpad factory metadata key type
-   * @param factoryPackageId - The factory package ID
-   * @param coinType - The coin type
-   */
-  launchpad: (factoryPackageId: string, coinType: string): string =>
-    `${factoryPackageId}::factory::CoinMetadataKey<${coinType}>`,
-
-  /**
-   * Construct a currency module metadata key type
-   * @param accountActionsPackageId - The account actions package ID
-   * @param coinType - The coin type
-   */
-  governance: (accountActionsPackageId: string, coinType: string): string =>
-    `${accountActionsPackageId}::currency::CoinMetadataKey<${coinType}>`,
-};
+// NOTE: MetadataKeyTypes removed - CoinMetadata is no longer stored in Account
+// Use sui::coin_registry::Currency<T> for metadata access instead
 
 /**
  * Intent Executor - Builds PTBs for executing staged actions
@@ -120,9 +102,8 @@ export const MetadataKeyTypes = {
  *   ],
  * });
  *
- * // For return_metadata, use the helper to construct the keyType:
- * const keyType = MetadataKeyTypes.launchpad(packages.futarchyFactoryPackageId, assetType);
- * // ...actions: [{ action: 'return_metadata', coinType: assetType, keyType }]
+ * // NOTE: return_metadata action was removed - CoinMetadata no longer stored in Account
+ * // Use sui::coin_registry::Currency<T> for metadata access instead
  * ```
  */
 export class IntentExecutor {
@@ -510,50 +491,8 @@ export class IntentExecutor {
         });
         break;
 
-      case 'return_metadata': {
-        // Determine the key type based on context
-        // Launchpad uses factory::CoinMetadataKey, governance uses currency::CoinMetadataKey
-        // If keyType is not provided, derive it based on intentType
-        let keyType = action.keyType;
-        if (!keyType) {
-          if (config.intentType === 'launchpad') {
-            keyType = `${this.packages.futarchyFactoryPackageId}::factory::CoinMetadataKey`;
-          } else {
-            keyType = `${accountActionsPackageId}::currency::CoinMetadataKey`;
-          }
-        }
-
-        // Create metadata key witness using the appropriate module
-        const keyModule = keyType.includes('::factory::')
-          ? this.packages.futarchyFactoryPackageId
-          : accountActionsPackageId;
-
-        const metadataKey = tx.moveCall({
-          target: `${keyModule}::${keyType.includes('::factory::') ? 'factory' : 'currency'}::coin_metadata_key`,
-          typeArguments: [action.coinType],
-          arguments: [],
-        });
-
-        tx.moveCall({
-          target: `${accountActionsPackageId}::currency::do_init_remove_metadata`,
-          typeArguments: [
-            configType,
-            outcomeType,
-            keyType,
-            action.coinType,
-            witnessType,
-          ],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            metadataKey,
-            versionWitness,
-            intentWitness,
-          ],
-        });
-        break;
-      }
+      // NOTE: 'return_metadata' action removed - CoinMetadata is no longer stored in Account
+      // Use sui::coin_registry::Currency<T> for metadata access instead
 
       // =========================================================================
       // ACCOUNT ACTIONS - TRANSFER (objects via provide_object)
@@ -897,7 +836,7 @@ export class IntentExecutor {
             txObject(tx, config.accountId),
             tx.object(packageRegistryId),
             tx.object(action.lpTreasuryCapId),
-            tx.object(action.lpMetadataId),
+            tx.object(action.lpCurrencyId),
             tx.object(clockId),
             versionWitness,
             intentWitness,

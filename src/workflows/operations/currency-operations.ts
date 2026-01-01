@@ -106,13 +106,21 @@ export class CurrencyOperations {
    * console.log(metadata.name, metadata.symbol);
    * ```
    */
-  async getMetadata(_daoId: string, _coinType: string): Promise<CoinMetadataInfo> {
-    // This requires resolving dynamic fields to find CoinMetadata in managed assets
-    throw new Error(
-      'getMetadata is not yet implemented. ' +
-      'Finding CoinMetadata requires dynamic field resolution. ' +
-      'Consider using client.getCoinMetadata() for public coin metadata.'
-    );
+  async getMetadata(_daoId: string, coinType: string): Promise<CoinMetadataInfo> {
+    // NOTE: CoinMetadata is no longer stored in Account.
+    // Use sui::coin_registry::Currency<T> or client.getCoinMetadata() instead.
+    // For now, delegate to client.getCoinMetadata() for convenience.
+    const result = await this.client.getCoinMetadata({ coinType });
+    if (!result) {
+      throw new Error(`CoinMetadata not found for ${coinType}. Use client.getCoinMetadata() directly.`);
+    }
+    return {
+      name: result.name,
+      symbol: result.symbol,
+      description: result.description,
+      iconUrl: result.iconUrl ?? '',
+      decimals: result.decimals,
+    };
   }
 
   /**

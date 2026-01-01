@@ -137,7 +137,7 @@ export class TransactionBuilder {
     feeBps: number;
     lpType: string;
     lpTreasuryCapId: string;
-    lpMetadataId: string;
+    lpCurrencyId: string;
   }): this {
     this.actions.push({
       type: 'create_pool_with_mint',
@@ -157,19 +157,13 @@ export class TransactionBuilder {
     return this;
   }
 
-  /**
-   * Add a return metadata action
-   */
-  addReturnMetadata(recipient: string): this {
-    this.actions.push({
-      type: 'return_metadata',
-      recipient,
-    });
-    return this;
-  }
+  // NOTE: addReturnMetadata removed - CoinMetadata no longer stored in Account
+  // Use sui::coin_registry::Currency<T> for metadata access instead
 
   /**
    * Add an update trading params action
+   * NOTE: assetDecimals and stableDecimals removed - decimals are immutable in Sui coins
+   * Read from sui::coin_registry::Currency<T> instead
    */
   addUpdateTradingParams(config: {
     minAssetAmount?: bigint;
@@ -490,7 +484,7 @@ export class TransactionBuilder {
             this.tx.pure.u64(action.feeBps),
             this.tx.pure.u64(action.launchFeeDurationMs ?? 0n),
             this.tx.pure.id(action.lpTreasuryCapId),
-            this.tx.pure.id(action.lpMetadataId),
+            this.tx.pure.id(action.lpCurrencyId),
           ],
         });
         break;
@@ -502,12 +496,8 @@ export class TransactionBuilder {
         });
         break;
 
-      case 'return_metadata':
-        this.tx.moveCall({
-          target: `${accountActionsPackageId}::currency_init_actions::add_return_metadata_spec`,
-          arguments: [this.builder!, this.tx.pure.address(action.recipient)],
-        });
-        break;
+      // NOTE: 'return_metadata' case removed - CoinMetadata no longer stored in Account
+      // Use sui::coin_registry::Currency<T> for metadata access instead
 
       case 'update_trading_params':
         this.tx.moveCall({

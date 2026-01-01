@@ -1,12 +1,25 @@
 /**
  * Create Test Coins Script
  *
- * Creates fresh test coins for a new DAO:
- * 1. Create test coins (TASSET, TSTABLE, LP)
+ * Creates fresh test coins for a new DAO using the Sui Currency standard:
+ * 1. Create test coins (TASSET, TSTABLE, LP) using coin_registry::new_currency_with_otw()
  * 2. Register stable coin for fee payments
  * 3. Register stable coin in factory allowlist
  *
+ * This script creates coins that auto-register with Sui's CoinRegistry:
+ * - Creates TreasuryCap<T> + MetadataCap<T> (not CoinMetadata<T>)
+ * - Auto-creates shared Currency<T> objects on finalize
+ * - Currency<T> objects contain coin metadata and are accessible by anyone
+ *
  * Run this BEFORE each DAO creation to get fresh coins.
+ *
+ * Output format (test-coins-info.json):
+ * - packageId: Package ID of the coin module
+ * - type: Full coin type (e.g., "0x123::coin::COIN")
+ * - treasuryCap: TreasuryCap<T> object ID
+ * - metadataCap: MetadataCap<T> object ID (for updating metadata)
+ * - currencyId: Currency<T> object ID (shared, contains coin metadata)
+ * - isSharedTreasuryCap: Whether the TreasuryCap is shared (for testing)
  *
  * Usage:
  *   npx tsx scripts/create-test-coins.ts
@@ -27,77 +40,83 @@ const __dirname = path.dirname(__filename);
 // Test Coin Templates
 // ============================================================================
 
-// Test coin with private TreasuryCap (for mainnet - only owner can mint)
+// Test coin with private TreasuryCap using coin_registry for auto-registration
+// This creates Currency<T> shared object automatically on finalize
 const testCoinSourcePrivate = (symbol: string, name: string) => `
-module test_coin::coin {
-    use sui::coin::{Self, TreasuryCap};
-    use sui::transfer;
-    use sui::tx_context::TxContext;
+module test_coin::coin;
 
-    public struct COIN has drop {}
+use sui::coin::{Self, TreasuryCap};
+use sui::coin_registry;
 
-    fun init(witness: COIN, ctx: &mut TxContext) {
-        let (treasury, metadata) = coin::create_currency(
-            witness,
-            9,
-            b"${symbol}",
-            b"${name}",
-            b"Test coin for launchpad E2E testing",
-            option::none(),
-            ctx
-        );
+public struct COIN has drop {}
 
-        // Transfer treasury and metadata to sender WITHOUT freezing (required for launchpad)
-        transfer::public_transfer(treasury, ctx.sender());
-        transfer::public_transfer(metadata, ctx.sender());
-    }
+fun init(witness: COIN, ctx: &mut TxContext) {
+    let (initializer, treasury_cap) = coin_registry::new_currency_with_otw(
+        witness,
+        9, // decimals
+        b"${symbol}".to_string(),
+        b"${name}".to_string(),
+        b"Test coin for launchpad E2E testing".to_string(),
+        b"".to_string(), // icon_url
+        ctx,
+    );
 
-    public entry fun mint(
-        treasury_cap: &mut TreasuryCap<COIN>,
-        amount: u64,
-        recipient: address,
-        ctx: &mut TxContext
-    ) {
-        let coin = coin::mint(treasury_cap, amount, ctx);
-        transfer::public_transfer(coin, recipient)
-    }
+    // Finalize - this shares Currency<T> automatically
+    let metadata_cap = coin_registry::finalize(initializer, ctx);
+
+    // Transfer caps to sender (private - only owner can mint)
+    transfer::public_transfer(treasury_cap, ctx.sender());
+    transfer::public_transfer(metadata_cap, ctx.sender());
+}
+
+public entry fun mint(
+    treasury_cap: &mut TreasuryCap<COIN>,
+    amount: u64,
+    recipient: address,
+    ctx: &mut TxContext
+) {
+    let minted = coin::mint(treasury_cap, amount, ctx);
+    transfer::public_transfer(minted, recipient);
 }
 `;
 
-// Test coin with shared TreasuryCap (for devnet/testnet - anyone can mint for testing)
+// Test coin with shared TreasuryCap using coin_registry for auto-registration
+// This creates Currency<T> shared object automatically on finalize
 const testCoinSourceShared = (symbol: string, name: string) => `
-module test_coin::coin {
-    use sui::coin::{Self, TreasuryCap};
-    use sui::transfer;
-    use sui::tx_context::TxContext;
+module test_coin::coin;
 
-    public struct COIN has drop {}
+use sui::coin::{Self, TreasuryCap};
+use sui::coin_registry;
 
-    fun init(witness: COIN, ctx: &mut TxContext) {
-        let (treasury, metadata) = coin::create_currency(
-            witness,
-            9,
-            b"${symbol}",
-            b"${name}",
-            b"Test coin for launchpad E2E testing",
-            option::none(),
-            ctx
-        );
+public struct COIN has drop {}
 
-        // Share treasury cap so anyone can mint (for testing on devnet/testnet)
-        transfer::public_share_object(treasury);
-        transfer::public_transfer(metadata, ctx.sender());
-    }
+fun init(witness: COIN, ctx: &mut TxContext) {
+    let (initializer, treasury_cap) = coin_registry::new_currency_with_otw(
+        witness,
+        9, // decimals
+        b"${symbol}".to_string(),
+        b"${name}".to_string(),
+        b"Test coin for launchpad E2E testing".to_string(),
+        b"".to_string(), // icon_url
+        ctx,
+    );
 
-    public entry fun mint(
-        treasury_cap: &mut TreasuryCap<COIN>,
-        amount: u64,
-        recipient: address,
-        ctx: &mut TxContext
-    ) {
-        let coin = coin::mint(treasury_cap, amount, ctx);
-        transfer::public_transfer(coin, recipient)
-    }
+    // Finalize - this shares Currency<T> automatically
+    let metadata_cap = coin_registry::finalize(initializer, ctx);
+
+    // Share treasury cap so anyone can mint (for testing on devnet/testnet)
+    transfer::public_share_object(treasury_cap);
+    transfer::public_transfer(metadata_cap, ctx.sender());
+}
+
+public entry fun mint(
+    treasury_cap: &mut TreasuryCap<COIN>,
+    amount: u64,
+    recipient: address,
+    ctx: &mut TxContext
+) {
+    let minted = coin::mint(treasury_cap, amount, ctx);
+    transfer::public_transfer(minted, recipient);
 }
 `;
 
@@ -111,7 +130,8 @@ export interface TestCoinInfo {
   packageId: string;
   type: string;
   treasuryCap: string;
-  metadata: string;
+  metadataCap: string;   // MetadataCap<T> - NEW: replaces CoinMetadata
+  currencyId: string;    // Currency<T> object ID (shared) - NEW: auto-created by coin_registry
   isSharedTreasuryCap: boolean;
 }
 
@@ -202,19 +222,39 @@ test_coin = "0x0"
   const packageId = published.packageId;
 
   const created = parsed.objectChanges.filter((c: any) => c.type === "created");
+
+  // Find TreasuryCap<T>
   const treasuryCap = created.find((c: any) =>
     c.objectType.includes("TreasuryCap"),
   );
-  const metadata = created.find((c: any) =>
-    c.objectType.includes("CoinMetadata"),
+  if (!treasuryCap) {
+    throw new Error(`TreasuryCap not found in transaction effects for ${name}`);
+  }
+
+  // Find MetadataCap<T> - NEW: coin_registry::finalize() returns MetadataCap instead of CoinMetadata
+  const metadataCap = created.find((c: any) =>
+    c.objectType.includes("MetadataCap"),
   );
+  if (!metadataCap) {
+    throw new Error(`MetadataCap not found in transaction effects for ${name}`);
+  }
+
+  // Find Currency<T> - NEW: shared object created by coin_registry::finalize()
+  const currency = created.find((c: any) =>
+    c.objectType.includes("Currency<"),
+  );
+  if (!currency) {
+    throw new Error(`Currency object not found in transaction effects for ${name}`);
+  }
 
   const coinType = `${packageId}::coin::COIN`;
 
-  console.log(`      ✅ Published!`);
+  console.log(`      Published successfully!`);
   console.log(`         Package: ${packageId}`);
   console.log(`         Type: ${coinType}`);
   console.log(`         TreasuryCap: ${treasuryCap.objectId}`);
+  console.log(`         MetadataCap: ${metadataCap.objectId}`);
+  console.log(`         Currency: ${currency.objectId} (shared)`);
 
   // Cleanup
   execSync(`rm -rf ${tmpDir}`, { encoding: "utf8" });
@@ -223,7 +263,8 @@ test_coin = "0x0"
     packageId,
     type: coinType,
     treasuryCap: treasuryCap.objectId,
-    metadata: metadata.objectId,
+    metadataCap: metadataCap.objectId,
+    currencyId: currency.objectId,
     isSharedTreasuryCap,
   };
 }
@@ -251,13 +292,13 @@ async function main() {
   const sdk = await initSDK();
   const sender = getActiveAddress();
 
-  console.log(`\n👤 Active Address: ${sender}`);
+  console.log(`\nActive Address: ${sender}`);
   if (suffix) {
-    console.log(`📝 Using suffix: ${suffix}`);
+    console.log(`Using suffix: ${suffix}`);
   }
 
   const currentNetwork = getCurrentNetwork();
-  console.log(`🌐 Network: ${currentNetwork}`);
+  console.log(`Network: ${currentNetwork}`);
 
   // ============================================================================
   // STEP 1: Create test coins
@@ -279,7 +320,7 @@ async function main() {
     lp: await createTestCoin(`GOVEX_LP_TOKEN ${suffix}`.trim(), lpSymbol, "mainnet"), // Force private treasury
   };
 
-  console.log("\n✅ Test coins created!");
+  console.log("\nTest coins created!");
 
   // ============================================================================
   // STEP 2: Register stable coin for fee payments
@@ -315,9 +356,9 @@ async function main() {
       dryRun: false,
       showEffects: false,
     });
-    console.log("✅ Stable coin registered for fee payments");
+    console.log("Stable coin registered for fee payments");
   } catch (error: any) {
-    console.log("✅ Stable coin already registered (or registration not needed)");
+    console.log("Stable coin already registered (or registration not needed)");
   }
 
   // ============================================================================
@@ -349,9 +390,9 @@ async function main() {
       dryRun: false,
       showEffects: false,
     });
-    console.log("✅ Stable coin registered in factory allowlist");
+    console.log("Stable coin registered in factory allowlist");
   } catch (error: any) {
-    console.log("✅ Stable coin already in factory allowlist");
+    console.log("Stable coin already in factory allowlist");
   }
 
   // ============================================================================
@@ -372,14 +413,17 @@ async function main() {
   console.log("TEST COINS CREATED");
   console.log("=".repeat(80));
 
-  console.log("\n📋 Summary:");
-  console.log(`   ✅ Asset coin: ${testCoins.asset.type}`);
-  console.log(`   ✅ Stable coin: ${testCoins.stable.type}`);
-  console.log(`   ✅ LP coin: ${testCoins.lp.type}`);
-  console.log("   ✅ Stable coin registered for fee payments");
-  console.log("   ✅ Stable coin registered in factory allowlist");
+  console.log("\nSummary:");
+  console.log(`   - Asset coin: ${testCoins.asset.type}`);
+  console.log(`     Currency<T>: ${testCoins.asset.currencyId} (shared)`);
+  console.log(`   - Stable coin: ${testCoins.stable.type}`);
+  console.log(`     Currency<T>: ${testCoins.stable.currencyId} (shared)`);
+  console.log(`   - LP coin: ${testCoins.lp.type}`);
+  console.log(`     Currency<T>: ${testCoins.lp.currencyId} (shared)`);
+  console.log("   - Stable coin registered for fee payments");
+  console.log("   - Stable coin registered in factory allowlist");
 
-  console.log(`\n💾 Test coins info saved to: ${testCoinsPath}`);
+  console.log(`\nTest coins info saved to: ${testCoinsPath}`);
   console.log("\nNext steps:");
   console.log("   npx tsx scripts/create-dao-direct.ts       # Create a DAO with these coins");
   console.log("   npx tsx scripts/deploy-conditional-coins.ts # Deploy conditional coins");
@@ -387,10 +431,10 @@ async function main() {
 
 main()
   .then(() => {
-    console.log("\n✅ Test coins created successfully\n");
+    console.log("\nTest coins created successfully\n");
     process.exit(0);
   })
   .catch((error) => {
-    console.error("\n❌ Test coin creation failed:", error);
+    console.error("\nTest coin creation failed:", error);
     process.exit(1);
   });

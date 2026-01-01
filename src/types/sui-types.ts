@@ -246,21 +246,39 @@ export interface SuiEventData<T = unknown> {
 
 /**
  * DAO Created event
+ * Emitted when a DAO is created via factory or launchpad
  */
 export interface DAOCreatedEvent {
-  dao_id: string;
+  account_id: string;
+  dao_name: string;
+  asset_type: string;
+  stable_type: string;
+  asset_decimals: number;
+  stable_decimals: number;
   creator: string;
-  name: string;
+  affiliate_id: string;
+  timestamp: string;
 }
 
 /**
  * Raise Created event
+ * Emitted when a launchpad raise is created
  */
 export interface RaiseCreatedEvent {
   raise_id: string;
   creator: string;
-  tokens_for_sale: string;
+  affiliate_id: string;
+  raise_token_type: string;
+  stable_coin_type: string;
+  raise_token_decimals: number;
+  stable_coin_decimals: number;
   min_raise_amount: string;
+  tokens_for_sale: string;
+  start_time_ms: string;
+  deadline_ms: string;
+  description: string;
+  metadata_keys: string[];
+  metadata_values: string[];
 }
 
 /**

@@ -57,7 +57,7 @@ export const MOVE_ERROR_CODES: Record<string, Record<number, string>> = {
 
   'account_actions::currency': {
     0: 'TreasuryCap not found',
-    1: 'CoinMetadata not found',
+    // NOTE: Error 1 (CoinMetadata not found) removed - CoinMetadata no longer stored in Account
     2: 'Minting is disabled',
     3: 'Burning is disabled',
     4: 'Symbol update is disabled',

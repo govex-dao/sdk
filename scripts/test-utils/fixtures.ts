@@ -16,17 +16,25 @@ const __dirname = path.dirname(__filename);
 // Types
 // ============================================================================
 
+/**
+ * DAO info saved after successful DAO creation.
+ *
+ * NOTE: With the Sui Currency system migration:
+ * - `assetCurrencyId` / `stableCurrencyId` / `lpCurrencyId` are Currency<T> object IDs
+ * - These are shared objects created by coin_registry::new_currency_with_otw()
+ * - MetadataCap<T> is not stored here as it's typically not needed after DAO creation
+ */
 export interface DaoInfo {
   accountId: string;
   assetType: string;
   stableType: string;
   lpType: string;
   assetTreasuryCap: string;
-  assetMetadata: string;
+  assetCurrencyId: string;    // Currency<AssetType> object ID (shared)
   stableTreasuryCap: string;
-  stableMetadata: string;
+  stableCurrencyId: string;   // Currency<StableType> object ID (shared)
   lpTreasuryCap: string;
-  lpMetadata: string;
+  lpCurrencyId: string;       // Currency<LP> object ID (shared)
   isStableTreasuryCapShared: boolean;
   stablePackageId: string;
   spotPoolId: string;
@@ -38,7 +46,7 @@ export interface DaoInfo {
 
 export interface RegistryCoinInfo {
   treasuryCapId: string;
-  metadataId: string;
+  metadataCapId: string;  // MetadataCap<T> from coin_registry::new_currency_with_otw()
   coinType: string;
 }
 
@@ -166,11 +174,24 @@ export function extractConditionalOutcomes(
 // Test Coins Info
 // ============================================================================
 
+/**
+ * Test coin info after creating coins with coin_registry::new_currency_with_otw()
+ *
+ * NOTE: This is the new format using the Sui Currency standard.
+ * Old format had `metadata: string` (CoinMetadata<T>).
+ * New format has:
+ *   - `metadataCap: string` (MetadataCap<T>) - for updating metadata
+ *   - `currencyId: string` (Currency<T>) - shared object with coin metadata
+ *
+ * Scripts that previously used `testCoins.*.metadata` should now use
+ * `testCoins.*.currencyId` for Currency<T> references.
+ */
 export interface TestCoinInfo {
   packageId: string;
   type: string;
   treasuryCap: string;
-  metadata: string;
+  metadataCap: string;   // MetadataCap<T> - replaces CoinMetadata
+  currencyId: string;    // Currency<T> object ID (shared) - auto-created by coin_registry
   isSharedTreasuryCap: boolean;
 }
 

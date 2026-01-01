@@ -16,7 +16,6 @@ export type {
   RemoveApprovedCoinTypeActionConfig,
   DepositFromResourcesActionConfig,
   ReturnTreasuryCapActionConfig,
-  ReturnMetadataActionConfig,
   MintActionConfig,
   BurnActionConfig,
   DisableCurrencyActionConfig,
@@ -91,7 +90,6 @@ import type {
   RemoveApprovedCoinTypeActionConfig,
   DepositFromResourcesActionConfig,
   ReturnTreasuryCapActionConfig,
-  ReturnMetadataActionConfig,
   MintActionConfig,
   BurnActionConfig,
   DisableCurrencyActionConfig,
@@ -168,7 +166,6 @@ export type ActionConfig =
   | DepositFromResourcesActionConfig
   // Currency
   | ReturnTreasuryCapActionConfig
-  | ReturnMetadataActionConfig
   | MintActionConfig
   | BurnActionConfig
   | DisableCurrencyActionConfig

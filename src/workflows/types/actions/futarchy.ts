@@ -41,6 +41,8 @@ export interface UpdateDaoNameActionConfig {
 
 /**
  * Update trading params action configuration
+ * NOTE: assetDecimals and stableDecimals removed - decimals are immutable in Sui coins
+ * Read from sui::coin_registry::Currency<T> instead
  */
 export interface UpdateTradingParamsActionConfig {
   type: 'update_trading_params';
@@ -197,8 +199,8 @@ export interface CreatePoolWithMintActionConfig {
   lpType: string;
   /** LP TreasuryCap object ID */
   lpTreasuryCapId: string;
-  /** LP CoinMetadata object ID */
-  lpMetadataId: string;
+  /** LP Currency<LPType> object ID (shared from coin_registry::finalize) */
+  lpCurrencyId: string;
 }
 
 /**

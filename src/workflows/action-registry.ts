@@ -54,7 +54,7 @@ export interface ActionParams {
   stableType?: string;
   lpType?: string;
   lpTreasuryCapId?: string;
-  lpMetadataId?: string;
+  lpCurrencyId?: string;
   poolId?: string;
 }
 
@@ -222,25 +222,8 @@ registerAction('return_treasury_cap', (ctx, action) => {
   });
 });
 
-registerAction('return_metadata', (ctx, action) => {
-  const { tx, executable, versionWitness, intentWitness, config, packages, typeContext } = ctx;
-  const keyType = action.keyType!;
-  const keyModule = keyType.includes('::factory::')
-    ? packages.futarchyFactoryPackageId
-    : packages.accountActionsPackageId;
-
-  const metadataKey = tx.moveCall({
-    target: `${keyModule}::${keyType.includes('::factory::') ? 'factory' : 'currency'}::coin_metadata_key`,
-    typeArguments: [action.coinType!],
-    arguments: [],
-  });
-
-  tx.moveCall({
-    target: `${packages.accountActionsPackageId}::currency::do_init_remove_metadata`,
-    typeArguments: [typeContext.configType, typeContext.outcomeType, keyType, action.coinType!, typeContext.witnessType],
-    arguments: [executable, txObject(tx, config.accountId), tx.object(packages.packageRegistryId), metadataKey, versionWitness, intentWitness],
-  });
-});
+// NOTE: 'return_metadata' action removed - CoinMetadata no longer stored in Account
+// Use sui::coin_registry::Currency<T> for metadata access instead
 
 // ============================================================================
 // ACCOUNT ACTIONS - TRANSFER
@@ -423,7 +406,7 @@ registerAction('create_pool_with_mint', (ctx, action) => {
       txObject(tx, config.accountId),
       tx.object(packages.packageRegistryId),
       tx.object(action.lpTreasuryCapId!),
-      tx.object(action.lpMetadataId!),
+      tx.object(action.lpCurrencyId!),
       tx.object(typeContext.clockId),
       versionWitness,
       intentWitness,

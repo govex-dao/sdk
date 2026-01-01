@@ -96,7 +96,6 @@ export interface LaunchpadWorkflowSharedObjects {
  *   assetType: '0x123::coin::COIN',
  *   stableType: '0x2::sui::SUI',
  *   treasuryCap: '0xCAP',
- *   coinMetadata: '0xMETA',
  *   tokensForSale: 1_000_000n,
  *   minRaiseAmount: 100_000_000n,
  *   allowedCaps: [1_000_000n, 10_000_000n],
@@ -210,29 +209,31 @@ export class LaunchpadWorkflow {
         }),
         // 3. treasury_cap
         tx.object(config.treasuryCap),
-        // 4. coin_metadata
-        tx.object(config.coinMetadata),
-        // 5. affiliate_id
+        // 4. asset_currency (Currency<AssetType> from coin_registry)
+        tx.object(config.assetCurrency),
+        // 5. stable_currency (Currency<StableType> from coin_registry)
+        tx.object(config.stableCurrency),
+        // 6. affiliate_id
         tx.pure.string(config.affiliateId || ''),
-        // 6. tokens_for_sale
+        // 7. tokens_for_sale
         tx.pure.u64(config.tokensForSale),
-        // 7. min_raise_amount
+        // 8. min_raise_amount
         tx.pure.u64(config.minRaiseAmount),
-        // 8. allowed_caps (vector)
+        // 9. allowed_caps (vector)
         tx.pure.vector('u64', config.allowedCaps.map(c => c)),
-        // 9. start_delay_ms (Option)
+        // 10. start_delay_ms (Option)
         tx.pure.option('u64', config.startDelayMs ?? null),
-        // 10. allow_early_completion
+        // 11. allow_early_completion
         tx.pure.bool(config.allowEarlyCompletion),
-        // 11. description
+        // 12. description
         tx.pure.string(config.description),
-        // 12. metadata_keys (vector)
+        // 13. metadata_keys (vector)
         tx.pure.vector('string', config.metadataKeys || []),
-        // 13. metadata_values (vector)
+        // 14. metadata_values (vector)
         tx.pure.vector('string', config.metadataValues || []),
-        // 14. launchpad_fee (Coin<SUI>)
+        // 15. launchpad_fee (Coin<SUI>)
         launchpadFeeCoin,
-        // 15. clock
+        // 16. clock
         tx.object(clockId),
       ],
     });
@@ -380,7 +381,7 @@ export class LaunchpadWorkflow {
             tx.pure.u64(action.feeBps),
             tx.pure.u64(action.launchFeeDurationMs ?? 0n),
             tx.pure.id(action.lpTreasuryCapId),
-            tx.pure.id(action.lpMetadataId),
+            tx.pure.id(action.lpCurrencyId),
           ],
         });
         break;
@@ -393,13 +394,8 @@ export class LaunchpadWorkflow {
         });
         break;
 
-      case 'return_metadata':
-        tx.moveCall({
-          target: `${accountActionsPackageId}::currency_init_actions::add_return_metadata_spec`,
-          typeArguments: [getCoinType(action.coinType, config.assetType)],
-          arguments: [builder, tx.pure.address(action.recipient)],
-        });
-        break;
+      // NOTE: 'return_metadata' case removed - CoinMetadata no longer stored in Account
+      // Use sui::coin_registry::Currency<T> for metadata access instead
 
       case 'update_trading_params':
         tx.moveCall({
@@ -721,6 +717,9 @@ export class LaunchpadWorkflow {
         txObject(tx, config.raiseId),
         tx.object(factoryId),
         tx.object(packageRegistryId),
+        // Currency<AssetType> and Currency<StableType> for decimals in DAOCreated event
+        tx.object(config.assetCurrency),
+        tx.object(config.stableCurrency),
         tx.object(clockId),
       ],
     });

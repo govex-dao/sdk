@@ -29,7 +29,6 @@ async function main() {
     const RAISE_TOKEN_TYPE = '0xYOUR_PACKAGE::your_coin::YOUR_COIN';
     const STABLE_COIN_TYPE = '0x2::sui::SUI';
     const TREASURY_CAP_ID = '0xYOUR_TREASURY_CAP_ID';
-    const COIN_METADATA_ID = '0xYOUR_COIN_METADATA_ID';
 
     // Calculate deadline: 7 days from now
     const deadlineMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
@@ -40,7 +39,6 @@ async function main() {
         raiseTokenType: RAISE_TOKEN_TYPE,
         stableCoinType: STABLE_COIN_TYPE,
         treasuryCap: TREASURY_CAP_ID,
-        coinMetadata: COIN_METADATA_ID,
         tokensForSale: BigInt(1000000),
         minRaiseAmount: TransactionUtils.suiToMist(100),
         allowedCaps: [

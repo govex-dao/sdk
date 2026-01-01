@@ -45,26 +45,37 @@ Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-fram
 ${coin_name}_coin = "0x0"
 MOVETOML
 
-    # Create coin module
+    # Create coin module using new coin_registry pattern
     cat > "$coin_dir/sources/coin.move" << 'MOVECODE'
 module ${coin_name}_coin::coin {
-    use sui::coin;
+    use sui::coin_registry::{Self, CoinRegistry};
 
     public struct COIN has drop {}
 
     fun init(witness: COIN, ctx: &mut TxContext) {
-        let (treasury, metadata) = coin::create_currency(
+        // Use new coin_registry pattern: produces TreasuryCap, MetadataCap, and shared Currency
+        let (treasury_cap, mut init) = coin_registry::new_currency_with_otw(
             witness,
             9, // decimals
             b"${coin_symbol}",
             b"${coin_name}",
             b"${coin_desc}",
-            option::none(),
+            b"", // icon_url (empty for test coins)
             ctx
         );
 
-        transfer::public_transfer(treasury, ctx.sender());
-        transfer::public_transfer(metadata, ctx.sender());
+        // Finalize registration - this shares Currency<T> and returns MetadataCap
+        let metadata_cap = coin_registry::finalize(init, ctx);
+
+        // Transfer caps to sender
+        transfer::public_transfer(treasury_cap, ctx.sender());
+        transfer::public_transfer(metadata_cap, ctx.sender());
+    }
+
+    /// Entry function to register with Sui CoinRegistry (call after init)
+    /// This makes the coin visible in wallet UIs and getCoinMetadata RPC
+    public entry fun register(registry: &mut CoinRegistry, ctx: &mut TxContext) {
+        coin_registry::finalize_registration<COIN>(registry, ctx);
     }
 }
 MOVECODE
@@ -108,18 +119,22 @@ MOVECODE
     
     # Extract TreasuryCap
     local treasury_cap=$(jq -r '.objectChanges[]? | select(.objectType? and (.objectType | contains("::coin::TreasuryCap"))) | .objectId' "$json_file" 2>/dev/null | head -1)
-    
-    # Extract CoinMetadata  
-    local metadata=$(jq -r '.objectChanges[]? | select(.objectType? and (.objectType | contains("::coin::CoinMetadata"))) | .objectId' "$json_file" 2>/dev/null | head -1)
-    
+
+    # Extract MetadataCap (new coin_registry pattern)
+    local metadata_cap=$(jq -r '.objectChanges[]? | select(.objectType? and (.objectType | contains("::coin_registry::MetadataCap"))) | .objectId' "$json_file" 2>/dev/null | head -1)
+
+    # Extract Currency (shared object from coin_registry::finalize)
+    local currency=$(jq -r '.objectChanges[]? | select(.objectType? and (.objectType | contains("::coin_registry::Currency"))) | .objectId' "$json_file" 2>/dev/null | head -1)
+
     # Get coin type
     local coin_type=$(jq -r '.objectChanges[]? | select(.objectType? and (.objectType | contains("::coin::TreasuryCap"))) | .objectType' "$json_file" 2>/dev/null | sed 's/.*<\(.*\)>.*/\1/' | head -1)
-    
-    if [ -n "$pkg_id" ] && [ -n "$treasury_cap" ] && [ -n "$metadata" ]; then
+
+    if [ -n "$pkg_id" ] && [ -n "$treasury_cap" ] && [ -n "$metadata_cap" ]; then
         echo -e "${GREEN}✓ $coin_name deployed successfully${NC}"
         echo "  Package ID: $pkg_id"
         echo "  TreasuryCap: $treasury_cap"
-        echo "  Metadata: $metadata"
+        echo "  MetadataCap: $metadata_cap"
+        echo "  Currency: $currency"
         echo "  Type: $coin_type"
         echo "  JSON saved to: $json_file"
         echo "$coin_type"  # Return coin type for later use
@@ -128,7 +143,8 @@ MOVECODE
         echo -e "${RED}✗ Failed to deploy $coin_name${NC}"
         echo "Package ID: $pkg_id"
         echo "TreasuryCap: $treasury_cap"
-        echo "Metadata: $metadata"
+        echo "MetadataCap: $metadata_cap"
+        echo "Currency: $currency"
         cat "$json_file"
         return 1
     fi

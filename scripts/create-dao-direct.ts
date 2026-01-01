@@ -295,7 +295,7 @@ async function main() {
       createDaoTx.pure.u64(poolFeeBps), // fee_bps
       createDaoTx.pure.u64(0), // launch_fee_duration_ms
       createDaoTx.pure.id(testCoins.lp.treasuryCap), // lp_treasury_cap_id
-      createDaoTx.pure.id(testCoins.lp.metadata), // lp_metadata_id
+      createDaoTx.pure.id(testCoins.lp.currencyId), // lp_currency_id
     ],
   });
 
@@ -374,7 +374,8 @@ async function main() {
       paymentCoin,
       createDaoTx.pure.string(""), // affiliate_id
       createDaoTx.object(testCoins.asset.treasuryCap),
-      createDaoTx.object(testCoins.asset.metadata),
+      createDaoTx.object(testCoins.asset.currencyId), // asset_currency: &Currency<AssetType>
+      createDaoTx.object(testCoins.stable.currencyId), // stable_currency: &Currency<StableType>
       initSpecs,
       createDaoTx.sharedObjectRef({
         objectId: "0x6",
@@ -673,7 +674,7 @@ async function main() {
         mutable: true,
       }),
       executeTx.object(testCoins.lp.treasuryCap),
-      executeTx.object(testCoins.lp.metadata),
+      executeTx.object(testCoins.lp.currencyId),
       executeTx.sharedObjectRef({
         objectId: "0x6",
         initialSharedVersion: 1,
@@ -826,11 +827,11 @@ async function main() {
     stableType: testCoins.stable.type,
     lpType: testCoins.lp.type,
     assetTreasuryCap: testCoins.asset.treasuryCap,
-    assetMetadata: testCoins.asset.metadata,
+    assetCurrencyId: testCoins.asset.currencyId,
     stableTreasuryCap: testCoins.stable.treasuryCap,
-    stableMetadata: testCoins.stable.metadata,
+    stableCurrencyId: testCoins.stable.currencyId,
     lpTreasuryCap: testCoins.lp.treasuryCap,
-    lpMetadata: testCoins.lp.metadata,
+    lpCurrencyId: testCoins.lp.currencyId,
     isStableTreasuryCapShared: testCoins.stable.isSharedTreasuryCap,
     stablePackageId: testCoins.stable.packageId,
     spotPoolId: poolId,
