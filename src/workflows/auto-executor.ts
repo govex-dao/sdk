@@ -161,6 +161,8 @@ export class AutoExecutor {
       escrowId?: ObjectIdOrRef;
       /** Spot pool ID (fetched from backend if not provided) */
       spotPoolId?: ObjectIdOrRef;
+      /** LP type (fetched from backend if not provided) */
+      lpType?: string;
       clockId?: string;
     }
   ): Promise<WorkflowTransaction & { proposal: BackendProposalResponse }> {
@@ -185,7 +187,7 @@ export class AutoExecutor {
     // 4. Get required IDs
     const escrowId = options.escrowId || proposal.escrow_id;
     const spotPoolId = options.spotPoolId || proposal.spot_pool_id;
-    const lpType = proposal.lp_type;
+    const lpType = options.lpType || proposal.lp_type;
 
     if (!escrowId) {
       throw new Error(`escrowId not found for proposal ${proposalId}`);

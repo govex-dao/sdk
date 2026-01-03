@@ -19,14 +19,18 @@ async function main() {
     const accountProtocolPath = path.join(__dirname, '../../packages/deployments-processed/AccountProtocol.json');
     const accountProtocolDeployment = JSON.parse(fs.readFileSync(accountProtocolPath, 'utf8'));
 
-    const REGISTRY = accountProtocolDeployment.sharedObjects.find((obj: any) => obj.name === 'PackageRegistry')?.objectId;
+    const registryObj = accountProtocolDeployment.sharedObjects.find((obj: any) => obj.name === 'PackageRegistry');
+    const REGISTRY = registryObj?.objectId;
+    const REGISTRY_VERSION = registryObj?.initialSharedVersion;
+    const ADMIN_CAP = accountProtocolDeployment.adminCaps?.find((obj: any) => obj.name === 'PackageAdminCap')?.objectId;
     const ACCOUNT_PROTOCOL_PKG = accountProtocolDeployment.packageId;
 
-    if (!REGISTRY || !ACCOUNT_PROTOCOL_PKG) {
-        throw new Error('Failed to load PackageRegistry or AccountProtocol package ID from deployment files');
+    if (!REGISTRY || !ACCOUNT_PROTOCOL_PKG || !ADMIN_CAP) {
+        throw new Error('Failed to load PackageRegistry, PackageAdminCap, or AccountProtocol package ID from deployment files');
     }
 
     console.log(`Using PackageRegistry: ${REGISTRY}`);
+    console.log(`Using PackageAdminCap: ${ADMIN_CAP}`);
     console.log(`Using AccountProtocol: ${ACCOUNT_PROTOCOL_PKG}\n`);
 
     // Load all packages from latest deployment JSON
@@ -86,6 +90,7 @@ async function main() {
                 target: `${ACCOUNT_PROTOCOL_PKG}::package_registry::add_package`,
                 arguments: [
                     tx.object(REGISTRY),
+                    tx.object(ADMIN_CAP),
                     tx.pure.string(pkg.name),
                     tx.pure.address(pkg.addr),
                     tx.pure.u64(pkg.version),

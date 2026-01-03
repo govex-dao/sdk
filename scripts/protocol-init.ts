@@ -3,8 +3,7 @@
  *
  * One-time protocol initialization for E2E testing:
  * 1. Register packages in PackageRegistry
- * 2. Add factory to fee exempt packages
- * 3. Add governance to sponsorship authorized packages
+ * 2. Add governance to sponsorship authorized packages (in SponsorshipRegistry)
  *
  * Run this ONCE after deploying packages, before running any E2E tests.
  *
@@ -16,7 +15,7 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { PackageRegistryAdminOperations } from "../src/services/package-registry-admin";
+import { Transaction } from "@mysten/sui/transactions";
 import { initSDK, executeTransaction, getActiveAddress } from "./execute-tx";
 
 // ESM compatibility for __dirname
@@ -60,94 +59,46 @@ async function main() {
   }
 
   // ============================================================================
-  // STEP 2: Add factory to fee exempt packages
+  // STEP 2: Add governance to sponsorship authorized packages
   // ============================================================================
   console.log("\n" + "=".repeat(80));
-  console.log("STEP 2: ADD FACTORY TO FEE EXEMPT PACKAGES");
+  console.log("STEP 2: ADD GOVERNANCE TO SPONSORSHIP AUTHORIZED PACKAGES");
   console.log("=".repeat(80));
 
   try {
-    // Load AccountProtocol deployment for registry and admin cap
-    const accountProtocolPath = path.join(__dirname, "../../packages/deployments-processed/AccountProtocol.json");
-    const accountProtocolDeployment = JSON.parse(fs.readFileSync(accountProtocolPath, "utf8"));
+    // Load futarchy_core deployment for SponsorshipRegistry and SponsorshipAdminCap
+    const futarchyCorePath = path.join(__dirname, "../../packages/deployments-processed/futarchy_core.json");
+    const futarchyCoreDeployment = JSON.parse(fs.readFileSync(futarchyCorePath, "utf8"));
 
-    const registryObj = accountProtocolDeployment.sharedObjects?.find((obj: any) => obj.name === "PackageRegistry");
-    const adminCapId = accountProtocolDeployment.adminCaps?.find((obj: any) => obj.name === "PackageAdminCap")?.objectId;
-    const protocolPkgId = accountProtocolDeployment.packageId;
-
-    // Load Factory deployment for package address
-    const factoryPath = path.join(__dirname, "../../packages/deployments-processed/futarchy_factory.json");
-    const factoryDeployment = JSON.parse(fs.readFileSync(factoryPath, "utf8"));
-    const factoryPkgId = factoryDeployment.packageId;
-
-    if (registryObj?.objectId && adminCapId && protocolPkgId && factoryPkgId) {
-      console.log(`PackageRegistry: ${registryObj.objectId}`);
-      console.log(`PackageAdminCap: ${adminCapId}`);
-      console.log(`Factory Package: ${factoryPkgId}`);
-
-      // Use SDK service for clean API
-      const registryAdmin = new PackageRegistryAdminOperations(
-        sdk.client,
-        protocolPkgId,
-        registryObj.objectId,
-        registryObj.initialSharedVersion
-      );
-
-      const exemptTx = registryAdmin.addFeeExemptPackage(adminCapId, factoryPkgId);
-
-      await executeTransaction(sdk, exemptTx, {
-        network: "devnet",
-        dryRun: false,
-        showEffects: false,
-      });
-      console.log("✅ Factory package added to fee exempt list");
-    } else {
-      console.log("⚠️  Missing deployment data for fee exemption setup");
-    }
-  } catch (error: any) {
-    const isAlreadyExempt = error.message?.includes("EPackageAlreadyExempt") ||
-                           error.message?.includes("}, 10)");
-    if (isAlreadyExempt) {
-      console.log("✅ Factory package already fee exempt");
-    } else {
-      console.log("⚠️  Fee exemption setup failed:", error.message);
-    }
-  }
-
-  // ============================================================================
-  // STEP 3: Add governance to sponsorship authorized packages
-  // ============================================================================
-  console.log("\n" + "=".repeat(80));
-  console.log("STEP 3: ADD GOVERNANCE TO SPONSORSHIP AUTHORIZED PACKAGES");
-  console.log("=".repeat(80));
-
-  try {
-    const accountProtocolPath = path.join(__dirname, "../../packages/deployments-processed/AccountProtocol.json");
-    const accountProtocolDeployment = JSON.parse(fs.readFileSync(accountProtocolPath, "utf8"));
-
-    const registryObj = accountProtocolDeployment.sharedObjects?.find((obj: any) => obj.name === "PackageRegistry");
-    const adminCapId = accountProtocolDeployment.adminCaps?.find((obj: any) => obj.name === "PackageAdminCap")?.objectId;
-    const protocolPkgId = accountProtocolDeployment.packageId;
+    const sponsorshipRegistryObj = futarchyCoreDeployment.sharedObjects?.find((obj: any) => obj.name === "SponsorshipRegistry");
+    const sponsorshipAdminCapId = futarchyCoreDeployment.adminCaps?.find((obj: any) => obj.name === "SponsorshipAdminCap")?.objectId;
+    const futarchyCorePkgId = futarchyCoreDeployment.packageId;
 
     const governancePath = path.join(__dirname, "../../packages/deployments-processed/futarchy_governance.json");
     const governanceDeployment = JSON.parse(fs.readFileSync(governancePath, "utf8"));
     const governancePkgId = governanceDeployment.packageId;
 
-    if (registryObj?.objectId && adminCapId && protocolPkgId && governancePkgId) {
-      console.log(`PackageRegistry: ${registryObj.objectId}`);
-      console.log(`PackageAdminCap: ${adminCapId}`);
+    if (sponsorshipRegistryObj?.objectId && sponsorshipAdminCapId && futarchyCorePkgId && governancePkgId) {
+      console.log(`SponsorshipRegistry: ${sponsorshipRegistryObj.objectId}`);
+      console.log(`SponsorshipAdminCap: ${sponsorshipAdminCapId}`);
       console.log(`Governance Package: ${governancePkgId}`);
 
-      const registryAdmin = new PackageRegistryAdminOperations(
-        sdk.client,
-        protocolPkgId,
-        registryObj.objectId,
-        registryObj.initialSharedVersion
-      );
+      // Build transaction to add governance to sponsorship authorized packages
+      const tx = new Transaction();
+      tx.moveCall({
+        target: `${futarchyCorePkgId}::sponsorship_auth::add_authorized_package`,
+        arguments: [
+          tx.sharedObjectRef({
+            objectId: sponsorshipRegistryObj.objectId,
+            initialSharedVersion: sponsorshipRegistryObj.initialSharedVersion,
+            mutable: true,
+          }),
+          tx.object(sponsorshipAdminCapId),
+          tx.pure.address(governancePkgId),
+        ],
+      });
 
-      const sponsorshipTx = registryAdmin.addSponsorshipAuthorizedPackage(adminCapId, governancePkgId);
-
-      await executeTransaction(sdk, sponsorshipTx, {
+      await executeTransaction(sdk, tx, {
         network: "devnet",
         dryRun: false,
         showEffects: false,
@@ -157,8 +108,8 @@ async function main() {
       console.log("⚠️  Missing deployment data for sponsorship authorization setup");
     }
   } catch (error: any) {
-    const isAlreadyAuthorized = error.message?.includes("EPackageAlreadyAuthorizedForSponsorship") ||
-                                error.message?.includes("}, 12)");
+    const isAlreadyAuthorized = error.message?.includes("EPackageAlreadyAuthorized") ||
+                                error.message?.includes("}, 1)");
     if (isAlreadyAuthorized) {
       console.log("✅ Governance package already sponsorship authorized");
     } else {
@@ -172,8 +123,7 @@ async function main() {
 
   console.log("\n📋 Summary:");
   console.log("   ✅ Packages registered in PackageRegistry");
-  console.log("   ✅ Factory added to fee exempt list");
-  console.log("   ✅ Governance added to sponsorship authorized list");
+  console.log("   ✅ Governance added to sponsorship authorized list (SponsorshipRegistry)");
 
   console.log("\nNext steps:");
   console.log("   npx tsx scripts/create-test-coins.ts  # Create test coins for a DAO");

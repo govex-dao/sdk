@@ -211,6 +211,8 @@ async function main() {
   ];
 
   // Define failure actions
+  // NOTE: return_metadata_cap returns MetadataCap<T> to creator on failure
+  // (CoinMetadata is deprecated, now using Currency<T> + MetadataCap<T>)
   const failureActions = [
     {
       type: 'return_treasury_cap' as const,
@@ -218,7 +220,7 @@ async function main() {
       recipient: sender,
     },
     {
-      type: 'return_metadata' as const,
+      type: 'return_metadata_cap' as const,
       coinType: testCoins.asset.type,
       recipient: sender,
     },
@@ -231,6 +233,9 @@ async function main() {
       assetType: testCoins.asset.type,
       stableType: testCoins.stable.type,
       treasuryCap: testCoins.asset.treasuryCap,
+      metadataCap: testCoins.asset.metadataCap, // MetadataCap<AssetType> for updating Currency metadata
+      assetCurrency: testCoins.asset.currencyId,
+      stableCurrency: testCoins.stable.currencyId,
       tokensForSale: 1_000_000n,
       minRaiseAmount: TransactionUtils.suiToMist(1),
       allowedCaps: [
@@ -357,8 +362,9 @@ async function main() {
   console.log("STEP 3: WAIT FOR DEADLINE");
   console.log("=".repeat(80));
 
-  console.log("\n⏰ Waiting for deadline (30s)...");
-  await new Promise((resolve) => setTimeout(resolve, 30000));
+  // Launchpad duration is 30s, add 2s buffer for clock drift
+  console.log("\n⏰ Waiting for deadline (32s)...");
+  await new Promise((resolve) => setTimeout(resolve, 32000));
   console.log("✅ Deadline passed!");
 
   // Step 4: Complete raise with atomic action execution
@@ -376,6 +382,8 @@ async function main() {
     raiseId: raiseRef,
     assetType: testCoins.asset.type,
     stableType: testCoins.stable.type,
+    assetCurrency: testCoins.asset.currencyId,
+    stableCurrency: testCoins.stable.currencyId,
   });
 
   const completeResult = await executeTransaction(sdk, completeTx.transaction, {

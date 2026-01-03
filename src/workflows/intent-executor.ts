@@ -74,6 +74,8 @@ export interface IntentExecutorPackages {
   futarchyGovernancePackageId: string;
   futarchyGovernanceActionsPackageId: string;
   futarchyOracleActionsPackageId: string;
+  /** Required for FeeAdminCap type reference in fee admin governance actions */
+  futarchyMarketsCorePackageId: string;
   packageRegistryId: string;
 }
 
@@ -276,6 +278,63 @@ export class IntentExecutor {
   }
 
   /**
+   * Helper for PTB borrow/return pattern with capabilities.
+   * Borrows a cap from the account, executes the action callback with it,
+   * then returns the cap to the account.
+   *
+   * This implements the standard governance action pattern:
+   * 1. access_control::do_borrow<Cap>(...) → returns cap
+   * 2. do_some_action(..., &cap)
+   * 3. access_control::do_return<Cap>(..., cap)
+   */
+  private withBorrowedCap(
+    tx: Transaction,
+    capType: string,
+    ctx: {
+      executable: ReturnType<Transaction['moveCall']>;
+      accountId: ObjectIdOrRef;
+      configType: string;
+      outcomeType: string;
+      witnessType: string;
+      versionWitness: ReturnType<Transaction['moveCall']>;
+      intentWitness: ReturnType<Transaction['moveCall']>;
+    },
+    action: (cap: ReturnType<Transaction['moveCall']>) => void
+  ): void {
+    const { accountActionsPackageId, packageRegistryId } = this.packages;
+
+    // 1. Borrow cap from account
+    const cap = tx.moveCall({
+      target: `${accountActionsPackageId}::access_control::do_borrow`,
+      typeArguments: [ctx.configType, ctx.outcomeType, capType, ctx.witnessType],
+      arguments: [
+        ctx.executable,
+        txObject(tx, ctx.accountId),
+        tx.object(packageRegistryId),
+        ctx.versionWitness,
+        ctx.intentWitness,
+      ],
+    });
+
+    // 2. Execute the action with borrowed cap
+    action(cap);
+
+    // 3. Return cap to account
+    tx.moveCall({
+      target: `${accountActionsPackageId}::access_control::do_return`,
+      typeArguments: [ctx.configType, ctx.outcomeType, capType, ctx.witnessType],
+      arguments: [
+        ctx.executable,
+        txObject(tx, ctx.accountId),
+        tx.object(packageRegistryId),
+        cap,
+        ctx.versionWitness,
+        ctx.intentWitness,
+      ],
+    });
+  }
+
+  /**
    * Execute a single action within the intent
    */
   private executeAction(
@@ -301,6 +360,17 @@ export class IntentExecutor {
     } = this.packages;
 
     const { configType, outcomeType, witnessType, clockId } = typeContext;
+
+    // Common context for cap-based actions
+    const capContext = {
+      executable,
+      accountId: config.accountId,
+      configType,
+      outcomeType,
+      witnessType,
+      versionWitness,
+      intentWitness,
+    };
 
     switch (action.action) {
       // =========================================================================
@@ -870,309 +940,268 @@ export class IntentExecutor {
 
       // =========================================================================
       // GOVERNANCE ACTIONS - PACKAGE REGISTRY
+      // PTB Borrow/Return Pattern: These actions require PackageAdminCap
       // =========================================================================
-      case 'add_package':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_add_package`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'add_package': {
+        const packageAdminCapType = `${this.packages.accountProtocolPackageId}::package_registry::PackageAdminCap`;
+        this.withBorrowedCap(tx, packageAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_add_package`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), versionWitness, intentWitness, tx.object(packageRegistryId), cap],
+          });
         });
         break;
+      }
 
-      case 'remove_package':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_remove_package`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'remove_package': {
+        const packageAdminCapType = `${this.packages.accountProtocolPackageId}::package_registry::PackageAdminCap`;
+        this.withBorrowedCap(tx, packageAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_remove_package`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), versionWitness, intentWitness, tx.object(packageRegistryId), cap],
+          });
         });
         break;
+      }
 
-      case 'update_package_version':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_update_package_version`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'update_package_version': {
+        const packageAdminCapType = `${this.packages.accountProtocolPackageId}::package_registry::PackageAdminCap`;
+        this.withBorrowedCap(tx, packageAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_update_package_version`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), versionWitness, intentWitness, tx.object(packageRegistryId), cap],
+          });
         });
         break;
+      }
 
-      case 'update_package_metadata':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_update_package_metadata`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'update_package_metadata': {
+        const packageAdminCapType = `${this.packages.accountProtocolPackageId}::package_registry::PackageAdminCap`;
+        this.withBorrowedCap(tx, packageAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_update_package_metadata`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), versionWitness, intentWitness, tx.object(packageRegistryId), cap],
+          });
         });
         break;
+      }
 
-      case 'pause_account_creation':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_pause_account_creation`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'pause_account_creation': {
+        const packageAdminCapType = `${this.packages.accountProtocolPackageId}::package_registry::PackageAdminCap`;
+        this.withBorrowedCap(tx, packageAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_pause_account_creation`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), versionWitness, intentWitness, tx.object(packageRegistryId), cap],
+          });
         });
         break;
+      }
 
-      case 'unpause_account_creation':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_unpause_account_creation`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'unpause_account_creation': {
+        const packageAdminCapType = `${this.packages.accountProtocolPackageId}::package_registry::PackageAdminCap`;
+        this.withBorrowedCap(tx, packageAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_unpause_account_creation`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), versionWitness, intentWitness, tx.object(packageRegistryId), cap],
+          });
         });
         break;
+      }
 
       // =========================================================================
-      // GOVERNANCE ACTIONS - PROTOCOL ADMIN
+      // GOVERNANCE ACTIONS - PROTOCOL ADMIN (FactoryOwnerCap)
+      // PTB Borrow/Return Pattern: These actions require FactoryOwnerCap
       // =========================================================================
-      case 'set_factory_paused':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_set_factory_paused`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'set_factory_paused': {
+        if (!config.factoryId) throw new Error('factoryId is required for set_factory_paused action');
+        const factoryOwnerCapType = `${this.packages.futarchyFactoryPackageId}::factory::FactoryOwnerCap`;
+        this.withBorrowedCap(tx, factoryOwnerCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_set_factory_paused`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.factoryId!), cap],
+          });
         });
         break;
+      }
 
-      case 'disable_factory_permanently':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_disable_factory_permanently`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'disable_factory_permanently': {
+        if (!config.factoryId) throw new Error('factoryId is required for disable_factory_permanently action');
+        const factoryOwnerCapType = `${this.packages.futarchyFactoryPackageId}::factory::FactoryOwnerCap`;
+        this.withBorrowedCap(tx, factoryOwnerCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_disable_factory_permanently`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.factoryId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'add_stable_type':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_add_stable_type`,
-          typeArguments: [outcomeType, witnessType, action.stableType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'add_stable_type': {
+        if (!config.factoryId) throw new Error('factoryId is required for add_stable_type action');
+        const factoryOwnerCapType = `${this.packages.futarchyFactoryPackageId}::factory::FactoryOwnerCap`;
+        this.withBorrowedCap(tx, factoryOwnerCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_add_stable_type`,
+            typeArguments: [outcomeType, witnessType, action.stableType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.factoryId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'remove_stable_type':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_remove_stable_type`,
-          typeArguments: [outcomeType, witnessType, action.stableType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'remove_stable_type': {
+        if (!config.factoryId) throw new Error('factoryId is required for remove_stable_type action');
+        const factoryOwnerCapType = `${this.packages.futarchyFactoryPackageId}::factory::FactoryOwnerCap`;
+        this.withBorrowedCap(tx, factoryOwnerCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_remove_stable_type`,
+            typeArguments: [outcomeType, witnessType, action.stableType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.factoryId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'update_dao_creation_fee':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_update_dao_creation_fee`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      // =========================================================================
+      // GOVERNANCE ACTIONS - PROTOCOL ADMIN (FeeAdminCap)
+      // PTB Borrow/Return Pattern: These actions require FeeAdminCap
+      // Exception: apply_pending_coin_fees does NOT require a cap
+      // =========================================================================
+      case 'update_dao_creation_fee': {
+        if (!config.feeManagerId) throw new Error('feeManagerId is required for update_dao_creation_fee action');
+        const feeAdminCapType = `${this.packages.futarchyMarketsCorePackageId}::fee::FeeAdminCap`;
+        this.withBorrowedCap(tx, feeAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_update_dao_creation_fee`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.feeManagerId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'update_proposal_fee':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_update_proposal_fee`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'update_proposal_fee': {
+        if (!config.feeManagerId) throw new Error('feeManagerId is required for update_proposal_fee action');
+        const feeAdminCapType = `${this.packages.futarchyMarketsCorePackageId}::fee::FeeAdminCap`;
+        this.withBorrowedCap(tx, feeAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_update_proposal_fee`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.feeManagerId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'update_verification_fee':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_update_verification_fee`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'update_verification_fee': {
+        if (!config.feeManagerId) throw new Error('feeManagerId is required for update_verification_fee action');
+        const feeAdminCapType = `${this.packages.futarchyMarketsCorePackageId}::fee::FeeAdminCap`;
+        this.withBorrowedCap(tx, feeAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_update_verification_fee`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.feeManagerId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'add_verification_level':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_add_verification_level`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'add_verification_level': {
+        if (!config.feeManagerId) throw new Error('feeManagerId is required for add_verification_level action');
+        const feeAdminCapType = `${this.packages.futarchyMarketsCorePackageId}::fee::FeeAdminCap`;
+        this.withBorrowedCap(tx, feeAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_add_verification_level`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.feeManagerId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'remove_verification_level':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_remove_verification_level`,
-          typeArguments: [outcomeType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'remove_verification_level': {
+        if (!config.feeManagerId) throw new Error('feeManagerId is required for remove_verification_level action');
+        const feeAdminCapType = `${this.packages.futarchyMarketsCorePackageId}::fee::FeeAdminCap`;
+        this.withBorrowedCap(tx, feeAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_remove_verification_level`,
+            typeArguments: [outcomeType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.feeManagerId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'withdraw_fees_to_treasury':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_withdraw_fees_to_treasury`,
-          typeArguments: [configType, outcomeType, action.coinType, witnessType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'withdraw_fees_to_treasury': {
+        if (!config.feeManagerId) throw new Error('feeManagerId is required for withdraw_fees_to_treasury action');
+        const feeAdminCapType = `${this.packages.futarchyMarketsCorePackageId}::fee::FeeAdminCap`;
+        this.withBorrowedCap(tx, feeAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_withdraw_fees_to_treasury`,
+            typeArguments: [configType, outcomeType, action.coinType, witnessType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.feeManagerId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'add_coin_fee_config':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_add_coin_fee_config`,
-          typeArguments: [outcomeType, witnessType, action.coinType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'add_coin_fee_config': {
+        if (!config.feeManagerId) throw new Error('feeManagerId is required for add_coin_fee_config action');
+        const feeAdminCapType = `${this.packages.futarchyMarketsCorePackageId}::fee::FeeAdminCap`;
+        this.withBorrowedCap(tx, feeAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_add_coin_fee_config`,
+            typeArguments: [outcomeType, witnessType, action.coinType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.feeManagerId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'update_coin_creation_fee':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_update_coin_creation_fee`,
-          typeArguments: [outcomeType, witnessType, action.coinType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'update_coin_creation_fee': {
+        if (!config.feeManagerId) throw new Error('feeManagerId is required for update_coin_creation_fee action');
+        const feeAdminCapType = `${this.packages.futarchyMarketsCorePackageId}::fee::FeeAdminCap`;
+        this.withBorrowedCap(tx, feeAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_update_coin_creation_fee`,
+            typeArguments: [outcomeType, witnessType, action.coinType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.feeManagerId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'update_coin_proposal_fee':
-        tx.moveCall({
-          target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_update_coin_proposal_fee`,
-          typeArguments: [outcomeType, witnessType, action.coinType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+      case 'update_coin_proposal_fee': {
+        if (!config.feeManagerId) throw new Error('feeManagerId is required for update_coin_proposal_fee action');
+        const feeAdminCapType = `${this.packages.futarchyMarketsCorePackageId}::fee::FeeAdminCap`;
+        this.withBorrowedCap(tx, feeAdminCapType, capContext, (cap) => {
+          tx.moveCall({
+            target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_update_coin_proposal_fee`,
+            typeArguments: [outcomeType, witnessType, action.coinType],
+            arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.feeManagerId!), cap, tx.object(clockId)],
+          });
         });
         break;
+      }
 
-      case 'apply_pending_coin_fees':
+      // apply_pending_coin_fees does NOT require FeeAdminCap - anyone can call after delay
+      case 'apply_pending_coin_fees': {
+        if (!config.feeManagerId) throw new Error('feeManagerId is required for apply_pending_coin_fees action');
         tx.moveCall({
           target: `${futarchyGovernanceActionsPackageId}::protocol_admin_actions::do_apply_pending_coin_fees`,
           typeArguments: [outcomeType, witnessType, action.coinType],
-          arguments: [
-            executable,
-            txObject(tx, config.accountId),
-            tx.object(packageRegistryId),
-            versionWitness,
-            intentWitness,
-            tx.object(clockId),
-          ],
+          arguments: [executable, txObject(tx, config.accountId), tx.object(packageRegistryId), versionWitness, intentWitness, txObject(tx, config.feeManagerId), tx.object(clockId)],
         });
         break;
+      }
 
       // =========================================================================
       // ORACLE ACTIONS

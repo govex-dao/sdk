@@ -52,7 +52,8 @@ async function main() {
   const spotPoolId = daoInfo.spotPoolId;
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
-  const baseStableMetadataId = daoInfo.stableMetadata;
+  const baseAssetCurrencyId = daoInfo.assetCurrencyId;
+  const baseStableCurrencyId = daoInfo.stableCurrencyId;
 
   logSuccess(`DAO Account: ${daoAccountId}`);
 
@@ -133,15 +134,18 @@ async function main() {
     lpType,
     spotPoolId,
     senderAddress: activeAddress,
-    baseStableMetadataId,
+    baseAssetCurrencyId,
+    baseStableCurrencyId,
     conditionalCoinsRegistry: {
       registryId: conditionalCoinsInfo.registryId,
       coinSets: conditionalOutcomes.map((outcome) => ({
         outcomeIndex: outcome.index,
         assetCoinType: outcome.asset.coinType,
         assetCapId: outcome.asset.treasuryCapId,
+        assetCurrencyId: outcome.asset.currencyId,
         stableCoinType: outcome.stable.coinType,
         stableCapId: outcome.stable.treasuryCapId,
+        stableCurrencyId: outcome.stable.currencyId,
       })),
     },
   });

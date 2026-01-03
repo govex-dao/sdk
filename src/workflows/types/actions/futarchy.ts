@@ -157,6 +157,15 @@ export interface UpdateSponsorshipConfigActionConfig {
   waiveAdvancementFees?: boolean;
 }
 
+/**
+ * Sync TWAP initial observation from winning proposal TWAP
+ * Used when a proposal passes to update the TWAP base to reflect market-discovered price
+ */
+export interface SyncTwapObservationFromProposalActionConfig {
+  type: 'sync_twap_observation_from_proposal';
+  // No parameters - reads winning TWAP from proposal at execution time
+}
+
 // ============================================================================
 // FUTARCHY ACTIONS - QUOTA
 // ============================================================================

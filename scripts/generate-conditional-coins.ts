@@ -56,24 +56,29 @@ use sui::coin_registry;
 public struct ${otwName} has drop {}
 
 /// Initialize function called when module is published
-/// Creates Currency<T> (auto-shared) and TreasuryCap<T>
+/// Creates Currency<T> (transferred to CoinRegistry for later promotion) and TreasuryCap<T>
+/// NOTE: Currency<T> becomes owned by CoinRegistry (0xc) after finalize()
+/// A second transaction is needed to call coin_registry::finalize_registration()
+/// to promote it to a shared object (done by deploy-conditional-coins.ts)
 fun init(witness: ${otwName}, ctx: &mut TxContext) {
     let (initializer, treasury_cap) = coin_registry::new_currency_with_otw(
         witness,
         ${decimals}, // decimals matching base ${coinType} token
-        b"".to_string(), // Empty symbol for blank coins
-        b"".to_string(), // Empty name for blank coins
-        b"".to_string(), // Empty description for blank coins
-        b"".to_string(), // Empty icon_url for blank coins
+        b"Govex Conditional".to_string(), // Symbol (IMMUTABLE) - same for all conditional coins
+        b"".to_string(), // Empty name (set by proposal.move)
+        b"".to_string(), // Empty description (set by proposal.move)
+        b"".to_string(), // Empty icon_url (set by proposal.move)
         ctx,
     );
 
-    // Finalize - this shares Currency<T> automatically
+    // Finalize - this transfers Currency<T> to CoinRegistry (0xc)
+    // finalize_registration must be called in a second tx to make it shared
     let metadata_cap = coin_registry::finalize(initializer, ctx);
 
     // Transfer TreasuryCap to sender for deposit into BlankCoinsRegistry
     transfer::public_transfer(treasury_cap, ctx.sender());
-    // Transfer MetadataCap to sender - blank coins have empty metadata, cap is not used
+    // Transfer MetadataCap to sender for deposit into BlankCoinsRegistry
+    // Used by proposal.move to set name/description/icon
     transfer::public_transfer(metadata_cap, ctx.sender());
 }
 `;

@@ -72,8 +72,8 @@ async function main() {
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
   const stablePackageId = daoInfo.stablePackageId;
-  // baseAssetMetadataId is now borrowed from DAO Account automatically
-  const baseStableMetadataId = daoInfo.stableMetadata;
+  const baseAssetCurrencyId = daoInfo.assetCurrencyId;
+  const baseStableCurrencyId = daoInfo.stableCurrencyId;
 
   logSuccess(`DAO Account: ${daoAccountId}`);
   logSuccess(`Asset Type: ${assetType}`);
@@ -227,8 +227,10 @@ async function main() {
           outcomeIndex: outcome.index,
           assetCoinType: outcome.asset.coinType,
           assetCapId: outcome.asset.treasuryCapId,
+          assetCurrencyId: outcome.asset.currencyId,
           stableCoinType: outcome.stable.coinType,
           stableCapId: outcome.stable.treasuryCapId,
+          stableCurrencyId: outcome.stable.currencyId,
         })),
       }
     : undefined;
@@ -276,7 +278,8 @@ async function main() {
     lpType,
     spotPoolId: spotPoolRef,
     senderAddress: activeAddress,
-    baseStableMetadataId,
+    baseAssetCurrencyId,
+    baseStableCurrencyId,
     conditionalCoinsRegistry,
   });
 

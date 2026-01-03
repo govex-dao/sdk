@@ -248,11 +248,13 @@ export class ProposalWorkflow {
 
       for (const coinSet of config.conditionalCoinsRegistry.coinSets) {
         // Take asset conditional coin from registry
+        // Returns 4-tuple: (TreasuryCap<T>, MetadataCap<T>, currency_id: ID, Coin<SUI>)
         const assetResults = tx.moveCall({
-          target: `${oneShotUtilsPackageId}::coin_registry::take_coin_set_for_ptb`,
+          target: `${oneShotUtilsPackageId}::blank_coins::take_coin_set_for_ptb`,
           typeArguments: [coinSet.assetCoinType],
           arguments: [
             tx.object(registryId),
+            tx.pure.u8(coinSet.assetDecimals || 9), // desired_decimals for asset coins
             tx.pure.id(coinSet.assetCapId),
             feeCoin,
             tx.sharedObjectRef({
@@ -264,15 +266,18 @@ export class ProposalWorkflow {
         });
 
         const assetTreasuryCap = assetResults[0];
-        const assetMetadata = assetResults[1];
-        feeCoin = assetResults[2] as ReturnType<typeof tx.splitCoins>[0];
+        const assetMetadataCap = assetResults[1];
+        // assetResults[2] is currency_id (ID) - we use the known currencyId from config instead
+        feeCoin = assetResults[3] as ReturnType<typeof tx.splitCoins>[0];
 
         // Take stable conditional coin from registry
+        // Returns 4-tuple: (TreasuryCap<T>, MetadataCap<T>, currency_id: ID, Coin<SUI>)
         const stableResults = tx.moveCall({
-          target: `${oneShotUtilsPackageId}::coin_registry::take_coin_set_for_ptb`,
+          target: `${oneShotUtilsPackageId}::blank_coins::take_coin_set_for_ptb`,
           typeArguments: [coinSet.stableCoinType],
           arguments: [
             tx.object(registryId),
+            tx.pure.u8(coinSet.stableDecimals || 6), // desired_decimals for stable coins
             tx.pure.id(coinSet.stableCapId),
             feeCoin,
             tx.sharedObjectRef({
@@ -284,11 +289,22 @@ export class ProposalWorkflow {
         });
 
         const stableTreasuryCap = stableResults[0];
-        const stableMetadata = stableResults[1];
-        feeCoin = stableResults[2] as ReturnType<typeof tx.splitCoins>[0];
+        const stableMetadataCap = stableResults[1];
+        // stableResults[2] is currency_id (ID) - we use the known currencyId from config instead
+        feeCoin = stableResults[3] as ReturnType<typeof tx.splitCoins>[0];
+
+        // Resolve base currency IDs (support both old and new field names)
+        const baseStableCurrencyId = config.baseStableCurrencyId || config.baseStableMetadataId;
+        if (!baseStableCurrencyId) {
+          throw new Error('baseStableCurrencyId (or baseStableMetadataId) is required for add_outcome_coins_to_proposal');
+        }
 
         // Add outcome coins to proposal using factory wrapper
-        // Factory wrapper borrows base asset metadata internally (avoids PTB reference return issues)
+        // Arguments must match Move function signature exactly:
+        //   proposal, escrow, outcome_index,
+        //   asset_treasury_cap, asset_currency, asset_metadata_cap,
+        //   stable_treasury_cap, stable_currency, stable_metadata_cap,
+        //   dao_account, base_asset_currency, base_stable_currency
         tx.moveCall({
           target: `${this.packages.futarchyFactoryPackageId}::factory::add_outcome_coins_to_proposal`,
           typeArguments: [
@@ -302,12 +318,14 @@ export class ProposalWorkflow {
             escrow,
             tx.pure.u64(coinSet.outcomeIndex),
             assetTreasuryCap,
-            assetMetadata,
+            tx.object(coinSet.assetCurrencyId),   // Currency<AssetCondCoin> (shared)
+            assetMetadataCap,
             stableTreasuryCap,
-            stableMetadata,
+            tx.object(coinSet.stableCurrencyId),  // Currency<StableCondCoin> (shared)
+            stableMetadataCap,
             txObject(tx, config.daoAccountId),
-            config.registryId ? txObject(tx, config.registryId) : tx.object(this.sharedObjects.packageRegistryId),
-            txObject(tx, config.baseStableMetadataId),
+            txObject(tx, config.baseAssetCurrencyId),   // Currency<AssetType> (shared)
+            txObject(tx, baseStableCurrencyId),         // Currency<StableType> (shared)
           ],
         });
       }
@@ -322,10 +340,16 @@ export class ProposalWorkflow {
       const registryRef = config.registryId ? txObject(tx, config.registryId) : tx.object(this.sharedObjects.packageRegistryId);
 
       for (const outcomeAction of config.outcomeActions) {
-        // Create action spec builder
+        // Create action spec builder using proposal's new_action_builder
+        // This sets up the correct source context (source_type, source_id, outcome_index)
+        // for ActionParamsStaged events emitted by add_*_spec functions
         const builder = tx.moveCall({
-          target: `${accountActionsPackageId}::action_spec_builder::new`,
-          arguments: [],
+          target: `${marketsCorePackage}::proposal::new_action_builder`,
+          typeArguments: [config.assetType, config.stableType],
+          arguments: [
+            proposal, // unshared proposal from begin_proposal
+            tx.pure.u64(outcomeAction.outcomeIndex),
+          ],
         });
 
         // Add each action to the builder
@@ -372,6 +396,26 @@ export class ProposalWorkflow {
       ],
     });
 
+    // 7. Consume quota if used - must be after finalize_proposal succeeds
+    // This decrements the user's remaining quota count for the current period.
+    // If the PTB fails, the entire transaction rolls back so quota won't be consumed.
+    if (config.usedQuota) {
+      const { futarchyGovernancePackageId } = this.packages;
+      tx.moveCall({
+        target: `${futarchyGovernancePackageId}::proposal_lifecycle::consume_proposal_quota`,
+        arguments: [
+          txObject(tx, config.daoAccountId),
+          config.registryId ? txObject(tx, config.registryId) : tx.object(this.sharedObjects.packageRegistryId),
+          tx.pure.address(config.proposer),
+          tx.sharedObjectRef({
+            objectId: clockId,
+            initialSharedVersion: 1,
+            mutable: false,
+          }),
+        ],
+      });
+    }
+
     // Return unused fee coins to sender
     tx.transferObjects([firstStableCoin], tx.pure.address(config.proposer));
 
@@ -393,10 +437,16 @@ export class ProposalWorkflow {
 
     const { accountActionsPackageId, futarchyMarketsCorePackageId } = this.packages;
 
-    // Create action spec builder
+    // Create action spec builder using proposal's new_action_builder
+    // This sets up the correct source context (source_type, source_id, outcome_index)
+    // for ActionParamsStaged events emitted by add_*_spec functions
     const builder = tx.moveCall({
-      target: `${accountActionsPackageId}::action_spec_builder::new`,
-      arguments: [],
+      target: `${futarchyMarketsCorePackageId}::proposal::new_action_builder`,
+      typeArguments: [config.assetType, config.stableType],
+      arguments: [
+        txObject(tx, config.proposalId),
+        tx.pure.u64(config.outcomeIndex),
+      ],
     });
 
     // Add each action to the builder

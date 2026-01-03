@@ -149,6 +149,43 @@ export const TRANSFER_ACTIONS: ActionDefinition[] = [
     launchpadSupported: true,
     proposalSupported: true,
   },
+  {
+    id: 'transfer_coin',
+    name: 'Transfer Coin',
+    category: 'transfer',
+    package: 'accountActions',
+    stagingModule: 'transfer_init_actions',
+    stagingFunction: 'add_transfer_coin_spec',
+    executionModule: 'transfer',
+    executionFunction: 'do_init_transfer_coin',
+    markerType: 'account_actions::transfer::TransferCoin',
+    typeParams: ['CoinType'],
+    params: [
+      { name: 'recipient', type: 'address', description: 'Recipient address' },
+      { name: 'resourceName', type: 'string', description: 'Resource name to take coin from' },
+    ],
+    description: 'Transfer coin to recipient (taken from executable_resources)',
+    launchpadSupported: true,
+    proposalSupported: true,
+  },
+  {
+    id: 'transfer_coin_to_sender',
+    name: 'Transfer Coin to Sender',
+    category: 'transfer',
+    package: 'accountActions',
+    stagingModule: 'transfer_init_actions',
+    stagingFunction: 'add_transfer_coin_to_sender_spec',
+    executionModule: 'transfer',
+    executionFunction: 'do_init_transfer_coin_to_sender',
+    markerType: 'account_actions::transfer::TransferCoinToSender',
+    typeParams: ['CoinType'],
+    params: [
+      { name: 'resourceName', type: 'string', description: 'Resource name to take coin from' },
+    ],
+    description: 'Transfer coin to transaction sender (taken from executable_resources)',
+    launchpadSupported: true,
+    proposalSupported: true,
+  },
 ];
 
 // ============================================================================
@@ -341,8 +378,22 @@ export const CURRENCY_ACTIONS: ActionDefinition[] = [
     launchpadSupported: true,
     proposalSupported: false,
   },
-  // NOTE: 'return_metadata' action removed - CoinMetadata is no longer stored in Account
-  // Use sui::coin_registry::Currency<T> for metadata access instead
+  {
+    id: 'return_metadata_cap',
+    name: 'Return Metadata Cap',
+    category: 'currency',
+    package: 'accountActions',
+    stagingModule: 'currency_init_actions',
+    stagingFunction: 'add_return_metadata_cap_spec',
+    executionModule: 'currency',
+    executionFunction: 'do_init_remove_metadata_cap',
+    markerType: 'account_actions::currency::RemoveMetadataCap',
+    typeParams: ['CoinType'],
+    params: [{ name: 'recipient', type: 'address', description: 'Recipient address' }],
+    description: 'Return MetadataCap to an address (used in failure intents)',
+    launchpadSupported: true,
+    proposalSupported: false,
+  },
   {
     id: 'disable_currency',
     name: 'Disable Currency',
@@ -423,6 +474,105 @@ export const STREAM_ACTIONS: ActionDefinition[] = [
       // Note: Vault streams are always DAO-controlled (cancellable, non-transferable)
     ],
     description: 'Create a vesting stream (DAO-controlled: cancellable, non-transferable)',
+    launchpadSupported: true,
+    proposalSupported: true,
+  },
+];
+
+// ============================================================================
+// ACCOUNT ACTIONS - VESTING (Physical Isolation)
+// ============================================================================
+
+export const VESTING_ACTIONS: ActionDefinition[] = [
+  {
+    id: 'create_vesting',
+    name: 'Create Vesting',
+    category: 'stream',
+    package: 'accountActions',
+    stagingModule: 'vesting_init_actions',
+    stagingFunction: 'add_create_vesting_spec',
+    executionModule: 'vesting',
+    executionFunction: 'do_init_create_vesting',
+    markerType: 'account_actions::vesting::CreateVesting',
+    typeParams: ['CoinType'],
+    params: [
+      { name: 'beneficiary', type: 'address', description: 'Beneficiary address' },
+      { name: 'amountPerIteration', type: 'u64', description: 'Amount per iteration' },
+      { name: 'startTime', type: 'u64', description: 'Start timestamp (ms)' },
+      { name: 'iterationsTotal', type: 'u64', description: 'Total iterations' },
+      { name: 'iterationPeriodMs', type: 'u64', description: 'Period between iterations (ms)' },
+      { name: 'cliffTime', type: 'option<u64>', description: 'Cliff timestamp (ms)', optional: true },
+      { name: 'claimWindowMs', type: 'option<u64>', description: 'Claim window duration (ms)', optional: true },
+      { name: 'maxPerWithdrawal', type: 'u64', description: 'Maximum amount per withdrawal' },
+      { name: 'isTransferable', type: 'bool', description: 'Whether the ClaimCap is transferable' },
+      { name: 'isCancellable', type: 'bool', description: 'Whether the vesting can be cancelled' },
+      { name: 'resourceName', type: 'string', description: 'Resource name to take coin from executable_resources' },
+    ],
+    description: 'Create standalone vesting with TRUE fund isolation (funds in shared object)',
+    launchpadSupported: true,
+    proposalSupported: true,
+  },
+  {
+    id: 'cancel_vesting',
+    name: 'Cancel Vesting',
+    category: 'stream',
+    package: 'accountActions',
+    stagingModule: 'vesting_init_actions',
+    stagingFunction: 'add_cancel_vesting_spec',
+    executionModule: 'vesting',
+    executionFunction: 'do_init_cancel_vesting',
+    markerType: 'account_actions::vesting::CancelVesting',
+    typeParams: ['CoinType'],
+    params: [
+      { name: 'vestingId', type: 'address', description: 'Vesting object ID (as address for BCS)' },
+      { name: 'resourceName', type: 'string', description: 'Resource name to store refund coin in executable_resources' },
+    ],
+    description: 'Cancel a cancellable vesting, refund provided to executable_resources',
+    launchpadSupported: false,
+    proposalSupported: true,
+  },
+];
+
+// ============================================================================
+// ACCOUNT ACTIONS - OWNED OBJECT
+// ============================================================================
+
+export const OWNED_ACTIONS: ActionDefinition[] = [
+  {
+    id: 'withdraw_object',
+    name: 'Withdraw Object',
+    category: 'transfer',
+    package: 'accountActions',
+    stagingModule: 'owned_init_actions',
+    stagingFunction: 'add_withdraw_object_spec',
+    executionModule: 'owned',
+    executionFunction: 'do_init_withdraw_object',
+    markerType: 'account_protocol::owned::OwnedWithdrawObject',
+    typeParams: ['ObjectType'],
+    params: [
+      { name: 'objectId', type: 'id', description: 'Object ID to withdraw' },
+      { name: 'resourceName', type: 'string', description: 'Resource name in executable_resources' },
+    ],
+    description: 'Withdraw owned object (provides to executable_resources)',
+    launchpadSupported: true,
+    proposalSupported: true,
+  },
+  {
+    id: 'withdraw_coin',
+    name: 'Withdraw Coin',
+    category: 'transfer',
+    package: 'accountActions',
+    stagingModule: 'owned_init_actions',
+    stagingFunction: 'add_withdraw_coin_spec',
+    executionModule: 'owned',
+    executionFunction: 'do_init_withdraw_coin',
+    markerType: 'account_protocol::owned::OwnedWithdrawCoin',
+    typeParams: ['CoinType'],
+    params: [
+      { name: 'coinAmount', type: 'u64', description: 'Coin amount expected' },
+      { name: 'resourceName', type: 'string', description: 'Resource name in executable_resources' },
+    ],
+    description: 'Withdraw owned coin (provides to executable_resources)',
     launchpadSupported: true,
     proposalSupported: true,
   },
@@ -833,6 +983,22 @@ export const CONFIG_ACTIONS: ActionDefinition[] = [
     launchpadSupported: false,
     proposalSupported: true,
   },
+  {
+    id: 'sync_twap_observation_from_proposal',
+    name: 'Sync TWAP Observation (Proposal)',
+    category: 'config',
+    package: 'futarchyActions',
+    stagingModule: 'futarchy_config_init_actions',
+    stagingFunction: 'add_sync_twap_observation_from_proposal_spec',
+    executionModule: 'config_actions',
+    executionFunction: 'do_sync_twap_observation_from_proposal',
+    markerType: 'futarchy_actions::config_actions::SyncTwapObservationFromProposal',
+    params: [],
+    typeParams: ['AssetType', 'StableType'],
+    description: 'Sync TWAP initial observation from winning proposal TWAP',
+    launchpadSupported: false,
+    proposalSupported: true,
+  },
 ];
 
 // ============================================================================
@@ -887,7 +1053,7 @@ export const LIQUIDITY_ACTIONS: ActionDefinition[] = [
       { name: 'lpTreasuryCapId', type: 'id', description: 'LP TreasuryCap object ID' },
       { name: 'lpCurrencyId', type: 'id', description: 'LP Currency<LPType> object ID (shared from coin_registry::finalize)' },
     ],
-    typeParams: ['AssetType', 'StableType'],
+    typeParams: ['AssetType', 'StableType', 'LPType'],
     description: 'Create AMM pool with minted asset and vault stable',
     launchpadSupported: true,
     proposalSupported: false,
@@ -956,6 +1122,25 @@ export const LIQUIDITY_ACTIONS: ActionDefinition[] = [
     ],
     typeParams: ['AssetType', 'StableType'],
     description: 'Swap tokens in pool',
+    launchpadSupported: false,
+    proposalSupported: true,
+  },
+  {
+    id: 'update_pool_fee',
+    name: 'Update Pool Fee',
+    category: 'liquidity',
+    package: 'futarchyActions',
+    stagingModule: 'liquidity_actions',
+    stagingFunction: 'add_update_pool_fee_spec',
+    executionModule: 'liquidity_actions',
+    executionFunction: 'do_update_pool_fee',
+    markerType: 'futarchy_actions::liquidity_actions::UpdatePoolFee',
+    params: [
+      { name: 'poolId', type: 'id', description: 'Pool ID' },
+      { name: 'newFeeBps', type: 'u64', description: 'New fee in basis points' },
+    ],
+    typeParams: ['AssetType', 'StableType', 'LPType'],
+    description: 'Update spot pool LP fee',
     launchpadSupported: false,
     proposalSupported: true,
   },
@@ -1393,6 +1578,8 @@ export const ALL_ACTIONS: ActionDefinition[] = [
   ...VAULT_ACTIONS,
   ...CURRENCY_ACTIONS,
   ...STREAM_ACTIONS,
+  ...VESTING_ACTIONS,
+  ...OWNED_ACTIONS,
   ...MEMO_ACTIONS,
   ...PACKAGE_UPGRADE_ACTIONS,
   ...ACCESS_CONTROL_ACTIONS,
@@ -1454,3 +1641,46 @@ export const LAUNCHPAD_ACTIONS = ALL_ACTIONS.filter((a) => a.launchpadSupported)
  * Proposal-supported actions
  */
 export const PROPOSAL_ACTIONS = ALL_ACTIONS.filter((a) => a.proposalSupported);
+
+/**
+ * Map from markerType (module::TypeName) to action definition
+ * Used for looking up actions from event data where fullType contains the marker
+ */
+export const ACTION_BY_MARKER_TYPE: Record<string, ActionDefinition> = ALL_ACTIONS.reduce(
+  (acc, action) => {
+    // markerType format: "package::module::TypeName" e.g., "account_actions::vault::CreateStream"
+    // Extract "module::TypeName" for matching against fullType from events
+    const parts = action.markerType.split('::');
+    if (parts.length >= 2) {
+      // Store by "module::TypeName"
+      const moduleAndType = parts.slice(-2).join('::');
+      acc[moduleAndType] = action;
+    }
+    return acc;
+  },
+  {} as Record<string, ActionDefinition>
+);
+
+/**
+ * Get action definition by fullType from event data
+ * fullType format: "0xpackage::module::TypeName<TypeArgs>"
+ */
+export function getActionByFullType(fullType: string): ActionDefinition | undefined {
+  // Strip generic params first (they may contain ::)
+  // e.g., "0x123::vault::CreateStream<0xabc::coin::COIN>" -> "0x123::vault::CreateStream"
+  let cleanType = fullType;
+  const genericStart = fullType.indexOf('<');
+  if (genericStart > 0) {
+    cleanType = fullType.substring(0, genericStart);
+  }
+
+  // Extract module::TypeName from fullType
+  const parts = cleanType.split('::');
+  if (parts.length < 3) return undefined;
+
+  // Get module and type
+  const module = parts[parts.length - 2];
+  const typeName = parts[parts.length - 1];
+
+  return ACTION_BY_MARKER_TYPE[`${module}::${typeName}`];
+}

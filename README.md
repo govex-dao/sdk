@@ -833,7 +833,195 @@ const executeTx = await autoExecutor.executeProposal(proposalId, {
 
 ---
 
-## 11. Key Concepts
+## 11. Executing Staged Intents
+
+After a launchpad or proposal has staged actions, you need to execute them. The SDK provides the `AutoExecutor` class that fetches staged actions from your backend API and builds the execution PTB automatically.
+
+### AutoExecutor (Recommended)
+
+The `AutoExecutor` is the high-level way to execute staged intents. It:
+1. Fetches staged actions from your backend API
+2. Converts `IndexedAction[]` to SDK execution configs
+3. Builds the complete PTB using `IntentExecutor`
+4. Returns a ready-to-sign `Transaction`
+
+```typescript
+import { FutarchySDK } from '@govex/futarchy-sdk';
+
+const sdk = new FutarchySDK({ network: 'devnet' });
+const backendUrl = 'http://localhost:9090';  // Your indexer API
+
+// Create AutoExecutor
+const autoExecutor = sdk.createAutoExecutor(backendUrl);
+
+// --- LAUNCHPAD EXECUTION ---
+// Execute success or failure actions after raise completes
+const { transaction, raise } = await autoExecutor.executeLaunchpad(raiseId, {
+  accountId: daoAccountId,
+  actionType: 'success',  // or 'failure'
+  clockId: '0x6',         // optional
+});
+
+// Sign and submit
+await client.signAndExecuteTransaction({ transaction, signer });
+
+// --- PROPOSAL EXECUTION ---
+// Execute winning outcome actions after proposal finalizes
+const { transaction, proposal } = await autoExecutor.executeProposal(proposalId, {
+  accountId: daoAccountId,
+  outcome: 1,             // optional, defaults to winning_outcome
+  escrowId,               // optional, fetched from backend if not provided
+  spotPoolId,             // optional, fetched from backend if not provided
+  clockId: '0x6',         // optional
+});
+
+await client.signAndExecuteTransaction({ transaction, signer });
+```
+
+### IntentExecutor (Direct Control)
+
+For more control, use `IntentExecutor` directly with manually-provided actions:
+
+```typescript
+import { IntentExecutor, parsedActionsToExecutionConfigs } from '@govex/futarchy-sdk';
+
+const executor = new IntentExecutor(client, sdk.packages);
+
+// Convert backend actions to SDK format
+const actions = parsedActionsToExecutionConfigs(parsedActions);
+
+// Build PTB for launchpad
+const { transaction } = executor.execute({
+  intentType: 'launchpad',
+  accountId,
+  raiseId,
+  assetType,
+  stableType,
+  actions,
+});
+
+// Build PTB for proposal
+const { transaction } = executor.execute({
+  intentType: 'proposal',
+  accountId,
+  proposalId,
+  escrowId,
+  spotPoolId,
+  assetType,
+  stableType,
+  lpType,
+  actions,
+});
+```
+
+### Backend API Endpoints
+
+The `AutoExecutor` fetches from these endpoints:
+
+| Endpoint | Returns | Used For |
+|----------|---------|----------|
+| `GET /launchpads/:id` | `{ success_actions, failure_actions, ... }` | Launchpad execution |
+| `GET /proposals/:id` | `{ staged_actions: { "1": [...], "2": [...] }, ... }` | Proposal execution |
+| `GET /daos/:id` | `{ init_actions, ... }` | DAO init execution |
+
+### Action Data Format
+
+Actions are stored as `IndexedAction[]` in the backend:
+
+```typescript
+interface IndexedAction {
+  index: number;           // Position in batch (0-indexed)
+  type: string;            // Short name: "VaultSpend", "CreateStream"
+  fullType: string;        // Full Move type with generics
+  packageId?: string;      // Extracted from fullType
+  coinType?: string;       // First generic parameter
+  params: Array<{
+    type: string;          // "u64", "String", "address", etc.
+    name: string;          // Parameter name
+    value: string;         // Value as string
+  }>;
+}
+```
+
+### Execution Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     STAGED ACTIONS (On-Chain)                        │
+│  Raise.success_actions / Proposal.staged_actions[outcome]           │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼ Events: IntentActionsStaged, ActionParamsStaged
+┌─────────────────────────────────────────────────────────────────────┐
+│                     BACKEND INDEXER (gRPC)                           │
+│  Captures events → Stores IndexedAction[] in Prisma                 │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼ HTTP API: /launchpads/:id, /proposals/:id
+┌─────────────────────────────────────────────────────────────────────┐
+│                     AUTO EXECUTOR (SDK)                              │
+│  1. Fetch from backend API                                          │
+│  2. Convert to IntentActionConfig[]                                 │
+│  3. Build PTB via IntentExecutor                                    │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼ Transaction
+┌─────────────────────────────────────────────────────────────────────┐
+│                     EXECUTION PTB (3-Layer Pattern)                  │
+│  1. begin_execution() → Executable (hot potato)                     │
+│  2. do_init_*() × N   → Execute each action in order                │
+│  3. finalize_execution() → Confirm completion                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Example: Complete Launchpad Flow
+
+```typescript
+// 1. Create raise with staged actions
+const createTx = launchpadWorkflow.createRaiseWithActions(
+  raiseConfig,
+  successActions,  // Actions to execute on success
+  failureActions,  // Actions to execute on failure
+);
+await executeTransaction(createTx.transaction);
+
+// 2. Contribute, wait for deadline...
+
+// 3. Complete raise (creates DAO)
+const completeTx = launchpadWorkflow.completeRaise({ raiseId, ... });
+const result = await executeTransaction(completeTx.transaction);
+const accountId = extractAccountId(result);
+
+// 4. Wait for indexer to capture staged actions
+await sleep(5000);
+
+// 5. Execute init actions via AutoExecutor
+const autoExecutor = sdk.createAutoExecutor(backendUrl);
+const { transaction } = await autoExecutor.executeLaunchpad(raiseId, {
+  accountId,
+  actionType: 'success',  // or 'failure' based on raise outcome
+});
+await executeTransaction(transaction);
+```
+
+### Built-in Launchpad Behavior vs Staged Actions
+
+The launchpad has **built-in behavior** that happens automatically during DAO creation (NOT via staged actions):
+
+| Path | Built-in (Automatic) | What You Stage |
+|------|---------------------|----------------|
+| **Success** | Locks TreasuryCap + MetadataCap in DAO | Your init actions (pool, streams, etc.) |
+| **Failure** | Returns TreasuryCap + MetadataCap to creator | Optional cleanup actions |
+
+**Important:** The SDK executes exactly what was staged - it does NOT prepend any built-in actions. The built-in behavior (locking/returning caps) happens inside Move code before your staged actions run.
+
+### Supported Action Types
+
+The `IntentExecutor` supports **60+ action types**. See `src/config/action-definitions.ts` for the complete registry and `../packages/ACTION_REGISTRY.md` for documentation.
+
+---
+
+## 12. Key Concepts
 
 ### Hot Potato Pattern
 

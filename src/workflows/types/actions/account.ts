@@ -147,6 +147,18 @@ export interface ReturnTreasuryCapActionConfig {
   recipient: string;
 }
 
+/**
+ * Return metadata cap action configuration
+ * Returns MetadataCap<T> to creator when raise fails
+ * (MetadataCap is used to update Currency<T> metadata - name, description, icon)
+ */
+export interface ReturnMetadataCapActionConfig {
+  type: 'return_metadata_cap';
+  /** Coin type of the metadata cap (required for type-safe staging) */
+  coinType?: string;
+  /** Recipient address */
+  recipient: string;
+}
 
 /**
  * Mint tokens action configuration

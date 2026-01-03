@@ -400,7 +400,7 @@ async function main() {
     lpType: daoInfo.lpType,
     spotPoolId: daoInfo.spotPoolId,
     senderAddress: activeAddress,
-    baseStableMetadataId: daoInfo.stableMetadata,
+    baseStableMetadataId: daoInfo.stableCurrencyId,
     conditionalCoinsRegistry: {
       registryId: conditionalCoins.registryId,
       coinSets: outcomes.map((o) => ({

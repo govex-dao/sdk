@@ -62,7 +62,8 @@ async function main() {
   const spotPoolId = daoInfo.spotPoolId;
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
-  const baseStableMetadataId = daoInfo.stableMetadata;
+  const baseAssetCurrencyId = daoInfo.assetCurrencyId;
+  const baseStableCurrencyId = daoInfo.stableCurrencyId;
 
   logSuccess(`DAO Account: ${daoAccountId}`);
 
@@ -181,15 +182,18 @@ async function main() {
     lpType,
     spotPoolId,
     senderAddress: activeAddress,
-    baseStableMetadataId,
+    baseAssetCurrencyId,
+    baseStableCurrencyId,
     conditionalCoinsRegistry: {
       registryId: conditionalCoinsInfo.registryId,
       coinSets: outcomes.map((outcome) => ({
         outcomeIndex: outcome.index,
         assetCoinType: outcome.asset.coinType,
         assetCapId: outcome.asset.treasuryCapId,
+        assetCurrencyId: outcome.asset.currencyId,
         stableCoinType: outcome.stable.coinType,
         stableCapId: outcome.stable.treasuryCapId,
+        stableCurrencyId: outcome.stable.currencyId,
       })),
     },
   });
@@ -244,8 +248,8 @@ async function main() {
   // ============================================================================
   logStep(5, "TRADE ON DIFFERENT OUTCOMES");
 
-  // Mint tokens for trading
-  const tradeAmountPerOutcome = 50_000_000n;
+  // Mint tokens for trading - use larger amounts for TWAP impact
+  const tradeAmountPerOutcome = 5_000_000_000n; // 5 billion per outcome
   const totalTradeAmount = tradeAmountPerOutcome * BigInt(NUM_OUTCOMES);
 
   // Mint extra for the intended winner (3x for winner = 2 extra)
@@ -341,8 +345,9 @@ async function main() {
   // ============================================================================
   logStep(6, "FINALIZE PROPOSAL");
 
-  // Wait for trading period
-  await waitForTimePeriod(TEST_CONFIG.TRADING_PERIOD_MS + 2000, { description: "trading period" });
+  // Wait for trading period PLUS extra minute for TWAP to accumulate
+  // TWAP needs time to weight the new price into the average (twap_price_cap_window = 60s)
+  await waitForTimePeriod(TEST_CONFIG.TRADING_PERIOD_MS + 60_000 + 2000, { description: "trading period + TWAP accumulation" });
 
   const finalizeTx = proposalWorkflow.finalizeProposal({
     daoAccountId,

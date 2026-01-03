@@ -177,7 +177,7 @@ export class LaunchpadWorkflow {
     const tx = new Transaction();
     const clockId = config.clockId || '0x6';
 
-    const { accountActionsPackageId, futarchyFactoryPackageId } = this.packages;
+    const { futarchyFactoryPackageId } = this.packages;
     const {
       factoryId,
       factorySharedVersion,
@@ -209,41 +209,45 @@ export class LaunchpadWorkflow {
         }),
         // 3. treasury_cap
         tx.object(config.treasuryCap),
-        // 4. asset_currency (Currency<AssetType> from coin_registry)
+        // 4. metadata_cap (MetadataCap<AssetType> for updating Currency metadata)
+        tx.object(config.metadataCap),
+        // 5. asset_currency (Currency<AssetType> from coin_registry)
         tx.object(config.assetCurrency),
-        // 5. stable_currency (Currency<StableType> from coin_registry)
+        // 6. stable_currency (Currency<StableType> from coin_registry)
         tx.object(config.stableCurrency),
-        // 6. affiliate_id
+        // 7. affiliate_id
         tx.pure.string(config.affiliateId || ''),
-        // 7. tokens_for_sale
+        // 8. tokens_for_sale
         tx.pure.u64(config.tokensForSale),
-        // 8. min_raise_amount
+        // 9. min_raise_amount
         tx.pure.u64(config.minRaiseAmount),
-        // 9. allowed_caps (vector)
+        // 10. allowed_caps (vector)
         tx.pure.vector('u64', config.allowedCaps.map(c => c)),
-        // 10. start_delay_ms (Option)
+        // 11. start_delay_ms (Option)
         tx.pure.option('u64', config.startDelayMs ?? null),
-        // 11. allow_early_completion
+        // 12. allow_early_completion
         tx.pure.bool(config.allowEarlyCompletion),
-        // 12. description
+        // 13. description
         tx.pure.string(config.description),
-        // 13. metadata_keys (vector)
+        // 14. metadata_keys (vector)
         tx.pure.vector('string', config.metadataKeys || []),
-        // 14. metadata_values (vector)
+        // 15. metadata_values (vector)
         tx.pure.vector('string', config.metadataValues || []),
-        // 15. launchpad_fee (Coin<SUI>)
+        // 16. launchpad_fee (Coin<SUI>)
         launchpadFeeCoin,
-        // 16. clock
+        // 17. clock
         tx.object(clockId),
       ],
     });
 
     // 2. Stage success actions (if any)
     if (successActions.length > 0) {
-      // Create action spec builder
+      // Create action spec builder with correct raise ID for event emission
+      // Uses helper function that extracts ID from UnsharedRaise internally
       const successBuilder = tx.moveCall({
-        target: `${accountActionsPackageId}::action_spec_builder::new`,
-        arguments: [],
+        target: `${futarchyFactoryPackageId}::launchpad::new_success_builder`,
+        typeArguments: [config.assetType, config.stableType],
+        arguments: [unsharedRaise],
       });
 
       // Add each action to the builder
@@ -273,10 +277,12 @@ export class LaunchpadWorkflow {
 
     // 3. Stage failure actions (if any)
     if (failureActions.length > 0) {
-      // Create action spec builder
+      // Create action spec builder with correct raise ID for event emission
+      // Uses helper function that extracts ID from UnsharedRaise internally
       const failureBuilder = tx.moveCall({
-        target: `${accountActionsPackageId}::action_spec_builder::new`,
-        arguments: [],
+        target: `${futarchyFactoryPackageId}::launchpad::new_failure_builder`,
+        typeArguments: [config.assetType, config.stableType],
+        arguments: [unsharedRaise],
       });
 
       // Add each action to the builder
@@ -394,8 +400,15 @@ export class LaunchpadWorkflow {
         });
         break;
 
-      // NOTE: 'return_metadata' case removed - CoinMetadata no longer stored in Account
-      // Use sui::coin_registry::Currency<T> for metadata access instead
+      case 'return_metadata_cap':
+        // Returns MetadataCap<T> to creator when raise fails
+        // (MetadataCap is used to update Currency<T> metadata - name, description, icon)
+        tx.moveCall({
+          target: `${accountActionsPackageId}::currency_init_actions::add_return_metadata_cap_spec`,
+          typeArguments: [getCoinType(action.coinType, config.assetType)],
+          arguments: [builder, tx.pure.address(action.recipient)],
+        });
+        break;
 
       case 'update_trading_params':
         tx.moveCall({

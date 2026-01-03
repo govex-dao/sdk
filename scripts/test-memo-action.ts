@@ -53,7 +53,8 @@ async function main() {
   const spotPoolId = daoInfo.spotPoolId;
   const stableTreasuryCap = daoInfo.stableTreasuryCap;
   const isStableTreasuryCapShared = daoInfo.isStableTreasuryCapShared ?? false;
-  const baseStableMetadataId = daoInfo.stableMetadata;
+  const baseAssetCurrencyId = daoInfo.assetCurrencyId;
+  const baseStableCurrencyId = daoInfo.stableCurrencyId;
 
   logSuccess(`DAO Account: ${daoAccountId}`);
 
@@ -143,15 +144,18 @@ async function main() {
     lpType,
     spotPoolId,
     senderAddress: activeAddress,
-    baseStableMetadataId,
+    baseAssetCurrencyId,
+    baseStableCurrencyId,
     conditionalCoinsRegistry: {
       registryId: conditionalCoinsInfo.registryId,
       coinSets: conditionalOutcomes.map((outcome) => ({
         outcomeIndex: outcome.index,
         assetCoinType: outcome.asset.coinType,
         assetCapId: outcome.asset.treasuryCapId,
+        assetCurrencyId: outcome.asset.currencyId,
         stableCoinType: outcome.stable.coinType,
         stableCapId: outcome.stable.treasuryCapId,
+        stableCurrencyId: outcome.stable.currencyId,
       })),
     },
   });
@@ -159,7 +163,19 @@ async function main() {
   const createResult = await executeTransaction(sdk, createTx.transaction, {
     network: "devnet",
     showObjectChanges: true,
+    showEvents: true,
   });
+
+  // Log PoolOracleCreated events to map oracle IDs to outcomes
+  const poolOracleEvents = createResult.events?.filter((e: any) =>
+    e.type.includes("PoolOracleCreated")
+  );
+  if (poolOracleEvents && poolOracleEvents.length > 0) {
+    logInfo("Pool-Oracle mappings:");
+    poolOracleEvents.forEach((e: any) => {
+      console.log(`   Outcome ${e.parsedJson?.outcome_idx}: oracle_id=${e.parsedJson?.oracle_id}`);
+    });
+  }
 
   const proposalObject = createResult.objectChanges?.find(
     (obj: any) => obj.type === "created" && obj.objectType?.includes("Proposal")
@@ -205,7 +221,8 @@ async function main() {
   logStep(4, "BUY ACCEPT TOKENS");
 
   // Mint and swap for ACCEPT tokens
-  const tradeAmount = 100_000_000n;
+  // Use a larger trade amount (10x) to have more impact on the price
+  const tradeAmount = 10_000_000_000n; // 10 billion (same as proposal-with-swaps)
   const mintTradeTx = new Transaction();
   // Always use tx.object() - SDK resolves shared/owned automatically
   const tradeCapArg = mintTradeTx.object(stableTreasuryCap);
@@ -247,8 +264,23 @@ async function main() {
     stableCoins: tradeCoinIds,
   });
 
-  await executeTransaction(sdk, swapTx.transaction, { network: "devnet" });
+  const swapResult = await executeTransaction(sdk, swapTx.transaction, { network: "devnet", showEvents: true, showObjectChanges: true });
   logSuccess("Bought ACCEPT tokens");
+
+  // Check if swap events were emitted
+  const swapEvents = swapResult.events?.filter((e: any) =>
+    e.type.includes("SwapEvent") || e.type.includes("PriceEvent")
+  );
+  if (swapEvents && swapEvents.length > 0) {
+    logInfo(`Swap/Price events emitted: ${swapEvents.length}`);
+    swapEvents.forEach((e: any, i: number) => {
+      console.log(`   Event ${i}: ${e.type}`);
+      console.log(`     Data: ${JSON.stringify(e.parsedJson, null, 2)}`);
+    });
+  } else {
+    logError("No SwapEvent or PriceEvent found - swap may not have executed properly!");
+    console.log("   All events from swap:", swapResult.events?.map((e: any) => e.type));
+  }
   console.log();
 
   // ============================================================================
@@ -256,8 +288,9 @@ async function main() {
   // ============================================================================
   logStep(5, "FINALIZE PROPOSAL");
 
-  // Wait for trading period
-  await waitForTimePeriod(TEST_CONFIG.TRADING_PERIOD_MS + 2000, { description: "trading period" });
+  // Wait for trading period PLUS extra minute for TWAP to accumulate
+  // TWAP needs time to weight the new price into the average (twap_price_cap_window = 60s)
+  await waitForTimePeriod(TEST_CONFIG.TRADING_PERIOD_MS + 60_000 + 2000, { description: "trading period + TWAP accumulation" });
 
   const finalizeTx = proposalWorkflow.finalizeProposal({
     daoAccountId,
@@ -309,6 +342,7 @@ async function main() {
     outcome: ACCEPT_OUTCOME_INDEX,
     escrowId,
     spotPoolId,
+    lpType,
   });
 
   const executeResult = await executeTransaction(sdk, executeTx.transaction, {

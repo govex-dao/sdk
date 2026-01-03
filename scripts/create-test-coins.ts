@@ -40,8 +40,9 @@ const __dirname = path.dirname(__filename);
 // Test Coin Templates
 // ============================================================================
 
-// Test coin with private TreasuryCap using coin_registry for auto-registration
-// This creates Currency<T> shared object automatically on finalize
+// Test coin with private TreasuryCap using coin_registry for Currency<T>
+// NOTE: new_currency_with_otw requires a SECOND transaction (finalize_registration)
+// to promote Currency from owned-by-registry to shared object
 const testCoinSourcePrivate = (symbol: string, name: string) => `
 module test_coin::coin;
 
@@ -61,7 +62,8 @@ fun init(witness: COIN, ctx: &mut TxContext) {
         ctx,
     );
 
-    // Finalize - this shares Currency<T> automatically
+    // Finalize - transfers Currency<T> to CoinRegistry (0xc)
+    // NOTE: Must call finalize_registration in a SEPARATE transaction to share it
     let metadata_cap = coin_registry::finalize(initializer, ctx);
 
     // Transfer caps to sender (private - only owner can mint)
@@ -80,8 +82,8 @@ public entry fun mint(
 }
 `;
 
-// Test coin with shared TreasuryCap using coin_registry for auto-registration
-// This creates Currency<T> shared object automatically on finalize
+// Test coin with shared TreasuryCap using coin_registry for Currency<T>
+// NOTE: new_currency_with_otw requires a SECOND transaction (finalize_registration)
 const testCoinSourceShared = (symbol: string, name: string) => `
 module test_coin::coin;
 
@@ -101,7 +103,8 @@ fun init(witness: COIN, ctx: &mut TxContext) {
         ctx,
     );
 
-    // Finalize - this shares Currency<T> automatically
+    // Finalize - transfers Currency<T> to CoinRegistry (0xc)
+    // NOTE: Must call finalize_registration in a SEPARATE transaction to share it
     let metadata_cap = coin_registry::finalize(initializer, ctx);
 
     // Share treasury cap so anyone can mint (for testing on devnet/testnet)
@@ -130,8 +133,8 @@ export interface TestCoinInfo {
   packageId: string;
   type: string;
   treasuryCap: string;
-  metadataCap: string;   // MetadataCap<T> - NEW: replaces CoinMetadata
-  currencyId: string;    // Currency<T> object ID (shared) - NEW: auto-created by coin_registry
+  metadataCap: string;   // MetadataCap<T> object ID - for updating Currency metadata
+  currencyId: string;    // Currency<T> object ID (shared after finalize_registration)
   isSharedTreasuryCap: boolean;
 }
 
@@ -231,7 +234,7 @@ test_coin = "0x0"
     throw new Error(`TreasuryCap not found in transaction effects for ${name}`);
   }
 
-  // Find MetadataCap<T> - NEW: coin_registry::finalize() returns MetadataCap instead of CoinMetadata
+  // Find MetadataCap<T> - coin_registry::finalize() returns this
   const metadataCap = created.find((c: any) =>
     c.objectType.includes("MetadataCap"),
   );
@@ -239,7 +242,7 @@ test_coin = "0x0"
     throw new Error(`MetadataCap not found in transaction effects for ${name}`);
   }
 
-  // Find Currency<T> - NEW: shared object created by coin_registry::finalize()
+  // Find Currency<T> - initially owned by CoinRegistry (0xc), not shared yet
   const currency = created.find((c: any) =>
     c.objectType.includes("Currency<"),
   );
@@ -254,7 +257,32 @@ test_coin = "0x0"
   console.log(`         Type: ${coinType}`);
   console.log(`         TreasuryCap: ${treasuryCap.objectId}`);
   console.log(`         MetadataCap: ${metadataCap.objectId}`);
-  console.log(`         Currency: ${currency.objectId} (shared)`);
+  console.log(`         Currency: ${currency.objectId} (owned by registry)`);
+
+  // CRITICAL: Call finalize_registration to promote Currency to shared object
+  // This is required because new_currency_with_otw transfers Currency to 0xc
+  console.log("      Finalizing registration (promoting Currency to shared)...");
+  const finalizeResult = execSync(
+    `sui client call --package 0x2 --module coin_registry --function finalize_registration --type-args ${coinType} --args 0xc ${currency.objectId} --gas-budget 100000000 --json`,
+    { encoding: "utf8" },
+  );
+  const finalizeData = JSON.parse(finalizeResult);
+
+  if (finalizeData.effects.status.status !== "success") {
+    throw new Error(
+      `Failed to finalize registration for ${name}: ${finalizeData.effects.status.error}`,
+    );
+  }
+
+  // The finalize_registration creates a NEW shared Currency with derived address
+  const newCurrency = finalizeData.objectChanges.find((c: any) =>
+    c.type === "created" && c.objectType.includes("Currency<"),
+  );
+  if (!newCurrency) {
+    throw new Error(`Shared Currency not found after finalize_registration for ${name}`);
+  }
+
+  console.log(`         Currency (shared): ${newCurrency.objectId}`);
 
   // Cleanup
   execSync(`rm -rf ${tmpDir}`, { encoding: "utf8" });
@@ -264,7 +292,7 @@ test_coin = "0x0"
     type: coinType,
     treasuryCap: treasuryCap.objectId,
     metadataCap: metadataCap.objectId,
-    currencyId: currency.objectId,
+    currencyId: newCurrency.objectId,
     isSharedTreasuryCap,
   };
 }
@@ -415,11 +443,11 @@ async function main() {
 
   console.log("\nSummary:");
   console.log(`   - Asset coin: ${testCoins.asset.type}`);
-  console.log(`     Currency<T>: ${testCoins.asset.currencyId} (shared)`);
+  console.log(`     Currency: ${testCoins.asset.currencyId} (shared)`);
   console.log(`   - Stable coin: ${testCoins.stable.type}`);
-  console.log(`     Currency<T>: ${testCoins.stable.currencyId} (shared)`);
+  console.log(`     Currency: ${testCoins.stable.currencyId} (shared)`);
   console.log(`   - LP coin: ${testCoins.lp.type}`);
-  console.log(`     Currency<T>: ${testCoins.lp.currencyId} (shared)`);
+  console.log(`     Currency: ${testCoins.lp.currencyId} (shared)`);
   console.log("   - Stable coin registered for fee payments");
   console.log("   - Stable coin registered in factory allowlist");
 

@@ -84,10 +84,10 @@ export * from './utils';
 export * from './ptb';
 
 // ============================================================================
-// SHARED (Action Registry - single source of truth)
+// CONFIG (Action Definitions - single source of truth)
 // ============================================================================
 
-export * from './shared/action-registry';
+export * from './config/action-definitions';
 
 // ============================================================================
 // SUI TYPE RE-EXPORTS

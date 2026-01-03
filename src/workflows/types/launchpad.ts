@@ -20,6 +20,8 @@ export interface CreateRaiseConfig extends WorkflowBaseConfig {
   stableType: string;
   /** Treasury cap object ID */
   treasuryCap: string;
+  /** MetadataCap<AssetType> object ID - required for updating Currency metadata */
+  metadataCap: string;
   /** Asset Currency<T> object ID from sui::coin_registry */
   assetCurrency: string;
   /** Stable Currency<T> object ID from sui::coin_registry */

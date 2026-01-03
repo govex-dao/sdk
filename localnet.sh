@@ -671,6 +671,7 @@ update_backend_env() {
   local markets_prim_pkg=$(node -p "require('$all_packages').futarchy_markets_primitives?.packageId || ''" 2>/dev/null)
   local governance_pkg=$(node -p "require('$all_packages').futarchy_governance?.packageId || ''" 2>/dev/null)
   local account_actions_pkg=$(node -p "require('$all_packages').account_actions?.packageId || ''" 2>/dev/null)
+  local account_protocol_pkg=$(node -p "require('$all_packages').AccountProtocol?.packageId || ''" 2>/dev/null)
 
   # Create .env
   cat > .env << EOF
@@ -688,6 +689,7 @@ MARKETS_OPERATIONS_PACKAGE_ID=$markets_ops_pkg
 MARKETS_PRIMITIVES_PACKAGE_ID=$markets_prim_pkg
 GOVERNANCE_PACKAGE_ID=$governance_pkg
 ACCOUNT_ACTIONS_PACKAGE_ID=$account_actions_pkg
+ACCOUNT_PROTOCOL_PACKAGE_ID=$account_protocol_pkg
 
 # Indexer
 METRICS_PORT=$INDEXER_METRICS_PORT

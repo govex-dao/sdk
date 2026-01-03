@@ -31,6 +31,10 @@ export interface IntentExecutionConfig extends WorkflowBaseConfig {
   stableType: string;
   /** For proposal: LP type for spot pool */
   lpType?: string;
+  /** Factory ID - required for factory admin governance actions */
+  factoryId?: ObjectIdOrRef;
+  /** FeeManager ID - required for fee admin governance actions */
+  feeManagerId?: ObjectIdOrRef;
   /** Actions to execute (in order) */
   actions: IntentActionConfig[];
 }

@@ -47,6 +47,7 @@ export interface DaoInfo {
 export interface RegistryCoinInfo {
   treasuryCapId: string;
   metadataCapId: string;  // MetadataCap<T> from coin_registry::new_currency_with_otw()
+  currencyId: string;     // Currency<T> object ID (shared)
   coinType: string;
 }
 

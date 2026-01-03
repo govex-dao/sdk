@@ -44,6 +44,7 @@ export class LaunchpadService {
       futarchyGovernancePackageId: params.packages.futarchyGovernance,
       futarchyGovernanceActionsPackageId: params.packages.futarchyGovernanceActions,
       futarchyOracleActionsPackageId: params.packages.futarchyOracleActions,
+      futarchyMarketsCorePackageId: params.packages.futarchyMarketsCore,
       packageRegistryId: params.sharedObjects.packageRegistry.id,
       oneShotUtilsPackageId: params.packages.oneShotUtils,
     };

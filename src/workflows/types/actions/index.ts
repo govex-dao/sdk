@@ -16,6 +16,7 @@ export type {
   RemoveApprovedCoinTypeActionConfig,
   DepositFromResourcesActionConfig,
   ReturnTreasuryCapActionConfig,
+  ReturnMetadataCapActionConfig,
   MintActionConfig,
   BurnActionConfig,
   DisableCurrencyActionConfig,
@@ -42,6 +43,7 @@ export type {
   UpdateMetadataTableActionConfig,
   UpdateConditionalMetadataActionConfig,
   UpdateSponsorshipConfigActionConfig,
+  SyncTwapObservationFromProposalActionConfig,
   SetQuotasActionConfig,
   CreatePoolWithMintActionConfig,
   AddLiquidityActionConfig,
@@ -90,6 +92,7 @@ import type {
   RemoveApprovedCoinTypeActionConfig,
   DepositFromResourcesActionConfig,
   ReturnTreasuryCapActionConfig,
+  ReturnMetadataCapActionConfig,
   MintActionConfig,
   BurnActionConfig,
   DisableCurrencyActionConfig,
@@ -115,6 +118,7 @@ import type {
   UpdateMetadataTableActionConfig,
   UpdateConditionalMetadataActionConfig,
   UpdateSponsorshipConfigActionConfig,
+  SyncTwapObservationFromProposalActionConfig,
   SetQuotasActionConfig,
   CreatePoolWithMintActionConfig,
   AddLiquidityActionConfig,
@@ -166,6 +170,7 @@ export type ActionConfig =
   | DepositFromResourcesActionConfig
   // Currency
   | ReturnTreasuryCapActionConfig
+  | ReturnMetadataCapActionConfig
   | MintActionConfig
   | BurnActionConfig
   | DisableCurrencyActionConfig
@@ -193,6 +198,7 @@ export type ActionConfig =
   | UpdateMetadataTableActionConfig
   | UpdateConditionalMetadataActionConfig
   | UpdateSponsorshipConfigActionConfig
+  | SyncTwapObservationFromProposalActionConfig
   // Futarchy Quota
   | SetQuotasActionConfig
   // Futarchy Liquidity

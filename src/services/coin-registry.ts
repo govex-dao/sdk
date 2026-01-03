@@ -24,8 +24,6 @@ import { validateObjectId, validateU64 } from '../utils/validation';
 export interface DepositCoinSetConfig {
   /** The BlankCoinsRegistry object ID */
   registryId: string;
-  /** Sui CoinRegistry object ID (0xc on mainnet) */
-  suiCoinRegistryId: string;
   /** Currency<T> object ID (shared, from coin_registry::finalize) - needed to read decimals */
   currencyId: string;
   /** TreasuryCap object ID for the blank coin type */
@@ -91,9 +89,10 @@ export interface TakeCoinSetConfig {
  *   oneShotUtilsPackageId: '0x...',
  * }, {
  *   registryId: '0x...',
- *   suiCoinRegistryId: '0xc',
+ *   currencyId: '0x...', // Currency<T> from coin_registry::finalize
  *   treasuryCap: '0x...',
  *   metadataCap: '0x...', // MetadataCap from coin_registry::new_currency_with_otw
+ *   expectedDecimals: 9, // Must match Currency<T>.decimals()
  *   fee: 1_000_000_000n, // 1 SUI
  *   coinType: '0x123::my_coin::MyCoin',
  * });
@@ -214,7 +213,6 @@ export class CoinRegistry {
   ): void {
     // Validate inputs
     validateObjectId(depositConfig.registryId, 'registryId');
-    validateObjectId(depositConfig.suiCoinRegistryId, 'suiCoinRegistryId');
     validateObjectId(depositConfig.currencyId, 'currencyId');
     validateObjectId(depositConfig.treasuryCap, 'treasuryCap');
     validateObjectId(depositConfig.metadataCap, 'metadataCap');
@@ -232,7 +230,6 @@ export class CoinRegistry {
       typeArguments: [depositConfig.coinType],
       arguments: [
         tx.object(depositConfig.registryId),
-        tx.object(depositConfig.suiCoinRegistryId),
         tx.object(depositConfig.currencyId),
         tx.object(depositConfig.treasuryCap),
         tx.object(depositConfig.metadataCap),

@@ -53,9 +53,11 @@ export class PackageRegistry {
   /**
    * Add a new package to the registry with its action types
    * This is an atomic operation - package and action type metadata are added together
+   * Requires PackageAdminCap for authorization
    * @param tx - Transaction instance
    * @param accountProtocolPackageId - The account protocol package ID
    * @param registry - The PackageRegistry object
+   * @param cap - The PackageAdminCap
    * @param config - Configuration object
    * @param config.name - Package name
    * @param config.addr - Package address
@@ -68,6 +70,7 @@ export class PackageRegistry {
     tx: Transaction,
     accountProtocolPackageId: string,
     registry: ReturnType<Transaction['moveCall']>,
+    cap: ReturnType<Transaction['moveCall']>,
     config: {
       name: string;
       addr: string;
@@ -81,6 +84,7 @@ export class PackageRegistry {
       target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'add_package'),
       arguments: [
         registry,
+        cap,
         tx.pure.string(config.name),
         tx.pure.address(config.addr),
         tx.pure.u64(config.version),
@@ -94,29 +98,34 @@ export class PackageRegistry {
   /**
    * Remove a package from the registry
    * Also removes all its action type mappings
+   * Requires PackageAdminCap for authorization
    * @param tx - Transaction instance
    * @param accountProtocolPackageId - The account protocol package ID
    * @param registry - The PackageRegistry object
+   * @param cap - The PackageAdminCap
    * @param name - Package name to remove
    */
   static removePackage(
     tx: Transaction,
     accountProtocolPackageId: string,
     registry: ReturnType<Transaction['moveCall']>,
+    cap: ReturnType<Transaction['moveCall']>,
     name: string
   ): void {
     tx.moveCall({
       target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'remove_package'),
-      arguments: [registry, tx.pure.string(name)],
+      arguments: [registry, cap, tx.pure.string(name)],
     });
   }
 
   /**
    * Update package version (add a new version)
    * Version must be greater than all existing versions (monotonic)
+   * Requires PackageAdminCap for authorization
    * @param tx - Transaction instance
    * @param accountProtocolPackageId - The account protocol package ID
    * @param registry - The PackageRegistry object
+   * @param cap - The PackageAdminCap
    * @param config - Configuration object
    * @param config.name - Package name
    * @param config.addr - New package address
@@ -126,6 +135,7 @@ export class PackageRegistry {
     tx: Transaction,
     accountProtocolPackageId: string,
     registry: ReturnType<Transaction['moveCall']>,
+    cap: ReturnType<Transaction['moveCall']>,
     config: {
       name: string;
       addr: string;
@@ -136,6 +146,7 @@ export class PackageRegistry {
       target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'update_package_version'),
       arguments: [
         registry,
+        cap,
         tx.pure.string(config.name),
         tx.pure.address(config.addr),
         tx.pure.u64(config.version),
@@ -180,9 +191,11 @@ export class PackageRegistry {
 
   /**
    * Update package metadata (category, description, action types)
+   * Requires PackageAdminCap for authorization
    * @param tx - Transaction instance
    * @param accountProtocolPackageId - The account protocol package ID
    * @param registry - The PackageRegistry object
+   * @param cap - The PackageAdminCap
    * @param config - Configuration object
    * @param config.name - Package name
    * @param config.newActionTypes - New array of action type strings
@@ -193,6 +206,7 @@ export class PackageRegistry {
     tx: Transaction,
     accountProtocolPackageId: string,
     registry: ReturnType<Transaction['moveCall']>,
+    cap: ReturnType<Transaction['moveCall']>,
     config: {
       name: string;
       newActionTypes: string[];
@@ -204,6 +218,7 @@ export class PackageRegistry {
       target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'update_package_metadata'),
       arguments: [
         registry,
+        cap,
         tx.pure.string(config.name),
         tx.pure.vector('string', config.newActionTypes),
         tx.pure.string(config.newCategory),
@@ -213,7 +228,7 @@ export class PackageRegistry {
   }
 
   // ============================================================================
-  // ACCOUNT CREATION PAUSE (5)
+  // ACCOUNT CREATION PAUSE (3)
   // ============================================================================
 
   /**
@@ -238,25 +253,6 @@ export class PackageRegistry {
   }
 
   /**
-   * Pause account creation system-wide (without cap check)
-   * IMPORTANT: Authorization must be verified by caller before calling this function
-   * This is an internal API for governance actions where the cap check is done separately
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   */
-  static pauseAccountCreationAuthorized(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'pause_account_creation_authorized'),
-      arguments: [registry],
-    });
-  }
-
-  /**
    * Unpause account creation system-wide
    * Requires PackageAdminCap to authorize
    * @param tx - Transaction instance
@@ -273,25 +269,6 @@ export class PackageRegistry {
     tx.moveCall({
       target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'unpause_account_creation'),
       arguments: [registry, cap],
-    });
-  }
-
-  /**
-   * Unpause account creation system-wide (without cap check)
-   * IMPORTANT: Authorization must be verified by caller before calling this function
-   * This is an internal API for governance actions where the cap check is done separately
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   */
-  static unpauseAccountCreationAuthorized(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'unpause_account_creation_authorized'),
-      arguments: [registry],
     });
   }
 
@@ -795,185 +772,6 @@ export class PackageRegistry {
     return tx.moveCall({
       target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'has_package_decoder'),
       arguments: [registry, tx.pure.string(actionType)],
-    });
-  }
-
-  // ============================================================================
-  // FEE MANAGEMENT (8)
-  // ============================================================================
-
-  /**
-   * Set account creation fee configuration
-   * Requires PackageAdminCap to authorize
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @param cap - The PackageAdminCap
-   * @param config - Fee configuration
-   * @param config.feeAmount - Fee amount in MIST (0 = disabled)
-   * @param config.feeRecipient - Address to receive fees (stored for reference)
-   */
-  static setAccountCreationFee(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>,
-    cap: ReturnType<Transaction['moveCall']>,
-    config: {
-      feeAmount: bigint;
-      feeRecipient: string;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'set_account_creation_fee'),
-      arguments: [
-        registry,
-        cap,
-        tx.pure.u64(config.feeAmount),
-        tx.pure.address(config.feeRecipient),
-      ],
-    });
-  }
-
-  /**
-   * Add a package to the fee-exempt list
-   * Exempt packages can create accounts without paying fees
-   * Requires PackageAdminCap to authorize
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @param cap - The PackageAdminCap
-   * @param packageAddr - Package address to exempt
-   */
-  static addFeeExemptPackage(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>,
-    cap: ReturnType<Transaction['moveCall']>,
-    packageAddr: string
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'add_fee_exempt_package'),
-      arguments: [registry, cap, tx.pure.address(packageAddr)],
-    });
-  }
-
-  /**
-   * Remove a package from the fee-exempt list
-   * Requires PackageAdminCap to authorize
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @param cap - The PackageAdminCap
-   * @param packageAddr - Package address to remove from exempt list
-   */
-  static removeFeeExemptPackage(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>,
-    cap: ReturnType<Transaction['moveCall']>,
-    packageAddr: string
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'remove_fee_exempt_package'),
-      arguments: [registry, cap, tx.pure.address(packageAddr)],
-    });
-  }
-
-  /**
-   * Withdraw fees from the treasury
-   * Returns Coin<SUI> to caller for PTB composability
-   * Requires PackageAdminCap to authorize
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @param cap - The PackageAdminCap
-   * @param amount - Amount to withdraw in MIST
-   * @returns The Coin<SUI> object
-   */
-  static withdrawFees(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>,
-    cap: ReturnType<Transaction['moveCall']>,
-    amount: bigint
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'withdraw_fees'),
-      arguments: [registry, cap, tx.pure.u64(amount)],
-    });
-  }
-
-  /**
-   * Check if a package is exempt from fees
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @param packageAddr - Package address to check
-   * @returns Boolean indicating if package is fee-exempt
-   */
-  static isFeeExemptPackage(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>,
-    packageAddr: string
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'is_fee_exempt_package'),
-      arguments: [registry, tx.pure.address(packageAddr)],
-    });
-  }
-
-  /**
-   * Get account creation fee amount
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @returns The fee amount in MIST
-   */
-  static accountCreationFeeAmount(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'account_creation_fee_amount'),
-      arguments: [registry],
-    });
-  }
-
-  /**
-   * Get account creation fee recipient
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @returns The fee recipient address
-   */
-  static accountCreationFeeRecipient(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'account_creation_fee_recipient'),
-      arguments: [registry],
-    });
-  }
-
-  /**
-   * Get fee treasury balance
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @returns The treasury balance in MIST
-   */
-  static feeTreasuryBalance(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'fee_treasury_balance'),
-      arguments: [registry],
     });
   }
 

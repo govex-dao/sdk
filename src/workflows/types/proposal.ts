@@ -103,14 +103,15 @@ export interface AdvanceToReviewConfig extends WorkflowBaseConfig {
   spotPoolId: ObjectIdOrRef;
   /** Sender address (for receiving unused fees back) */
   senderAddress: string;
-  /** Base asset coin metadata object ID (e.g., SUI metadata)
-   * @deprecated After launchpad, the asset metadata is stored in the DAO Account.
-   * The workflow now borrows it from the DAO Account automatically.
-   * This field is ignored when using conditional coins from registry.
+  /** Base asset Currency<T> object ID (e.g., SUI Currency) - required for add_outcome_coins_to_proposal */
+  baseAssetCurrencyId: ObjectIdOrRef;
+  /**
+   * Base stable Currency<T> object ID (e.g., USDC Currency)
+   * @deprecated Use baseStableCurrencyId instead. This alias kept for backwards compatibility.
    */
-  baseAssetMetadataId?: ObjectIdOrRef;
-  /** Base stable coin metadata object ID (e.g., USDC metadata) */
-  baseStableMetadataId: ObjectIdOrRef;
+  baseStableMetadataId?: ObjectIdOrRef;
+  /** Base stable Currency<T> object ID (e.g., USDC Currency) - required for add_outcome_coins_to_proposal */
+  baseStableCurrencyId?: ObjectIdOrRef;
   /** Conditional coin registry config (if using typed conditional coins from registry) */
   conditionalCoinsRegistry?: ConditionalCoinsRegistryConfig;
 }
@@ -125,10 +126,18 @@ export interface ConditionalCoinSetConfig {
   assetCoinType: string;
   /** Asset TreasuryCap ID (used as key in registry) */
   assetCapId: string;
+  /** Asset Currency<T> object ID (shared) - needed for add_outcome_coins_to_proposal */
+  assetCurrencyId: string;
+  /** Asset coin decimals (default: 9) - must match Currency<T>.decimals() */
+  assetDecimals?: number;
   /** Stable conditional coin type (fully qualified) */
   stableCoinType: string;
   /** Stable TreasuryCap ID (used as key in registry) */
   stableCapId: string;
+  /** Stable Currency<T> object ID (shared) - needed for add_outcome_coins_to_proposal */
+  stableCurrencyId: string;
+  /** Stable coin decimals (default: 6) - must match Currency<T>.decimals() */
+  stableDecimals?: number;
 }
 
 /**

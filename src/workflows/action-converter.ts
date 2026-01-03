@@ -2,20 +2,39 @@
  * Action Converter - Converts parsed actions from backend to SDK execution configs
  *
  * This module bridges the gap between:
- * - Backend parser output (ParsedAction from indexer)
+ * - Backend indexer output (IndexedAction from event-based parsing)
  * - SDK executor input (IntentActionConfig)
  *
- * Uses the shared ACTION_REGISTRY as single source of truth.
+ * Uses action-definitions.ts as single source of truth.
  *
  * @module workflows/action-converter
  */
 
 import type { IntentActionConfig } from './types/intent';
-import { ACTION_BY_SDK_ID, type ActionDefinition } from '../shared/action-registry';
+import { ACTION_BY_ID, getActionByFullType, type ActionDefinition } from '../config/action-definitions';
 
 /**
- * Parsed action from backend indexer
- * Matches the output of backend/indexer-v2/action-parser.ts
+ * Indexed action from backend indexer (event-based format)
+ * Matches the output of backend/indexer-v2/grpc-indexer.ts event handlers
+ */
+export interface IndexedAction {
+  /** Position in the action batch (0-indexed) */
+  index: number;
+  /** Short action type (e.g., "CreateStreamAction", "CurrencyMint") */
+  type: string;
+  /** Full Move type path (e.g., "0x...::stream_init_actions::CreateStreamAction") */
+  fullType: string;
+  /** Package ID where the action is defined */
+  packageId?: string;
+  /** Coin/asset type if applicable (first type arg) */
+  coinType?: string;
+  /** Parameters with types, names, and values */
+  params: Array<{ type: string; name: string; value: string }>;
+}
+
+/**
+ * Legacy ParsedAction interface (PTB-based parsing)
+ * @deprecated Use IndexedAction for event-based parsing
  */
 export interface ParsedAction {
   /** Action type identifier (e.g., "create_stream", "mint") */
@@ -25,10 +44,10 @@ export interface ParsedAction {
   fullType: string;
 
   /** Whether this is a known action with full parsing */
-  isKnown: boolean;
+  isKnown?: boolean;
 
   /** Whether this action was staged (add_*_spec) or executed (do_*) */
-  phase: 'staged' | 'executed';
+  phase?: 'staged' | 'executed';
 
   /** Coin/asset type if applicable */
   coinType?: string;
@@ -37,7 +56,7 @@ export interface ParsedAction {
   typeArgs?: string[];
 
   /** Parsed parameters (human-readable for known actions) */
-  params: Record<string, any>;
+  params: Record<string, any> | Array<{ type: string; name: string; value: string }>;
 
   /** Raw argument bytes for unknown actions */
   rawArgs?: any[];
@@ -57,76 +76,96 @@ export class ActionConversionError extends Error {
 }
 
 /**
- * Get required param from parsed action
+ * Convert params array to Record for buildConfig
  */
-function getRequiredParam<T>(action: ParsedAction, key: string): T {
-  const value = action.params[key];
-  if (value === undefined || value === null) {
-    throw new ActionConversionError(action.type, `missing required param '${key}'`);
+function normalizeParams(params: Record<string, any> | Array<{ type: string; name: string; value: string }>): Record<string, any> {
+  if (!Array.isArray(params)) {
+    return params;
   }
-  return value as T;
+  // Convert array format to object
+  const result: Record<string, any> = {};
+  for (const p of params) {
+    // Convert snake_case to camelCase
+    const key = p.name.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
+    result[key] = p.value === 'null' ? undefined : p.value;
+  }
+  return result;
+}
+
+/**
+ * Extract type args from fullType string
+ * e.g., "0x...::module::Type<A, B, C>" -> ["A", "B", "C"]
+ */
+function extractTypeArgs(fullType: string): string[] {
+  const match = fullType.match(/<(.+)>$/);
+  if (!match) return [];
+
+  // Simple split - handles basic cases
+  const inner = match[1];
+  const args: string[] = [];
+  let depth = 0;
+  let current = '';
+
+  for (const char of inner) {
+    if (char === '<') depth++;
+    else if (char === '>') depth--;
+    else if (char === ',' && depth === 0) {
+      args.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) args.push(current.trim());
+
+  return args;
 }
 
 /**
  * Build IntentActionConfig from action definition and parsed params
- * Uses the staging.params to know what fields are needed
+ * Uses the action definition's params and typeParams to know what fields are needed
  */
-function buildConfig(def: ActionDefinition, action: ParsedAction): IntentActionConfig {
-  const { sdkId } = def;
-  const { params, typeArgs } = action;
+function buildConfig(def: ActionDefinition, params: Record<string, any>, typeArgs: string[], coinType?: string): IntentActionConfig {
+  const { id, typeParams } = def;
 
-  // Analyze what type params this action needs from the staging definition
-  const stagingParams = def.staging.params;
-  const needsCoinType = stagingParams.some(p => p.name === 'coinType');
-  const needsObjectType = stagingParams.some(p => p.name === 'objectType');
-  const needsCapType = stagingParams.some(p => p.name === 'capType');
-  const needsAssetType = stagingParams.some(p => p.name === 'assetType');
-  const needsStableType = stagingParams.some(p => p.name === 'stableType');
-  const needsLpType = stagingParams.some(p => p.name === 'lpType');
-  const needsKeyType = stagingParams.some(p => p.name === 'keyType');
+  // Build config with action ID
+  const config: Record<string, any> = { action: id };
 
-  // Build config based on what's needed
-  const config: Record<string, any> = { action: sdkId };
+  // Check if this action needs type parameters
+  if (typeParams && typeParams.length > 0) {
+    // Map typeParams to typeArgs
+    for (let i = 0; i < typeParams.length; i++) {
+      const paramName = typeParams[i];
+      const typeArg = typeArgs[i];
 
-  if (needsCoinType) {
-    // coinType can come from params.coinType, action.coinType, or typeArgs[0]
-    config.coinType = params.coinType || action.coinType || typeArgs?.[0];
-    if (!config.coinType) {
-      throw new ActionConversionError(sdkId, 'coinType not found');
-    }
-  }
-
-  if (needsObjectType) {
-    config.objectType = params.objectType || typeArgs?.[0] || '';
-  }
-
-  if (needsCapType) {
-    config.capType = params.capType || typeArgs?.[0] || '';
-  }
-
-  if (needsAssetType) {
-    config.assetType = params.assetType || typeArgs?.[0] || '';
-  }
-
-  if (needsStableType) {
-    config.stableType = params.stableType || typeArgs?.[1] || '';
-  }
-
-  if (needsLpType) {
-    config.lpType = params.lpType || typeArgs?.[2] || '';
-  }
-
-  if (needsKeyType) {
-    config.keyType = params.keyType || typeArgs?.[1] || '';
-    if (!config.keyType) {
-      throw new ActionConversionError(sdkId, 'keyType not found');
+      if (paramName === 'CoinType') {
+        config.coinType = params.coinType || coinType || typeArg;
+        if (!config.coinType) {
+          throw new ActionConversionError(id, 'coinType not found');
+        }
+      } else if (paramName === 'ObjectType') {
+        config.objectType = params.objectType || typeArg || '';
+      } else if (paramName === 'CapType') {
+        config.capType = params.capType || typeArg || '';
+      } else if (paramName === 'AssetType') {
+        config.assetType = params.assetType || typeArg || '';
+      } else if (paramName === 'StableType') {
+        config.stableType = params.stableType || typeArg || '';
+      } else if (paramName === 'LPType') {
+        config.lpType = params.lpType || typeArg || '';
+      } else if (paramName === 'KeyType') {
+        config.keyType = params.keyType || typeArg || '';
+      }
     }
   }
 
   // Special case: create_pool_with_mint needs extra required params
-  if (sdkId === 'create_pool_with_mint') {
-    config.lpTreasuryCapId = getRequiredParam<string>(action, 'lpTreasuryCapId');
-    config.lpCurrencyId = getRequiredParam<string>(action, 'lpCurrencyId');
+  if (id === 'create_pool_with_mint') {
+    config.lpTreasuryCapId = params.lpTreasuryCapId;
+    config.lpCurrencyId = params.lpCurrencyId;
+    if (!config.lpTreasuryCapId || !config.lpCurrencyId) {
+      throw new ActionConversionError(id, 'lpTreasuryCapId or lpCurrencyId not found');
+    }
   }
 
   return config as IntentActionConfig;
@@ -140,20 +179,30 @@ function buildConfig(def: ActionDefinition, action: ParsedAction): IntentActionC
  * @throws ActionConversionError if action cannot be converted
  */
 export function parsedActionToExecutionConfig(action: ParsedAction): IntentActionConfig {
-  const { type, isKnown } = action;
+  const { type, fullType, isKnown, coinType } = action;
 
-  // Warn if action wasn't fully parsed
-  if (!isKnown) {
+  // First try: lookup by fullType (works for event-based indexed actions)
+  let def = getActionByFullType(fullType);
+
+  // Fallback: lookup by action ID (for legacy format where type is the SDK ID)
+  if (!def) {
+    def = ACTION_BY_ID[type];
+  }
+
+  // If still not found and isKnown is explicitly false, give specific error
+  if (!def && isKnown === false) {
     throw new ActionConversionError(type, 'action was not fully parsed by backend (isKnown=false)');
   }
 
-  // Look up action in registry
-  const def = ACTION_BY_SDK_ID.get(type);
   if (!def) {
-    throw new ActionConversionError(type, 'unknown action type - not in ACTION_REGISTRY');
+    throw new ActionConversionError(type, `unknown action type - fullType '${fullType}' not in ACTION_BY_MARKER_TYPE`);
   }
 
-  return buildConfig(def, action);
+  // Normalize params and extract typeArgs from fullType
+  const normalizedParams = normalizeParams(action.params);
+  const typeArgs = action.typeArgs || extractTypeArgs(fullType);
+
+  return buildConfig(def, normalizedParams, typeArgs, coinType);
 }
 
 /**

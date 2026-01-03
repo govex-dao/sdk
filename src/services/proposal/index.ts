@@ -23,7 +23,8 @@ import type {
 
 // Re-export sub-services
 export { SponsorshipService } from './sponsorship';
-export { TradeService, QuoteResult, TradeConfig } from './trade';
+export { TradeService } from './trade';
+export type { QuoteResult, TradeConfig } from './trade';
 export { TwapService } from './twap';
 export { EscrowService } from './escrow';
 

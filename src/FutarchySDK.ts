@@ -220,6 +220,7 @@ export class FutarchySDK {
       futarchyGovernancePackageId: this.packages.futarchyGovernance,
       futarchyGovernanceActionsPackageId: this.packages.futarchyGovernanceActions,
       futarchyOracleActionsPackageId: this.packages.futarchyOracleActions,
+      futarchyMarketsCorePackageId: this.packages.futarchyMarketsCore,
       packageRegistryId: this.sharedObjects.packageRegistry.id,
       oneShotUtilsPackageId: this.packages.oneShotUtils,
     };
@@ -323,6 +324,7 @@ export class FutarchySDK {
         futarchyGovernancePackageId: this.packages.futarchyGovernance,
         futarchyGovernanceActionsPackageId: this.packages.futarchyGovernanceActions,
         futarchyOracleActionsPackageId: this.packages.futarchyOracleActions,
+        futarchyMarketsCorePackageId: this.packages.futarchyMarketsCore,
         packageRegistryId: this.sharedObjects.packageRegistry.id,
       },
     });
