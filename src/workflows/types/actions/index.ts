@@ -58,8 +58,6 @@ export type {
   RemovePackageActionConfig,
   UpdatePackageVersionActionConfig,
   UpdatePackageMetadataActionConfig,
-  PauseAccountCreationActionConfig,
-  UnpauseAccountCreationActionConfig,
   SetFactoryPausedActionConfig,
   DisableFactoryPermanentlyActionConfig,
   AddStableTypeActionConfig,
@@ -132,8 +130,6 @@ import type {
   RemovePackageActionConfig,
   UpdatePackageVersionActionConfig,
   UpdatePackageMetadataActionConfig,
-  PauseAccountCreationActionConfig,
-  UnpauseAccountCreationActionConfig,
   SetFactoryPausedActionConfig,
   DisableFactoryPermanentlyActionConfig,
   AddStableTypeActionConfig,
@@ -213,8 +209,6 @@ export type ActionConfig =
   | RemovePackageActionConfig
   | UpdatePackageVersionActionConfig
   | UpdatePackageMetadataActionConfig
-  | PauseAccountCreationActionConfig
-  | UnpauseAccountCreationActionConfig
   // Governance - Protocol Admin
   | SetFactoryPausedActionConfig
   | DisableFactoryPermanentlyActionConfig

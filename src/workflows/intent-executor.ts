@@ -990,30 +990,6 @@ export class IntentExecutor {
         break;
       }
 
-      case 'pause_account_creation': {
-        const packageAdminCapType = `${this.packages.accountProtocolPackageId}::package_registry::PackageAdminCap`;
-        this.withBorrowedCap(tx, packageAdminCapType, capContext, (cap) => {
-          tx.moveCall({
-            target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_pause_account_creation`,
-            typeArguments: [outcomeType, witnessType],
-            arguments: [executable, txObject(tx, config.accountId), versionWitness, intentWitness, tx.object(packageRegistryId), cap],
-          });
-        });
-        break;
-      }
-
-      case 'unpause_account_creation': {
-        const packageAdminCapType = `${this.packages.accountProtocolPackageId}::package_registry::PackageAdminCap`;
-        this.withBorrowedCap(tx, packageAdminCapType, capContext, (cap) => {
-          tx.moveCall({
-            target: `${futarchyGovernanceActionsPackageId}::package_registry_actions::do_unpause_account_creation`,
-            typeArguments: [outcomeType, witnessType],
-            arguments: [executable, txObject(tx, config.accountId), versionWitness, intentWitness, tx.object(packageRegistryId), cap],
-          });
-        });
-        break;
-      }
-
       // =========================================================================
       // GOVERNANCE ACTIONS - PROTOCOL ADMIN (FactoryOwnerCap)
       // PTB Borrow/Return Pattern: These actions require FactoryOwnerCap

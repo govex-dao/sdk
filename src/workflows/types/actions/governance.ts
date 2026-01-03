@@ -66,20 +66,6 @@ export interface UpdatePackageMetadataActionConfig {
   newDescription: string;
 }
 
-/**
- * Pause account creation
- */
-export interface PauseAccountCreationActionConfig {
-  type: 'pause_account_creation';
-}
-
-/**
- * Unpause account creation
- */
-export interface UnpauseAccountCreationActionConfig {
-  type: 'unpause_account_creation';
-}
-
 // ============================================================================
 // GOVERNANCE ACTIONS - PROTOCOL ADMIN
 // ============================================================================

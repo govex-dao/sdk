@@ -132,7 +132,7 @@ export class DeploymentManager {
 
     /**
      * Get PackageAdminCap from AccountProtocol
-     * This cap controls account creation pause/unpause and package registry management
+     * This cap controls package registry management
      */
     getPackageAdminCap() {
         const protocol = this.getPackage("AccountProtocol");

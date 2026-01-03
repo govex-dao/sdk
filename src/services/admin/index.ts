@@ -142,38 +142,11 @@ export class VerificationService {
 
 /**
  * Package Registry Admin Service
+ * Reserved for future package registry admin operations
  */
 export class PackageRegistryService {
-  private packages: Packages;
-  private sharedObjects: SharedObjects;
-
-  constructor(params: ServiceParams) {
-    this.packages = params.packages;
-    this.sharedObjects = params.sharedObjects;
-  }
-
-  pauseAccountCreation(packageAdminCapId: string): Transaction {
-    const tx = new Transaction();
-    tx.moveCall({
-      target: `${this.packages.accountProtocol}::package_registry::pause_account_creation`,
-      arguments: [
-        tx.object(this.sharedObjects.packageRegistry.id),
-        tx.object(packageAdminCapId),
-      ],
-    });
-    return tx;
-  }
-
-  unpauseAccountCreation(packageAdminCapId: string): Transaction {
-    const tx = new Transaction();
-    tx.moveCall({
-      target: `${this.packages.accountProtocol}::package_registry::unpause_account_creation`,
-      arguments: [
-        tx.object(this.sharedObjects.packageRegistry.id),
-        tx.object(packageAdminCapId),
-      ],
-    });
-    return tx;
+  constructor(_params: ServiceParams) {
+    // Reserved for future package registry admin operations
   }
 }
 

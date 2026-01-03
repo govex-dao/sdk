@@ -110,8 +110,6 @@ export type IntentActionConfig =
   | { action: 'remove_package' }
   | { action: 'update_package_version' }
   | { action: 'update_package_metadata' }
-  | { action: 'pause_account_creation' }
-  | { action: 'unpause_account_creation' }
   // Governance - Protocol Admin Actions
   | { action: 'set_factory_paused' }
   | { action: 'disable_factory_permanently' }

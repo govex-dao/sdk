@@ -4,7 +4,7 @@ import { BaseTransactionBuilder, TransactionUtils } from "./transaction";
 
 /**
  * Package Registry admin operations requiring PackageAdminCap
- * These are privileged operations for managing the PackageRegistry and account creation
+ * These are privileged operations for managing the PackageRegistry
  */
 export class PackageRegistryAdminOperations {
     private client: SuiClient;
@@ -22,82 +22,6 @@ export class PackageRegistryAdminOperations {
         this.protocolPackageId = protocolPackageId;
         this.registryObjectId = registryObjectId;
         this.registryInitialSharedVersion = registryInitialSharedVersion;
-    }
-
-    /**
-     * Pause account creation system-wide
-     * When paused, ALL account creation (factory and direct) is blocked
-     *
-     * @param packageAdminCapId - PackageAdminCap object ID
-     * @returns Transaction for pausing account creation
-     *
-     * @example
-     * ```typescript
-     * // Pause all account creation
-     * const tx = registryOps.pauseAccountCreation(adminCapId);
-     * ```
-     */
-    pauseAccountCreation(packageAdminCapId: string): Transaction {
-        const builder = new BaseTransactionBuilder(this.client);
-        const tx = builder.getTransaction();
-
-        const target = TransactionUtils.buildTarget(
-            this.protocolPackageId,
-            "package_registry",
-            "pause_account_creation"
-        );
-
-        tx.moveCall({
-            target,
-            arguments: [
-                tx.sharedObjectRef({
-                    objectId: this.registryObjectId,
-                    initialSharedVersion: this.registryInitialSharedVersion,
-                    mutable: true,
-                }), // registry
-                tx.object(packageAdminCapId), // cap
-            ],
-        });
-
-        return tx;
-    }
-
-    /**
-     * Unpause account creation system-wide
-     * Re-enables account creation after it was paused
-     *
-     * @param packageAdminCapId - PackageAdminCap object ID
-     * @returns Transaction for unpausing account creation
-     *
-     * @example
-     * ```typescript
-     * // Re-enable account creation
-     * const tx = registryOps.unpauseAccountCreation(adminCapId);
-     * ```
-     */
-    unpauseAccountCreation(packageAdminCapId: string): Transaction {
-        const builder = new BaseTransactionBuilder(this.client);
-        const tx = builder.getTransaction();
-
-        const target = TransactionUtils.buildTarget(
-            this.protocolPackageId,
-            "package_registry",
-            "unpause_account_creation"
-        );
-
-        tx.moveCall({
-            target,
-            arguments: [
-                tx.sharedObjectRef({
-                    objectId: this.registryObjectId,
-                    initialSharedVersion: this.registryInitialSharedVersion,
-                    mutable: true,
-                }), // registry
-                tx.object(packageAdminCapId), // cap
-            ],
-        });
-
-        return tx;
     }
 
     /**

@@ -455,8 +455,6 @@ const packageRegistryActionNames = [
   'remove_package',
   'update_package_version',
   'update_package_metadata',
-  'pause_account_creation',
-  'unpause_account_creation',
 ] as const;
 
 const packageRegistryActionTargets: Record<typeof packageRegistryActionNames[number], string> = {
@@ -464,8 +462,6 @@ const packageRegistryActionTargets: Record<typeof packageRegistryActionNames[num
   'remove_package': 'do_remove_package',
   'update_package_version': 'do_update_package_version',
   'update_package_metadata': 'do_update_package_metadata',
-  'pause_account_creation': 'do_pause_account_creation',
-  'unpause_account_creation': 'do_unpause_account_creation',
 };
 
 for (const actionName of packageRegistryActionNames) {

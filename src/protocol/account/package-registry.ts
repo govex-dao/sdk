@@ -14,7 +14,6 @@
  * - Atomic package registration with action types
  * - Version monotonicity enforcement
  * - Action type to package mapping
- * - Account creation pause controls
  * - Decoder attachment support
  *
  * @module account-protocol/package-registry
@@ -41,8 +40,6 @@ import { TransactionUtils } from '../../services/transaction';
  * // Get package metadata
  * const metadata = PackageRegistry.getPackageMetadata(tx, accountProtocolPackageId, registry, 'my_package');
  *
- * // Check account creation status
- * const isPaused = PackageRegistry.isAccountCreationPaused(tx, accountProtocolPackageId, registry);
  * ```
  */
 export class PackageRegistry {
@@ -224,69 +221,6 @@ export class PackageRegistry {
         tx.pure.string(config.newCategory),
         tx.pure.string(config.newDescription),
       ],
-    });
-  }
-
-  // ============================================================================
-  // ACCOUNT CREATION PAUSE (3)
-  // ============================================================================
-
-  /**
-   * Pause account creation system-wide
-   * Requires PackageAdminCap to authorize
-   * When paused, all calls to account::new() will abort
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @param cap - The PackageAdminCap
-   */
-  static pauseAccountCreation(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>,
-    cap: ReturnType<Transaction['moveCall']>
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'pause_account_creation'),
-      arguments: [registry, cap],
-    });
-  }
-
-  /**
-   * Unpause account creation system-wide
-   * Requires PackageAdminCap to authorize
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @param cap - The PackageAdminCap
-   */
-  static unpauseAccountCreation(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>,
-    cap: ReturnType<Transaction['moveCall']>
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'unpause_account_creation'),
-      arguments: [registry, cap],
-    });
-  }
-
-  /**
-   * Check if account creation is currently paused
-   * @param tx - Transaction instance
-   * @param accountProtocolPackageId - The account protocol package ID
-   * @param registry - The PackageRegistry object
-   * @returns Boolean indicating if account creation is paused
-   */
-  static isAccountCreationPaused(
-    tx: Transaction,
-    accountProtocolPackageId: string,
-    registry: ReturnType<Transaction['moveCall']>
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'is_account_creation_paused'),
-      arguments: [registry],
     });
   }
 

@@ -177,8 +177,6 @@ export const MOVE_ERROR_CODES: Record<string, Record<number, string>> = {
     0: 'Package already exists',
     1: 'Package not found',
     2: 'Invalid package address',
-    3: 'Account creation is paused',
-    4: 'Account creation is not paused',
   },
 
   'futarchy_governance_actions::protocol_admin_actions': {
