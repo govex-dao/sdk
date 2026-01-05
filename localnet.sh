@@ -364,8 +364,8 @@ hard_reset() {
   log_success "Removed PID files"
 
   # Remove deployment artifacts
-  rm -f "$PACKAGES_DIR/deployments-processed/_all-packages-localnet.json" 2>/dev/null || true
-  rm -f "$PACKAGES_DIR/deployments/"*-localnet.json 2>/dev/null || true
+  rm -f "$SDK_DIR/deployments-processed/_all-packages-localnet.json" 2>/dev/null || true
+  rm -rf "$PACKAGES_DIR/deployments/localnet" 2>/dev/null || true
   log_success "Removed deployment artifacts"
 
   # Remove SDK test data files (stale object IDs from previous runs)
@@ -655,7 +655,7 @@ deploy_packages() {
 update_backend_env() {
   log_info "Updating backend .env with package IDs..."
 
-  local all_packages="$PACKAGES_DIR/deployments-processed/_all-packages-localnet.json"
+  local all_packages="$SDK_DIR/deployments-processed/_all-packages-localnet.json"
 
   if [[ ! -f "$all_packages" ]]; then
     log_warn "Package file not found: $all_packages"

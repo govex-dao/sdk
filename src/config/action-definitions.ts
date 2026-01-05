@@ -903,16 +903,7 @@ export const CONFIG_ACTIONS: ActionDefinition[] = [
     params: [
       { name: 'maxOutcomes', type: 'option<u64>', description: 'Maximum outcomes', optional: true },
       { name: 'maxActionsPerOutcome', type: 'option<u64>', description: 'Max actions per outcome', optional: true },
-      { name: 'requiredBondAmount', type: 'option<u64>', description: 'Required bond amount', optional: true },
-      { name: 'maxIntentsPerOutcome', type: 'option<u64>', description: 'Max intents per outcome', optional: true },
       { name: 'proposalIntentExpiryMs', type: 'option<u64>', description: 'Proposal intent expiry', optional: true },
-      { name: 'optimisticChallengeFee', type: 'option<u64>', description: 'Optimistic challenge fee', optional: true },
-      {
-        name: 'optimisticChallengePeriodMs',
-        type: 'option<u64>',
-        description: 'Optimistic challenge period',
-        optional: true,
-      },
       { name: 'proposalCreationFee', type: 'option<u64>', description: 'Proposal creation fee', optional: true },
       { name: 'proposalFeePerOutcome', type: 'option<u64>', description: 'Fee per outcome', optional: true },
       {
@@ -921,14 +912,6 @@ export const CONFIG_ACTIONS: ActionDefinition[] = [
         description: 'If true, fees paid in AssetType; if false, fees paid in StableType',
         optional: true,
       },
-      { name: 'acceptNewProposals', type: 'option<bool>', description: 'Accept new proposals', optional: true },
-      {
-        name: 'enablePremarketReservationLock',
-        type: 'option<bool>',
-        description: 'Enable premarket reservation lock',
-        optional: true,
-      },
-      { name: 'showProposalDetails', type: 'option<bool>', description: 'Show proposal details', optional: true },
     ],
     description: 'Update governance settings',
     launchpadSupported: false,

@@ -52,11 +52,14 @@ export function getActiveEnv(): Network {
 }
 
 /**
- * Load deployments config from external file
- * @deprecated SDK now bundles deployments - use `new FutarchySDK({ network })` instead
+ * Load deployments config from external file for a specific network
+ * @param network - The network to load deployments for (defaults to 'localnet')
  */
-export function loadDeployments(): any {
-    const deploymentsPath = path.join(__dirname, '../../packages/deployments-processed/_all-packages.json');
+export function loadDeployments(network: Network = 'localnet'): any {
+    const deploymentsPath = path.join(__dirname, `../deployments-processed/_all-packages-${network}.json`);
+    if (!fs.existsSync(deploymentsPath)) {
+        throw new Error(`Deployments not found for ${network} at: ${deploymentsPath}\nRun: ./deploy_verified.sh --network ${network}`);
+    }
     const data = fs.readFileSync(deploymentsPath, 'utf8');
     return JSON.parse(data);
 }
@@ -147,7 +150,7 @@ export function initSDK(network?: Network): FutarchySDK {
 
     // For localnet, we need to load deployments from files
     if (actualNetwork === 'localnet') {
-        const deployments = loadDeployments();
+        const deployments = loadDeployments(actualNetwork);
         const sdk = new FutarchySDK({
             network: actualNetwork,
             deployments,

@@ -1604,10 +1604,63 @@ struct GovernanceWitness has drop {}
 Packages are deployed via `packages/deploy_verified.sh`:
 
 ```bash
+cd packages
 ./deploy_verified.sh --network localnet   # Deploy to localnet
 ./deploy_verified.sh --network devnet     # Deploy to devnet
+./deploy_verified.sh --network testnet    # Deploy to testnet
+./deploy_verified.sh --network mainnet    # Deploy to mainnet
 ```
 
-Deployment artifacts are written to:
-- `packages/deployments/<package>-<network>.json`
-- `packages/deployments-processed/_all-packages-<network>.json`
+#### Network-Specific Directory Structure
+
+Each network has its own deployment directory to support parallel deployments:
+
+```
+packages/
+├── deployments/
+│   ├── devnet/                    # Raw deployment JSONs for devnet
+│   │   ├── AccountProtocol.json
+│   │   ├── futarchy_factory.json
+│   │   └── ...
+│   ├── testnet/                   # Raw deployment JSONs for testnet
+│   ├── mainnet/                   # Raw deployment JSONs for mainnet
+│   └── localnet/                  # Raw deployment JSONs for localnet
+└── deployment-logs/
+    ├── devnet/                    # Deployment logs per network
+    ├── testnet/
+    └── ...
+
+sdk/
+└── deployments-processed/
+    ├── _all-packages-devnet.json  # Processed for SDK (devnet)
+    ├── _all-packages-testnet.json # Processed for SDK (testnet)
+    ├── _all-packages-mainnet.json # Processed for SDK (mainnet)
+    ├── _all-packages-localnet.json
+    └── _all-packages.json         # Backwards compat (last deployed network)
+```
+
+#### How the SDK Loads Deployments
+
+The SDK dynamically loads deployment configs at runtime:
+
+```typescript
+// SDK automatically uses the correct deployment for the network
+const sdk = new FutarchySDK({ network: "testnet" });
+
+// Or provide custom deployments
+const sdk = new FutarchySDK({
+  network: "testnet",
+  deployments: customDeploymentConfig
+});
+```
+
+The SDK uses `require()` to load `_all-packages-{network}.json` files. Missing networks gracefully return `undefined`, so you can deploy to new networks without breaking the SDK build.
+
+#### Deployment Process
+
+When you run `./deploy_verified.sh --network testnet`:
+
+1. **Deploy packages** → Raw JSONs saved to `packages/deployments/testnet/`
+2. **Process deployments** → Runs `sdk/scripts/process-deployments.ts --network testnet`
+3. **Output** → Creates `sdk/deployments-processed/_all-packages-testnet.json`
+4. **SDK ready** → `new FutarchySDK({ network: "testnet" })` works immediately

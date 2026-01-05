@@ -137,16 +137,28 @@ function main() {
 
   console.log(`Processing deployments for network: ${network}`);
 
-  const deploymentsDir = path.join(__dirname, '../../packages/deployments');
-  const processedDir = path.join(__dirname, '../../packages/deployments-processed');
+  // Network-specific source directory (raw deployment JSONs)
+  const deploymentsDir = path.join(__dirname, '../../packages/deployments', network);
+  // Output directory for processed files (SDK reads from here)
+  const processedDir = path.join(__dirname, '../deployments-processed');
 
-  // Ensure output directory exists
+  // Ensure directories exist
+  if (!fs.existsSync(deploymentsDir)) {
+    console.error(`✗ Deployments directory not found: ${deploymentsDir}`);
+    console.error(`  Run: ./deploy_verified.sh --network ${network}`);
+    process.exit(1);
+  }
   if (!fs.existsSync(processedDir)) {
     fs.mkdirSync(processedDir, { recursive: true });
   }
 
-  // Read all deployment JSON files
+  // Read all deployment JSON files from network-specific directory
   const files = fs.readdirSync(deploymentsDir).filter((f) => f.endsWith('.json'));
+
+  if (files.length === 0) {
+    console.error(`✗ No deployment JSON files found in: ${deploymentsDir}`);
+    process.exit(1);
+  }
 
   const allPackages: Record<string, ProcessedDeployment> = {};
 
@@ -159,10 +171,6 @@ function main() {
     try {
       const processed = processDeployment(packageName, deploymentPath);
       allPackages[packageName] = processed;
-
-      // Write individual package file
-      const outputPath = path.join(processedDir, file);
-      fs.writeFileSync(outputPath, JSON.stringify(processed, null, 2));
       console.log(`✓ ${packageName} processed`);
     } catch (error: any) {
       console.error(`✗ Failed to process ${packageName}: ${error.message}`);
@@ -175,10 +183,11 @@ function main() {
   fs.writeFileSync(networkFilePath, JSON.stringify(allPackages, null, 2));
   console.log(`\n✓ Network packages written to ${networkFilePath}`);
 
-  // Also write/update the generic _all-packages.json (backwards compatibility)
+  // Also write/update the generic _all-packages.json for backwards compatibility
+  // This points to the most recently processed network
   const allPackagesPath = path.join(processedDir, '_all-packages.json');
   fs.writeFileSync(allPackagesPath, JSON.stringify(allPackages, null, 2));
-  console.log(`✓ Generic _all-packages.json updated`);
+  console.log(`✓ Generic _all-packages.json updated (points to ${network})`);
 }
 
 main();

@@ -66,17 +66,22 @@ async function main() {
   console.log("=".repeat(80));
 
   try {
+    // Determine network from SDK
+    const network = (typeof sdk.network === 'string' ? sdk.network : sdk.network?.name) || 'localnet';
+
+    // Load all packages from the network-specific deployment file
+    const allPackagesPath = path.join(__dirname, `../deployments-processed/_all-packages-${network}.json`);
+    const allPackages = JSON.parse(fs.readFileSync(allPackagesPath, "utf8"));
+
     // Load futarchy_core deployment for SponsorshipRegistry and SponsorshipAdminCap
-    const futarchyCorePath = path.join(__dirname, "../../packages/deployments-processed/futarchy_core.json");
-    const futarchyCoreDeployment = JSON.parse(fs.readFileSync(futarchyCorePath, "utf8"));
+    const futarchyCoreDeployment = allPackages.futarchy_core;
 
-    const sponsorshipRegistryObj = futarchyCoreDeployment.sharedObjects?.find((obj: any) => obj.name === "SponsorshipRegistry");
-    const sponsorshipAdminCapId = futarchyCoreDeployment.adminCaps?.find((obj: any) => obj.name === "SponsorshipAdminCap")?.objectId;
-    const futarchyCorePkgId = futarchyCoreDeployment.packageId;
+    const sponsorshipRegistryObj = futarchyCoreDeployment?.sharedObjects?.find((obj: any) => obj.name === "SponsorshipRegistry");
+    const sponsorshipAdminCapId = futarchyCoreDeployment?.adminCaps?.find((obj: any) => obj.name === "SponsorshipAdminCap")?.objectId;
+    const futarchyCorePkgId = futarchyCoreDeployment?.packageId;
 
-    const governancePath = path.join(__dirname, "../../packages/deployments-processed/futarchy_governance.json");
-    const governanceDeployment = JSON.parse(fs.readFileSync(governancePath, "utf8"));
-    const governancePkgId = governanceDeployment.packageId;
+    const governanceDeployment = allPackages.futarchy_governance;
+    const governancePkgId = governanceDeployment?.packageId;
 
     if (sponsorshipRegistryObj?.objectId && sponsorshipAdminCapId && futarchyCorePkgId && governancePkgId) {
       console.log(`SponsorshipRegistry: ${sponsorshipRegistryObj.objectId}`);

@@ -433,6 +433,7 @@ export class LaunchpadWorkflow {
             tx.pure.option('u64', action.stepMax ? Number(action.stepMax) : null),
             tx.pure.option('u128', action.initialObservation ?? null),
             tx.pure.option('u128', action.threshold ?? null),
+            tx.pure.option('u128', action.sponsoredThreshold ?? null),
           ],
         });
         break;
@@ -444,17 +445,10 @@ export class LaunchpadWorkflow {
             builder,
             tx.pure.option('u64', action.maxOutcomes ? Number(action.maxOutcomes) : null),
             tx.pure.option('u64', action.maxActionsPerOutcome ? Number(action.maxActionsPerOutcome) : null),
-            tx.pure.option('u64', action.requiredBondAmount ? Number(action.requiredBondAmount) : null),
-            tx.pure.option('u64', action.maxIntentsPerOutcome ? Number(action.maxIntentsPerOutcome) : null),
             tx.pure.option('u64', action.proposalIntentExpiryMs ? Number(action.proposalIntentExpiryMs) : null),
-            tx.pure.option('u64', action.optimisticChallengeFee ? Number(action.optimisticChallengeFee) : null),
-            tx.pure.option('u64', action.optimisticChallengePeriodMs ? Number(action.optimisticChallengePeriodMs) : null),
             tx.pure.option('u64', action.proposalCreationFee ? Number(action.proposalCreationFee) : null),
             tx.pure.option('u64', action.proposalFeePerOutcome ? Number(action.proposalFeePerOutcome) : null),
             tx.pure.option('bool', action.feeInAssetToken ?? null),
-            tx.pure.option('bool', action.acceptNewProposals ?? null),
-            tx.pure.option('bool', action.enablePremarketReservationLock ?? null),
-            tx.pure.option('bool', action.showProposalDetails ?? null),
           ],
         });
         break;

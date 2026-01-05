@@ -15,15 +15,30 @@ async function main() {
 
     console.log('Registering new packages in PackageRegistry...\n');
 
-    // Load PackageRegistry and AccountProtocol addresses from deployment files
-    const accountProtocolPath = path.join(__dirname, '../../packages/deployments-processed/AccountProtocol.json');
-    const accountProtocolDeployment = JSON.parse(fs.readFileSync(accountProtocolPath, 'utf8'));
+    // Determine network from SDK or environment
+    const network = process.env.GOVEX_NETWORK || (typeof sdk.network === 'string' ? sdk.network : sdk.network?.name) || 'localnet';
+    console.log(`Network: ${network}\n`);
 
-    const registryObj = accountProtocolDeployment.sharedObjects.find((obj: any) => obj.name === 'PackageRegistry');
+    // Load all packages from the SDK's processed deployment file
+    const allPackagesPath = path.join(__dirname, `../deployments-processed/_all-packages-${network}.json`);
+
+    if (!fs.existsSync(allPackagesPath)) {
+        throw new Error(`Deployment file not found: ${allPackagesPath}`);
+    }
+
+    console.log(`Loading packages from: _all-packages-${network}.json\n`);
+    const deploymentData = JSON.parse(fs.readFileSync(allPackagesPath, 'utf8'));
+
+    // Get AccountProtocol data from the deployment data
+    const accountProtocolData = deploymentData.AccountProtocol;
+    if (!accountProtocolData) {
+        throw new Error('AccountProtocol not found in deployment data');
+    }
+
+    const registryObj = accountProtocolData.sharedObjects?.find((obj: any) => obj.name === 'PackageRegistry');
     const REGISTRY = registryObj?.objectId;
-    const REGISTRY_VERSION = registryObj?.initialSharedVersion;
-    const ADMIN_CAP = accountProtocolDeployment.adminCaps?.find((obj: any) => obj.name === 'PackageAdminCap')?.objectId;
-    const ACCOUNT_PROTOCOL_PKG = accountProtocolDeployment.packageId;
+    const ADMIN_CAP = accountProtocolData.adminCaps?.find((obj: any) => obj.name === 'PackageAdminCap')?.objectId;
+    const ACCOUNT_PROTOCOL_PKG = accountProtocolData.packageId;
 
     if (!REGISTRY || !ACCOUNT_PROTOCOL_PKG || !ADMIN_CAP) {
         throw new Error('Failed to load PackageRegistry, PackageAdminCap, or AccountProtocol package ID from deployment files');
@@ -32,22 +47,6 @@ async function main() {
     console.log(`Using PackageRegistry: ${REGISTRY}`);
     console.log(`Using PackageAdminCap: ${ADMIN_CAP}`);
     console.log(`Using AccountProtocol: ${ACCOUNT_PROTOCOL_PKG}\n`);
-
-    // Load all packages from latest deployment JSON
-    const deploymentLogsDir = path.join(__dirname, '../../packages/deployment-logs');
-    const logFiles = fs.readdirSync(deploymentLogsDir)
-        .filter(f => f.startsWith('deployment_verified_') && f.endsWith('.json'))
-        .sort()
-        .reverse();
-
-    if (logFiles.length === 0) {
-        throw new Error('No deployment log files found');
-    }
-
-    const latestDeploymentPath = path.join(deploymentLogsDir, logFiles[0]);
-    console.log(`Loading packages from: ${logFiles[0]}\n`);
-    const deploymentData = JSON.parse(fs.readFileSync(latestDeploymentPath, 'utf8'));
-    const allPackages = deploymentData.packages;
 
     // Map package names to lowercase for registry (factory expects lowercase names)
     const nameMapping: Record<string, string> = {
@@ -64,17 +63,23 @@ async function main() {
         // Add more as needed
     };
 
-    const packages = Object.keys(allPackages).map(key => {
-        const registryName = nameMapping[key] || key; // Use lowercase for AccountProtocol/AccountActions
-        return {
-            name: registryName,
-            addr: allPackages[key], // Direct access since it's just packageId string
-            version: 1,
-            actionTypes: actionTypesMap[registryName] || [],
-            category: registryName.includes('actions') ? 'Actions' : registryName.includes('governance') ? 'Governance' : 'Core',
-            description: `${registryName} package`
-        };
-    });
+    // Handle both old format (flat with packageId inside) and new format (packages object)
+    const packages = Object.keys(deploymentData)
+        .filter(key => !key.startsWith('_')) // Skip metadata keys like _generatedAt
+        .map(key => {
+            const registryName = nameMapping[key] || key; // Use lowercase for AccountProtocol/AccountActions
+            // Handle both formats: { packageId: "0x..." } or just "0x..."
+            const pkgData = deploymentData[key];
+            const addr = typeof pkgData === 'string' ? pkgData : pkgData.packageId;
+            return {
+                name: registryName,
+                addr,
+                version: 1,
+                actionTypes: actionTypesMap[registryName] || [],
+                category: registryName.includes('actions') ? 'Actions' : registryName.includes('governance') ? 'Governance' : 'Core',
+                description: `${registryName} package`
+            };
+        });
 
     // Skip removal step for fresh registry (nothing to remove)
     console.log('✓ Skipping removal step (fresh registry)\n');
