@@ -205,6 +205,8 @@ async function main() {
     assetType,
     stableType,
     lpType,
+    senderAddress: activeAddress,
+    // No gap fee coins needed - tests run with sufficient time between proposals
   });
 
   await executeTransaction(sdk, toTradingTx.transaction, { network: "devnet" });

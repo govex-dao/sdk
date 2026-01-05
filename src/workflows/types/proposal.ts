@@ -152,6 +152,14 @@ export interface ConditionalCoinsRegistryConfig {
 
 /**
  * Configuration for advancing proposal to trading state
+ *
+ * Gap Fee: When transitioning to TRADING, a gap fee may be charged based on time
+ * since last proposal ended. The fee starts at 10000x proposal_creation_fee at t=0
+ * and decays exponentially to 0 at t=12hr (30-minute half-life).
+ *
+ * - If 12+ hours have passed, no gap fee is charged
+ * - Fee type must match DAO's fee_in_asset_token setting
+ * - Excess fee is returned to the sender
  */
 export interface AdvanceToTradingConfig extends WorkflowBaseConfig {
   /** Proposal object ID or full ObjectRef */
@@ -168,6 +176,25 @@ export interface AdvanceToTradingConfig extends WorkflowBaseConfig {
   stableType: string;
   /** LP coin type for the spot pool (third type parameter of UnifiedSpotPool) */
   lpType: string;
+  /**
+   * Gap fee coin object IDs. Pass coins of the correct type based on DAO's fee setting.
+   * - If feeInAsset=true: pass asset coins here
+   * - If feeInAsset=false: pass stable coins here
+   * If 12+ hours have passed since last proposal, no fee is needed (pass empty array).
+   */
+  gapFeeCoins?: string[];
+  /**
+   * Maximum gap fee amount to pay. Any excess will be returned.
+   * If not specified and gapFeeCoins are provided, the full coin value is used.
+   */
+  maxGapFee?: bigint;
+  /**
+   * Whether the gap fee is in asset token (true) or stable token (false).
+   * Must match the DAO's fee_in_asset_token config setting.
+   */
+  feeInAsset?: boolean;
+  /** Sender address (for receiving excess gap fee refund) */
+  senderAddress: string;
 }
 
 /**

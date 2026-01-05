@@ -32,7 +32,7 @@ import { TransactionUtils } from '../../services/transaction';
  *   accountProtocolPackageId,
  *   configType,
  *   configWitnessType,
- * }, config, deps, registry, versionWitness, configWitness);
+ * }, config, deps, configWitness);
  *
  * // Share the account
  * Account.shareAccount(tx, { accountProtocolPackageId, configType }, account);
@@ -1156,10 +1156,11 @@ export class Account {
    * @param config.configWitnessType - The config witness type parameter
    * @param configData - The config data
    * @param deps - The dependencies object
-   * @param registry - The package registry object
-   * @param versionWitness - The version witness
    * @param configWitness - The config witness
    * @returns The created account
+   *
+   * Note: Account creation is gated by the config_witness parameter. Only the module that
+   * defines Config can create instances of CW, ensuring only authorized code can create accounts.
    */
   static new(
     tx: Transaction,
@@ -1170,8 +1171,6 @@ export class Account {
     },
     configData: ReturnType<Transaction['moveCall']>,
     deps: ReturnType<Transaction['moveCall']>,
-    registry: string | ReturnType<Transaction['moveCall']>,
-    versionWitness: ReturnType<Transaction['moveCall']>,
     configWitness: ReturnType<Transaction['moveCall']>
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -1180,8 +1179,6 @@ export class Account {
       arguments: [
         configData,
         deps,
-        typeof registry === 'string' ? tx.object(registry) : registry,
-        versionWitness,
         configWitness,
       ],
     });

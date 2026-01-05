@@ -1,8 +1,13 @@
 /**
  * Proposal Sponsorship Operations
  *
- * Allows team members to sponsor proposals. Sponsored outcomes bypass the TWAP
- * threshold and just need TWAP >= reject TWAP to pass. Sponsorship uses quota.
+ * Allows team members to sponsor proposals with per-outcome sponsorship types.
+ *
+ * Two sponsorship types:
+ * - ZERO_THRESHOLD (1): Outcome just needs TWAP >= reject_twap to pass
+ * - NEGATIVE_DISCOUNT (2): Outcome can pass with TWAP >= reject_twap - sponsored_threshold%
+ *
+ * Sponsorship uses quota (one quota per proposal regardless of how many outcomes sponsored).
  *
  * @module proposal-sponsorship
  */
@@ -12,13 +17,33 @@ import { SuiClient } from '@mysten/sui/client';
 import { TransactionUtils } from './transaction';
 
 /**
+ * Sponsorship type constants
+ * Must match the Move constants in proposal.move
+ */
+export const SPONSORSHIP_NONE = 0;
+export const SPONSORSHIP_ZERO_THRESHOLD = 1;
+export const SPONSORSHIP_NEGATIVE_DISCOUNT = 2;
+
+export type SponsorshipType =
+  | typeof SPONSORSHIP_NONE
+  | typeof SPONSORSHIP_ZERO_THRESHOLD
+  | typeof SPONSORSHIP_NEGATIVE_DISCOUNT;
+
+/**
  * Configuration for sponsoring a proposal
  */
 export interface SponsorProposalConfig {
   governancePackageId: string;
   proposalId: string;
   daoId: string;
-  quotaRegistryId: string;
+  packageRegistryId: string;
+  sponsorshipRegistryId: string;
+  /**
+   * Array of sponsorship types, one per outcome.
+   * Index 0 (reject) must be SPONSORSHIP_NONE.
+   * Example for 3 outcomes: [0, 1, 2] = none, zero_threshold, negative_discount
+   */
+  sponsorshipTypes: SponsorshipType[];
   assetType: string;
   stableType: string;
   clock?: string;
@@ -36,15 +61,19 @@ export interface CanSponsorResult {
 /**
  * Proposal Sponsorship operations
  *
- * Team members with quota can sponsor proposals. Sponsored outcomes bypass
- * the TWAP threshold and just need TWAP >= reject TWAP to pass.
+ * Team members with quota can sponsor specific outcomes with different sponsorship types:
+ * - ZERO_THRESHOLD (1): Outcome just needs TWAP >= reject_twap
+ * - NEGATIVE_DISCOUNT (2): Outcome can pass with TWAP >= reject_twap - sponsored_threshold%
  *
- * @example Sponsor a proposal
+ * @example Sponsor outcomes with different types
  * ```typescript
  * const tx = sdk.proposalSponsorship.sponsorProposal({
  *   proposalId,
  *   daoId,
- *   quotaRegistryId,
+ *   packageRegistryId,
+ *   sponsorshipRegistryId,
+ *   // [reject=none, outcome1=zero_threshold, outcome2=negative_discount]
+ *   sponsorshipTypes: [0, 1, 2],
  *   assetType,
  *   stableType,
  * });
@@ -60,25 +89,37 @@ export class ProposalSponsorshipOperations {
   }
 
   /**
-   * Sponsor a proposal using quota
+   * Sponsor specific outcomes of a proposal using quota
    *
-   * Sponsoring marks all non-reject outcomes as sponsored. Sponsored outcomes
-   * bypass the TWAP threshold and just need TWAP >= reject TWAP to pass.
+   * Sponsorship types per outcome:
+   * - SPONSORSHIP_NONE (0): Skip this outcome (or keep unsponsored)
+   * - SPONSORSHIP_ZERO_THRESHOLD (1): Outcome just needs TWAP >= reject_twap
+   * - SPONSORSHIP_NEGATIVE_DISCOUNT (2): Can pass with TWAP >= reject_twap - sponsored_threshold%
    *
    * Requirements:
    * - Caller must have sponsorship quota
    * - Proposal must be in valid state for sponsorship (not finalized)
-   * - Quota will be consumed (one quota sponsors all outcomes)
+   * - sponsorshipTypes[0] must be 0 (reject outcome cannot be sponsored)
+   * - Vector length must match proposal outcome count
+   * - Quota will be consumed (one quota per proposal)
    *
-   * @param config - Sponsor configuration
+   * Idempotent: re-sponsoring already-sponsored outcomes is a no-op.
+   *
+   * @param config - Sponsor configuration with sponsorship types vector
    * @returns Transaction for sponsoring proposal
    *
    * @example
    * ```typescript
+   * // For a proposal with 3 outcomes:
+   * // - Outcome 0 (reject): cannot sponsor, must be 0
+   * // - Outcome 1: ZERO_THRESHOLD (just needs TWAP >= reject)
+   * // - Outcome 2: NEGATIVE_DISCOUNT (can be up to sponsored_threshold% below reject)
    * const tx = sdk.proposalSponsorship.sponsorProposal({
    *   proposalId: "0x123...",
    *   daoId: "0xabc...",
-   *   quotaRegistryId: "0xdef...",
+   *   packageRegistryId: "0xpkg...",
+   *   sponsorshipRegistryId: "0xreg...",
+   *   sponsorshipTypes: [0, 1, 2],
    *   assetType: "0x2::sui::SUI",
    *   stableType: "0x2::sui::USDC",
    * });
@@ -98,7 +139,9 @@ export class ProposalSponsorshipOperations {
       arguments: [
         tx.object(config.proposalId), // proposal
         tx.object(config.daoId), // account (DAO)
-        tx.object(config.quotaRegistryId), // quota_registry
+        tx.object(config.packageRegistryId), // package_registry
+        tx.object(config.sponsorshipRegistryId), // sponsorship_registry
+        tx.pure.vector('u8', config.sponsorshipTypes), // sponsorship_types
         tx.object(config.clock || '0x6'), // clock
       ],
     });

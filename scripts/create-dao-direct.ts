@@ -331,17 +331,10 @@ async function main() {
       builder,
       createDaoTx.pure.option("u64", 10), // max_outcomes (default is 2, set to 10)
       createDaoTx.pure.option("u64", null), // max_actions_per_outcome
-      createDaoTx.pure.option("u64", null), // required_bond_amount
-      createDaoTx.pure.option("u64", null), // max_intents_per_outcome
       createDaoTx.pure.option("u64", null), // proposal_intent_expiry_ms
-      createDaoTx.pure.option("u64", null), // optimistic_challenge_fee
-      createDaoTx.pure.option("u64", null), // optimistic_challenge_period_ms
       createDaoTx.pure.option("u64", null), // proposal_creation_fee
       createDaoTx.pure.option("u64", null), // proposal_fee_per_outcome
       createDaoTx.pure.option("bool", null), // fee_in_asset_token
-      createDaoTx.pure.option("bool", null), // accept_new_proposals
-      createDaoTx.pure.option("bool", null), // enable_premarket_reservation_lock
-      createDaoTx.pure.option("bool", null), // show_proposal_details
     ],
   });
 

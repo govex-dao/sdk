@@ -306,6 +306,7 @@ async function main() {
     assetType,
     stableType,
     lpType,
+    senderAddress: activeAddress,
   });
 
   const toTradingResult = await executeTransaction(sdk, advanceToTradingTx.transaction, {

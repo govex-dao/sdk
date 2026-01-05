@@ -224,6 +224,7 @@ async function main() {
     assetType,
     stableType,
     lpType,
+    senderAddress: activeAddress,
   });
 
   await executeTransaction(sdk, toTradingTx.transaction, { network: "devnet" });

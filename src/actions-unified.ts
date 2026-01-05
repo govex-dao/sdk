@@ -302,6 +302,7 @@ export class ConfigActions {
       stepMax?: bigint;
       initialObservation?: bigint;
       threshold?: bigint;
+      sponsoredThreshold?: bigint;
     }
   ): void {
     tx.moveCall({
@@ -312,6 +313,7 @@ export class ConfigActions {
         tx.pure.option('u64', config.stepMax ? Number(config.stepMax) : null),
         tx.pure.option('u128', config.initialObservation ?? null),
         tx.pure.option('u128', config.threshold ?? null),
+        tx.pure.option('u128', config.sponsoredThreshold ?? null),
       ],
     });
   }

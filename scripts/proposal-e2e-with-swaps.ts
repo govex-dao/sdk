@@ -347,6 +347,7 @@ async function main() {
     assetType,
     stableType,
     lpType,
+    senderAddress: activeAddress,
   });
 
   const toTradingResult = await executeTransaction(sdk, toTradingTx.transaction, { network: "devnet", showObjectChanges: true });

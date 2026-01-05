@@ -225,6 +225,83 @@ export class PackageRegistry {
   }
 
   // ============================================================================
+  // MAX PLACEHOLDERS (4)
+  // ============================================================================
+
+  /**
+   * Set the maximum number of placeholders allowed per intent.
+   * Must be at least 2 (MIN_MAX_PLACEHOLDERS).
+   * Requires PackageAdminCap for authorization.
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The PackageRegistry object
+   * @param cap - The PackageAdminCap
+   * @param newMax - The new maximum (must be >= 2)
+   */
+  static setMaxPlaceholders(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: ReturnType<Transaction['moveCall']>,
+    cap: ReturnType<Transaction['moveCall']>,
+    newMax: number
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'set_max_placeholders'),
+      arguments: [registry, cap, tx.pure.u64(newMax)],
+    });
+  }
+
+  /**
+   * Get the maximum number of placeholders allowed per intent
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @param registry - The PackageRegistry object
+   * @returns The max placeholders value
+   */
+  static maxPlaceholders(
+    tx: Transaction,
+    accountProtocolPackageId: string,
+    registry: ReturnType<Transaction['moveCall']>
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'max_placeholders'),
+      arguments: [registry],
+    });
+  }
+
+  /**
+   * Get the default max placeholders value (100)
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @returns The default max placeholders value
+   */
+  static defaultMaxPlaceholders(
+    tx: Transaction,
+    accountProtocolPackageId: string
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'default_max_placeholders'),
+      arguments: [],
+    });
+  }
+
+  /**
+   * Get the minimum allowed max placeholders value (2)
+   * @param tx - Transaction instance
+   * @param accountProtocolPackageId - The account protocol package ID
+   * @returns The minimum max placeholders value
+   */
+  static minMaxPlaceholders(
+    tx: Transaction,
+    accountProtocolPackageId: string
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(accountProtocolPackageId, 'package_registry', 'min_max_placeholders'),
+      arguments: [],
+    });
+  }
+
+  // ============================================================================
   // QUERY FUNCTIONS (9)
   // ============================================================================
 

@@ -660,6 +660,21 @@ export const PACKAGE_UPGRADE_ACTIONS: ActionDefinition[] = [
 
 // ============================================================================
 // ACCOUNT ACTIONS - ACCESS CONTROL
+//
+// IMPORTANT: borrow_access and return_access MUST be used as a matching pair.
+// Every borrow_access action MUST have a corresponding return_access action
+// later in the same intent with the same CapType. This is enforced by the
+// Move hot potato pattern - the borrowed cap must be returned or the
+// transaction will fail.
+//
+// Example staging order:
+//   1. borrow_access<SomeCapType>
+//   2. ... actions that use the borrowed cap ...
+//   3. return_access<SomeCapType>
+//
+// Note: For protocol admin actions (PackageAdminCap, FactoryOwnerCap, FeeAdminCap),
+// the SDK's IntentExecutor handles borrow/return automatically via withBorrowedCap().
+// You only need to manually pair these when staging custom access control actions.
 // ============================================================================
 
 export const ACCESS_CONTROL_ACTIONS: ActionDefinition[] = [
@@ -675,7 +690,7 @@ export const ACCESS_CONTROL_ACTIONS: ActionDefinition[] = [
     markerType: 'account_actions::access_control::Borrow',
     typeParams: ['CapType'],
     params: [],
-    description: 'Borrow access to a managed object',
+    description: 'Borrow access to a managed capability. MUST be paired with a matching return_access action.',
     launchpadSupported: false,
     proposalSupported: true,
   },
@@ -691,7 +706,7 @@ export const ACCESS_CONTROL_ACTIONS: ActionDefinition[] = [
     markerType: 'account_actions::access_control::Return',
     typeParams: ['CapType'],
     params: [],
-    description: 'Return access to a managed object',
+    description: 'Return a borrowed capability. MUST match a prior borrow_access action with the same CapType.',
     launchpadSupported: false,
     proposalSupported: true,
   },
@@ -868,7 +883,8 @@ export const CONFIG_ACTIONS: ActionDefinition[] = [
       { name: 'startDelay', type: 'option<u64>', description: 'TWAP start delay', optional: true },
       { name: 'stepMax', type: 'option<u64>', description: 'Maximum TWAP step', optional: true },
       { name: 'initialObservation', type: 'option<u128>', description: 'Initial observation', optional: true },
-      { name: 'threshold', type: 'option<u128>', description: 'TWAP threshold', optional: true },
+      { name: 'threshold', type: 'option<u128>', description: 'TWAP threshold (base 100,000)', optional: true },
+      { name: 'sponsoredThreshold', type: 'option<u128>', description: 'Sponsored threshold - how much lower sponsored outcomes can be (base 100,000, max 5000 = 5%)', optional: true },
     ],
     description: 'Update TWAP configuration',
     launchpadSupported: true,
@@ -972,12 +988,6 @@ export const CONFIG_ACTIONS: ActionDefinition[] = [
     markerType: 'futarchy_actions::config_actions::SponsorshipConfigUpdate',
     params: [
       { name: 'enabled', type: 'option<bool>', description: 'Sponsorship enabled', optional: true },
-      {
-        name: 'waiveAdvancementFees',
-        type: 'option<bool>',
-        description: 'Waive advancement fees',
-        optional: true,
-      },
     ],
     description: 'Update sponsorship configuration',
     launchpadSupported: false,
@@ -1018,12 +1028,11 @@ export const QUOTA_ACTIONS: ActionDefinition[] = [
     markerType: 'futarchy_actions::quota_actions::SetQuotas',
     params: [
       { name: 'users', type: 'vector<address>', description: 'User addresses' },
-      { name: 'quotaAmount', type: 'u64', description: 'Quota amount per period' },
-      { name: 'quotaPeriodMs', type: 'u64', description: 'Quota period (ms)' },
-      { name: 'reducedFee', type: 'u64', description: 'Reduced fee amount' },
-      { name: 'sponsorQuotaAmount', type: 'u64', description: 'Sponsor quota amount' },
+      { name: 'periodMs', type: 'u64', description: 'Shared period duration in milliseconds' },
+      { name: 'feelessProposalAmount', type: 'u64', description: 'Free proposals per period (0 = no feeless quota)' },
+      { name: 'sponsorAmount', type: 'u64', description: 'TWAP sponsorships per period (0 = no sponsor quota)' },
     ],
-    description: 'Set proposal quotas for users',
+    description: 'Set proposal quotas for users (feeless proposals and/or TWAP sponsorships)',
     launchpadSupported: false,
     proposalSupported: true,
   },

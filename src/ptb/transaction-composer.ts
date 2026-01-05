@@ -522,6 +522,7 @@ export class TransactionBuilder {
             this.tx.pure.option('u64', action.stepMax ? Number(action.stepMax) : null),
             this.tx.pure.option('u128', action.initialObservation ?? null),
             this.tx.pure.option('u128', action.threshold ?? null),
+            this.tx.pure.option('u128', action.sponsoredThreshold ?? null),
           ],
         });
         break;

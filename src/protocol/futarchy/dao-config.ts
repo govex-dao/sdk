@@ -3,7 +3,7 @@
  *
  * Provides centralized configuration structs and validation for futarchy DAOs.
  * Manages trading parameters, TWAP config, governance settings, metadata,
- * conditional coin config, quota system, and sponsorship configuration.
+ * conditional coin config, and sponsorship configuration.
  *
  * FEATURES:
  * - Trading parameters (liquidity, periods, fees)
@@ -11,8 +11,10 @@
  * - Governance config (outcomes, actions, fees)
  * - Metadata config (name, icon, description)
  * - Conditional coin config (token naming)
- * - Quota config (recurring proposal quotas)
  * - Sponsorship config (team-sponsored proposals)
+ *
+ * NOTE: Quota system is managed per-user via ProposalQuotaRegistry in FutarchyConfig,
+ * not via DaoConfig. See proposal_quota_registry.move for quota implementation.
  *
  * @module dao-config
  */
@@ -24,7 +26,7 @@ import { TransactionUtils } from '../../services/transaction';
  * DAO Configuration Static Functions
  *
  * Manages comprehensive DAO configuration including trading, governance,
- * metadata, quotas, and sponsorship settings.
+ * metadata, and sponsorship settings.
  */
 export class DaoConfig {
   // ========================================
@@ -305,49 +307,6 @@ export class DaoConfig {
   }
 
   /**
-   * Create a new quota configuration
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns QuotaConfig object
-   *
-   * @example
-   * ```typescript
-   * const quotaConfig = DaoConfig.newQuotaConfig(tx, {
-   *   futarchyCorePackageId,
-   *   enabled: true,
-   *   defaultQuotaAmount: 1n,
-   *   defaultQuotaPeriodMs: 2_592_000_000n, // 30 days
-   *   defaultReducedFee: 0n,
-   * });
-   * ```
-   */
-  static newQuotaConfig(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      enabled: boolean;
-      defaultQuotaAmount: bigint;
-      defaultQuotaPeriodMs: bigint;
-      defaultReducedFee: bigint;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'new_quota_config'
-      ),
-      arguments: [
-        tx.pure.bool(config.enabled),
-        tx.pure.u64(config.defaultQuotaAmount),
-        tx.pure.u64(config.defaultQuotaPeriodMs),
-        tx.pure.u64(config.defaultReducedFee),
-      ],
-    });
-  }
-
-  /**
    * Create a new sponsorship configuration
    *
    * @param tx - Transaction
@@ -359,7 +318,6 @@ export class DaoConfig {
    * const sponsorshipConfig = DaoConfig.newSponsorshipConfig(tx, {
    *   futarchyCorePackageId,
    *   enabled: true,
-   *   waiveAdvancementFees: false,
    * });
    * ```
    */
@@ -368,7 +326,6 @@ export class DaoConfig {
     config: {
       futarchyCorePackageId: string;
       enabled: boolean;
-      waiveAdvancementFees: boolean;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -379,7 +336,6 @@ export class DaoConfig {
       ),
       arguments: [
         tx.pure.bool(config.enabled),
-        tx.pure.bool(config.waiveAdvancementFees),
       ],
     });
   }
@@ -400,7 +356,6 @@ export class DaoConfig {
    *   governanceConfig,
    *   metadataConfig,
    *   conditionalCoinConfig,
-   *   quotaConfig,
    *   sponsorshipConfig,
    * });
    * ```
@@ -414,7 +369,6 @@ export class DaoConfig {
       governanceConfig: ReturnType<Transaction['moveCall']>;
       metadataConfig: ReturnType<Transaction['moveCall']>;
       conditionalCoinConfig: ReturnType<Transaction['moveCall']>;
-      quotaConfig: ReturnType<Transaction['moveCall']>;
       sponsorshipConfig: ReturnType<Transaction['moveCall']>;
     }
   ): ReturnType<Transaction['moveCall']> {
@@ -430,7 +384,6 @@ export class DaoConfig {
         config.governanceConfig,
         config.metadataConfig,
         config.conditionalCoinConfig,
-        config.quotaConfig,
         config.sponsorshipConfig,
       ],
     });
@@ -555,30 +508,6 @@ export class DaoConfig {
         config.futarchyCorePackageId,
         'dao_config',
         'conditional_coin_config'
-      ),
-      arguments: [config.daoConfig],
-    });
-  }
-
-  /**
-   * Get quota config from DAO config
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns QuotaConfig reference
-   */
-  static quotaConfig(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      daoConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'quota_config'
       ),
       arguments: [config.daoConfig],
     });
@@ -861,6 +790,30 @@ export class DaoConfig {
     });
   }
 
+  /**
+   * Get sponsored threshold (u128) - how much lower sponsored outcomes can be
+   *
+   * @param tx - Transaction
+   * @param config - Configuration
+   * @returns Sponsored threshold (u128, base 100,000 - e.g., 5000 = 5%)
+   */
+  static sponsoredThreshold(
+    tx: Transaction,
+    config: {
+      futarchyCorePackageId: string;
+      twapConfig: ReturnType<Transaction['moveCall']>;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.futarchyCorePackageId,
+        'dao_config',
+        'sponsored_threshold'
+      ),
+      arguments: [config.twapConfig],
+    });
+  }
+
   // ========================================
   // Getter Functions - GovernanceConfig
   // ========================================
@@ -1005,103 +958,7 @@ export class DaoConfig {
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'dao_config',
-        'accept_new_proposals'
-      ),
-      arguments: [config.governanceConfig],
-    });
-  }
-
-  /**
-   * Get max intents per outcome
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Max intents per outcome (u64)
-   */
-  static maxIntentsPerOutcome(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      governanceConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'max_intents_per_outcome'
-      ),
-      arguments: [config.governanceConfig],
-    });
-  }
-
-  /**
-   * Get proposal intent expiry in milliseconds
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Proposal intent expiry in milliseconds (u64)
-   */
-  static proposalIntentExpiryMs(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      governanceConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
         'proposal_intent_expiry_ms'
-      ),
-      arguments: [config.governanceConfig],
-    });
-  }
-
-  /**
-   * Get enable premarket reservation lock flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Enable premarket reservation lock (bool)
-   */
-  static enablePremarketReservationLock(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      governanceConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'enable_premarket_reservation_lock'
-      ),
-      arguments: [config.governanceConfig],
-    });
-  }
-
-  /**
-   * Get show proposal details flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Show proposal details (bool)
-   */
-  static showProposalDetails(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      governanceConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'show_proposal_details'
       ),
       arguments: [config.governanceConfig],
     });
@@ -1460,106 +1317,6 @@ export class DaoConfig {
   }
 
   // ========================================
-  // Getter Functions - QuotaConfig
-  // ========================================
-
-  /**
-   * Get quota enabled flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Quota enabled (bool)
-   */
-  static quotaEnabled(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      quotaConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'quota_enabled'
-      ),
-      arguments: [config.quotaConfig],
-    });
-  }
-
-  /**
-   * Get default quota amount
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Default quota amount (u64)
-   */
-  static defaultQuotaAmount(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      quotaConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'default_quota_amount'
-      ),
-      arguments: [config.quotaConfig],
-    });
-  }
-
-  /**
-   * Get default quota period in milliseconds
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Default quota period in milliseconds (u64)
-   */
-  static defaultQuotaPeriodMs(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      quotaConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'default_quota_period_ms'
-      ),
-      arguments: [config.quotaConfig],
-    });
-  }
-
-  /**
-   * Get default reduced fee
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Default reduced fee (u64)
-   */
-  static defaultReducedFee(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      quotaConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'default_reduced_fee'
-      ),
-      arguments: [config.quotaConfig],
-    });
-  }
-
-  // ========================================
   // Getter Functions - SponsorshipConfig
   // ========================================
 
@@ -1582,30 +1339,6 @@ export class DaoConfig {
         config.futarchyCorePackageId,
         'dao_config',
         'sponsorship_enabled'
-      ),
-      arguments: [config.sponsorshipConfig],
-    });
-  }
-
-  /**
-   * Get waive advancement fees flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Waive advancement fees (bool)
-   */
-  static waiveAdvancementFees(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      sponsorshipConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'waive_advancement_fees'
       ),
       arguments: [config.sponsorshipConfig],
     });
@@ -1775,31 +1508,6 @@ export class DaoConfig {
   }
 
   /**
-   * Update quota configuration
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Updated DaoConfig
-   */
-  static updateQuotaConfig(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      daoConfig: ReturnType<Transaction['moveCall']>;
-      newQuota: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'update_quota_config'
-      ),
-      arguments: [config.daoConfig, config.newQuota],
-    });
-  }
-
-  /**
    * Update sponsorship configuration
    *
    * @param tx - Transaction
@@ -1915,29 +1623,6 @@ export class DaoConfig {
         config.futarchyCorePackageId,
         'dao_config',
         'default_conditional_coin_config'
-      ),
-      arguments: [],
-    });
-  }
-
-  /**
-   * Get default quota configuration
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Default QuotaConfig
-   */
-  static defaultQuotaConfig(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'default_quota_config'
       ),
       arguments: [],
     });
@@ -2081,30 +1766,6 @@ export class DaoConfig {
         config.futarchyCorePackageId,
         'dao_config',
         'conditional_coin_config_mut'
-      ),
-      arguments: [config.daoConfig],
-    });
-  }
-
-  /**
-   * Get mutable quota config reference
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Mutable QuotaConfig reference
-   */
-  static quotaConfigMut(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      daoConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'quota_config_mut'
       ),
       arguments: [config.daoConfig],
     });
@@ -2379,6 +2040,30 @@ export class DaoConfig {
   }
 
   /**
+   * Set sponsored threshold - how much lower sponsored outcomes can be
+   *
+   * @param tx - Transaction
+   * @param config - Configuration with sponsoredThreshold (base 100,000, max 5000 = 5%)
+   */
+  static setSponsoredThreshold(
+    tx: Transaction,
+    config: {
+      futarchyCorePackageId: string;
+      twapConfig: ReturnType<Transaction['moveCall']>;
+      sponsoredThreshold: bigint;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.futarchyCorePackageId,
+        'dao_config',
+        'set_sponsored_threshold'
+      ),
+      arguments: [config.twapConfig, tx.pure.u128(config.sponsoredThreshold)],
+    });
+  }
+
+  /**
    * Set max outcomes
    *
    * @param tx - Transaction
@@ -2480,54 +2165,6 @@ export class DaoConfig {
    * @param tx - Transaction
    * @param config - Configuration
    */
-  static setAcceptNewProposals(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      governanceConfig: ReturnType<Transaction['moveCall']>;
-      accept: boolean;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_accept_new_proposals'
-      ),
-      arguments: [config.governanceConfig, tx.pure.bool(config.accept)],
-    });
-  }
-
-  /**
-   * Set max intents per outcome
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setMaxIntentsPerOutcome(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      governanceConfig: ReturnType<Transaction['moveCall']>;
-      max: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_max_intents_per_outcome'
-      ),
-      arguments: [config.governanceConfig, tx.pure.u64(config.max)],
-    });
-  }
-
-  /**
-   * Set proposal intent expiry in milliseconds
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
   static setProposalIntentExpiryMs(
     tx: Transaction,
     config: {
@@ -2543,54 +2180,6 @@ export class DaoConfig {
         'set_proposal_intent_expiry_ms'
       ),
       arguments: [config.governanceConfig, tx.pure.u64(config.period)],
-    });
-  }
-
-  /**
-   * Set enable premarket reservation lock flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setEnablePremarketReservationLock(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      governanceConfig: ReturnType<Transaction['moveCall']>;
-      enabled: boolean;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_enable_premarket_reservation_lock'
-      ),
-      arguments: [config.governanceConfig, tx.pure.bool(config.enabled)],
-    });
-  }
-
-  /**
-   * Set show proposal details flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setShowProposalDetails(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      governanceConfig: ReturnType<Transaction['moveCall']>;
-      show: boolean;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_show_proposal_details'
-      ),
-      arguments: [config.governanceConfig, tx.pure.bool(config.show)],
     });
   }
 
@@ -2766,102 +2355,6 @@ export class DaoConfig {
   }
 
   /**
-   * Set quota enabled flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setQuotaEnabled(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      quotaConfig: ReturnType<Transaction['moveCall']>;
-      enabled: boolean;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_quota_enabled'
-      ),
-      arguments: [config.quotaConfig, tx.pure.bool(config.enabled)],
-    });
-  }
-
-  /**
-   * Set default quota amount
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setDefaultQuotaAmount(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      quotaConfig: ReturnType<Transaction['moveCall']>;
-      amount: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_default_quota_amount'
-      ),
-      arguments: [config.quotaConfig, tx.pure.u64(config.amount)],
-    });
-  }
-
-  /**
-   * Set default quota period in milliseconds
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setDefaultQuotaPeriodMs(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      quotaConfig: ReturnType<Transaction['moveCall']>;
-      period: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_default_quota_period_ms'
-      ),
-      arguments: [config.quotaConfig, tx.pure.u64(config.period)],
-    });
-  }
-
-  /**
-   * Set default reduced fee
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setDefaultReducedFee(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      quotaConfig: ReturnType<Transaction['moveCall']>;
-      fee: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_default_reduced_fee'
-      ),
-      arguments: [config.quotaConfig, tx.pure.u64(config.fee)],
-    });
-  }
-
-  /**
    * Set sponsorship enabled flag
    *
    * @param tx - Transaction
@@ -2882,30 +2375,6 @@ export class DaoConfig {
         'set_sponsorship_enabled'
       ),
       arguments: [config.sponsorshipConfig, tx.pure.bool(config.enabled)],
-    });
-  }
-
-  /**
-   * Set waive advancement fees flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setWaiveAdvancementFees(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      sponsorshipConfig: ReturnType<Transaction['moveCall']>;
-      waive: boolean;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'dao_config',
-        'set_waive_advancement_fees'
-      ),
-      arguments: [config.sponsorshipConfig, tx.pure.bool(config.waive)],
     });
   }
 }

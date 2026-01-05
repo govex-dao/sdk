@@ -304,6 +304,7 @@ export class IntentExecutor {
     const { accountActionsPackageId, packageRegistryId } = this.packages;
 
     // 1. Borrow cap from account
+    // Note: do_borrow also requires ctx but the SDK Transaction handles that internally
     const cap = tx.moveCall({
       target: `${accountActionsPackageId}::access_control::do_borrow`,
       typeArguments: [ctx.configType, ctx.outcomeType, capType, ctx.witnessType],

@@ -281,4 +281,109 @@ export class ProposalService {
     const all = await this.getAll();
     return all.filter((p: any) => p.dao_id === daoId);
   }
+
+  // ============================================================================
+  // GAP FEE CALCULATION (uses on-chain Move as source of truth)
+  // ============================================================================
+
+  /**
+   * Get the expected gap fee for advancing to trading.
+   *
+   * Calls the on-chain `calculate_scaled_gap_fee` function via devInspect
+   * to get the exact fee amount. Move is the single source of truth.
+   *
+   * @param spotPoolId - The spot pool object ID
+   * @param assetType - Asset type for the pool
+   * @param stableType - Stable type for the pool
+   * @param lpType - LP type for the pool
+   * @param proposalCreationFee - The DAO's proposal_creation_fee setting
+   * @returns Object with scaled fee and whether a fee is required
+   */
+  async getExpectedGapFee(
+    spotPoolId: string,
+    assetType: string,
+    stableType: string,
+    lpType: string,
+    proposalCreationFee: bigint
+  ): Promise<{
+    scaledFee: bigint;
+    feeRequired: boolean;
+  }> {
+    const { Transaction } = await import('@mysten/sui/transactions');
+    const tx = new Transaction();
+
+    // Call the on-chain calculation function
+    tx.moveCall({
+      target: `${this.packages.futarchyMarketsCore}::unified_spot_pool::calculate_scaled_gap_fee`,
+      typeArguments: [assetType, stableType, lpType],
+      arguments: [
+        tx.object(spotPoolId),
+        tx.pure.u64(proposalCreationFee),
+        tx.object('0x6'), // Clock
+      ],
+    });
+
+    // Use devInspect to call without signing
+    const result = await this.client.devInspectTransactionBlock({
+      transactionBlock: tx,
+      sender: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    });
+
+    if (result.results && result.results.length > 0 && result.results[0].returnValues) {
+      const returnValue = result.results[0].returnValues[0];
+      if (returnValue) {
+        // Parse u64 from BCS bytes (little-endian)
+        const bytes = new Uint8Array(returnValue[0] as number[]);
+        const view = new DataView(bytes.buffer);
+        const scaledFee = view.getBigUint64(0, true);
+
+        return {
+          scaledFee,
+          feeRequired: scaledFee > 0n,
+        };
+      }
+    }
+
+    // If devInspect failed, return 0 (no fee)
+    return {
+      scaledFee: 0n,
+      feeRequired: false,
+    };
+  }
+
+  /**
+   * Get the raw gap fee for a given elapsed time.
+   *
+   * Calls the on-chain `calculate_raw_gap_fee` pure math function via devInspect.
+   * Useful for displaying the decay curve or simulating fees.
+   *
+   * @param elapsedMs - Time elapsed since last proposal ended (in milliseconds)
+   * @returns Raw fee value (0 to U64_MAX)
+   */
+  async calculateRawGapFee(elapsedMs: bigint): Promise<bigint> {
+    const { Transaction } = await import('@mysten/sui/transactions');
+    const tx = new Transaction();
+
+    // Call the pure math function
+    tx.moveCall({
+      target: `${this.packages.futarchyMarketsCore}::unified_spot_pool::calculate_raw_gap_fee`,
+      arguments: [tx.pure.u64(elapsedMs)],
+    });
+
+    const result = await this.client.devInspectTransactionBlock({
+      transactionBlock: tx,
+      sender: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    });
+
+    if (result.results && result.results.length > 0 && result.results[0].returnValues) {
+      const returnValue = result.results[0].returnValues[0];
+      if (returnValue) {
+        const bytes = new Uint8Array(returnValue[0] as number[]);
+        const view = new DataView(bytes.buffer);
+        return view.getBigUint64(0, true);
+      }
+    }
+
+    return 0n;
+  }
 }

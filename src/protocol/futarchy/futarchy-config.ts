@@ -447,30 +447,6 @@ export class FutarchyConfig {
   }
 
   /**
-   * Get outcome win reward
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Outcome win reward (u64)
-   */
-  static outcomeWinReward(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'outcome_win_reward'
-      ),
-      arguments: [config.futarchyConfig],
-    });
-  }
-
-  /**
    * Get verification level
    *
    * @param tx - Transaction
@@ -489,54 +465,6 @@ export class FutarchyConfig {
         config.futarchyCorePackageId,
         'futarchy_config',
         'verification_level'
-      ),
-      arguments: [config.futarchyConfig],
-    });
-  }
-
-  /**
-   * Get DAO score
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns DAO score (u64)
-   */
-  static daoScore(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'dao_score'
-      ),
-      arguments: [config.futarchyConfig],
-    });
-  }
-
-  /**
-   * Get admin review text
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Admin review text (String)
-   */
-  static adminReviewText(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'admin_review_text'
       ),
       arguments: [config.futarchyConfig],
     });
@@ -815,54 +743,6 @@ export class FutarchyConfig {
   }
 
   /**
-   * Get active proposals count
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Active proposals count (u64)
-   */
-  static activeProposals(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      daoState: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'active_proposals'
-      ),
-      arguments: [config.daoState],
-    });
-  }
-
-  /**
-   * Get total proposals count
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Total proposals count (u64)
-   */
-  static totalProposals(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      daoState: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'total_proposals'
-      ),
-      arguments: [config.daoState],
-    });
-  }
-
-  /**
    * Get attestation URL
    *
    * @param tx - Transaction
@@ -1134,75 +1014,6 @@ export class FutarchyConfig {
   }
 
   /**
-   * Increment active proposals count
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static incrementActiveProposals(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      daoState: ReturnType<Transaction['moveCall']>;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'increment_active_proposals'
-      ),
-      arguments: [config.daoState],
-    });
-  }
-
-  /**
-   * Decrement active proposals count
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static decrementActiveProposals(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      daoState: ReturnType<Transaction['moveCall']>;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'decrement_active_proposals'
-      ),
-      arguments: [config.daoState],
-    });
-  }
-
-  /**
-   * Increment total proposals count
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static incrementTotalProposals(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      daoState: ReturnType<Transaction['moveCall']>;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'increment_total_proposals'
-      ),
-      arguments: [config.daoState],
-    });
-  }
-
-  /**
    * Set attestation URL
    *
    * @param tx - Transaction
@@ -1271,54 +1082,6 @@ export class FutarchyConfig {
         'set_verification_level'
       ),
       arguments: [config.futarchyConfig, tx.pure.u8(config.level)],
-    });
-  }
-
-  /**
-   * Set DAO score
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setDaoScore(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-      score: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'set_dao_score'
-      ),
-      arguments: [config.futarchyConfig, tx.pure.u64(config.score)],
-    });
-  }
-
-  /**
-   * Set admin review text
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setAdminReviewText(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-      reviewText: string;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'set_admin_review_text'
-      ),
-      arguments: [config.futarchyConfig, tx.pure.string(config.reviewText)],
     });
   }
 
@@ -1546,6 +1309,30 @@ export class FutarchyConfig {
   }
 
   /**
+   * Get sponsored threshold (how much lower sponsored outcomes can be)
+   *
+   * @param tx - Transaction
+   * @param config - Configuration
+   * @returns Sponsored threshold (u128, base 100,000 - e.g., 5000 = 5%)
+   */
+  static sponsoredThreshold(
+    tx: Transaction,
+    config: {
+      futarchyCorePackageId: string;
+      futarchyConfig: ReturnType<Transaction['moveCall']>;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.futarchyCorePackageId,
+        'futarchy_config',
+        'sponsored_threshold'
+      ),
+      arguments: [config.futarchyConfig],
+    });
+  }
+
+  /**
    * Get conditional AMM fee in basis points (delegated from dao_config)
    *
    * @param tx - Transaction
@@ -1612,30 +1399,6 @@ export class FutarchyConfig {
         config.futarchyCorePackageId,
         'futarchy_config',
         'max_outcomes'
-      ),
-      arguments: [config.futarchyConfig],
-    });
-  }
-
-  /**
-   * Get enable premarket reservation lock flag (delegated from dao_config)
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Boolean indicating if premarket reservation lock is enabled
-   */
-  static enablePremarketReservationLock(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'enable_premarket_reservation_lock'
       ),
       arguments: [config.futarchyConfig],
     });
@@ -2134,6 +1897,30 @@ export class FutarchyConfig {
   }
 
   /**
+   * Set sponsored threshold (how much lower sponsored outcomes can be)
+   *
+   * @param tx - Transaction
+   * @param config - Configuration with sponsoredThreshold (u128, base 100,000 - e.g., 5000 = 5%)
+   */
+  static setSponsoredThreshold(
+    tx: Transaction,
+    config: {
+      futarchyCorePackageId: string;
+      futarchyConfig: ReturnType<Transaction['moveCall']>;
+      sponsoredThreshold: bigint;
+    }
+  ): void {
+    tx.moveCall({
+      target: TransactionUtils.buildTarget(
+        config.futarchyCorePackageId,
+        'futarchy_config',
+        'set_sponsored_threshold'
+      ),
+      arguments: [config.futarchyConfig, tx.pure.u128(config.sponsoredThreshold)],
+    });
+  }
+
+  /**
    * Set max outcomes
    *
    * @param tx - Transaction
@@ -2176,30 +1963,6 @@ export class FutarchyConfig {
         config.futarchyCorePackageId,
         'futarchy_config',
         'set_max_actions_per_outcome'
-      ),
-      arguments: [config.futarchyConfig, tx.pure.u64(config.max)],
-    });
-  }
-
-  /**
-   * Set max intents per outcome
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setMaxIntentsPerOutcome(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-      max: bigint;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'set_max_intents_per_outcome'
       ),
       arguments: [config.futarchyConfig, tx.pure.u64(config.max)],
     });
@@ -2300,78 +2063,6 @@ export class FutarchyConfig {
         'set_fee_in_asset_token'
       ),
       arguments: [config.futarchyConfig, tx.pure.bool(config.feeInAsset)],
-    });
-  }
-
-  /**
-   * Set accept new proposals flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setAcceptNewProposals(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-      accept: boolean;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'set_accept_new_proposals'
-      ),
-      arguments: [config.futarchyConfig, tx.pure.bool(config.accept)],
-    });
-  }
-
-  /**
-   * Set enable premarket reservation lock flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setEnablePremarketReservationLock(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-      enabled: boolean;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'set_enable_premarket_reservation_lock'
-      ),
-      arguments: [config.futarchyConfig, tx.pure.bool(config.enabled)],
-    });
-  }
-
-  /**
-   * Set show proposal details flag
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   */
-  static setShowProposalDetails(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      futarchyConfig: ReturnType<Transaction['moveCall']>;
-      show: boolean;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'futarchy_config',
-        'set_show_proposal_details'
-      ),
-      arguments: [config.futarchyConfig, tx.pure.bool(config.show)],
     });
   }
 

@@ -147,6 +147,11 @@ async function main() {
     assetType: CONFIG.ASSET_TYPE,
     stableType: CONFIG.STABLE_TYPE,
     lpType: CONFIG.LP_TYPE,
+    senderAddress: activeAddress,
+    // Gap fee is optional - only needed if less than 12 hours since last proposal
+    // gapFeeCoins: ['0xCOIN_ID'],
+    // maxGapFee: 1_000_000_000n,
+    // feeInAsset: false,  // true for asset token, false for stable token
   });
 
   console.log("Advance to TRADING transaction created");

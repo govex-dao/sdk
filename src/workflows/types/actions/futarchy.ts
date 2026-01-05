@@ -82,8 +82,10 @@ export interface UpdateTwapConfigActionConfig {
   stepMax?: bigint;
   /** Initial observation value */
   initialObservation?: bigint;
-  /** TWAP threshold for winning (u128 value in 1e18 scale) */
+  /** TWAP threshold for winning (numerator with base 100,000) */
   threshold?: bigint;
+  /** Sponsored threshold - how much lower sponsored outcomes can be (base 100,000, max 5000 = 5%) */
+  sponsoredThreshold?: bigint;
 }
 
 /**
@@ -153,8 +155,6 @@ export interface UpdateSponsorshipConfigActionConfig {
   type: 'update_sponsorship_config';
   /** Enable sponsorship */
   enabled?: boolean;
-  /** Waive advancement fees */
-  waiveAdvancementFees?: boolean;
 }
 
 /**
@@ -172,13 +172,23 @@ export interface SyncTwapObservationFromProposalActionConfig {
 
 /**
  * Set quotas for addresses
+ *
+ * Two independent quota types:
+ * 1. Feeless proposal quota - N free proposals per period (no proposal creation fee)
+ * 2. Sponsor quota - M TWAP sponsorships per period (can sponsor any proposal before trading)
+ *
+ * Pass both amounts as 0 to remove quotas entirely.
  */
 export interface SetQuotasActionConfig {
   type: 'set_quotas';
-  /** Addresses to set quotas for */
-  addresses: string[];
-  /** Quota amounts */
-  amounts: bigint[];
+  /** User addresses to set quotas for */
+  users: string[];
+  /** Shared period duration in milliseconds (e.g., 30 days = 2_592_000_000) */
+  periodMs: bigint;
+  /** Number of free proposals per period (0 = no feeless quota) */
+  feelessProposalAmount: bigint;
+  /** Number of TWAP sponsorships per period (0 = no sponsor quota) */
+  sponsorAmount: bigint;
 }
 
 // ============================================================================

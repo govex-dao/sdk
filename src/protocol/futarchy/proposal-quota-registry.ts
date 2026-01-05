@@ -1,14 +1,15 @@
 /**
  * Proposal Quota Registry Module
  *
- * Manages recurring proposal quotas for allowlisted addresses. Tracks usage across
- * time periods with reduced fees and supports sponsorship quotas.
+ * Manages two independent quota types for allowlisted addresses:
+ * 1. Feeless proposal quota - N free proposals per period (no proposal creation fee)
+ * 2. Sponsor quota - M TWAP sponsorships per period (can sponsor any proposal before trading)
  *
  * FEATURES:
- * - Recurring quotas (N proposals per period at reduced fee)
+ * - Two independent quota types sharing a single period duration
  * - Period alignment (no drift)
  * - Batch operations for multiple users
- * - Sponsorship quota support
+ * - Sponsor quota can be used on ANY proposal (not just your own)
  *
  * @module proposal-quota-registry
  */
@@ -19,11 +20,11 @@ import { TransactionUtils } from '../../services/transaction';
 /**
  * Proposal Quota Registry Static Functions
  *
- * Manages proposal quotas and sponsorship quotas for DAOs.
+ * Manages feeless proposal quotas and sponsorship quotas for DAOs.
  */
 export class ProposalQuotaRegistry {
   /**
-   * Create a new quota registry for a DAO
+   * Create a new quota registry
    *
    * @param tx - Transaction
    * @param config - Configuration
@@ -33,7 +34,6 @@ export class ProposalQuotaRegistry {
    * ```typescript
    * const registry = ProposalQuotaRegistry.new(tx, {
    *   futarchyCorePackageId,
-   *   daoId,
    * });
    * ```
    */
@@ -41,7 +41,6 @@ export class ProposalQuotaRegistry {
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
-      daoId: string;
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
@@ -50,28 +49,54 @@ export class ProposalQuotaRegistry {
         'proposal_quota_registry',
         'new'
       ),
-      arguments: [tx.pure.id(config.daoId)],
+      arguments: [],
     });
   }
 
   /**
    * Set quotas for multiple users (batch operation)
    *
-   * Pass quota_amount = 0 to remove quotas.
+   * Both feeless_proposal_amount and sponsor_amount can be set independently.
+   * Pass both amounts as 0 to remove quotas entirely.
    *
    * @param tx - Transaction
    * @param config - Configuration
    *
    * @example
    * ```typescript
+   * // Set VIP tier with both quotas
    * ProposalQuotaRegistry.setQuotas(tx, {
    *   futarchyCorePackageId,
    *   registry,
    *   daoId,
    *   users: ['0xUSER1', '0xUSER2'],
-   *   quotaAmount: 10n, // 10 proposals per period
-   *   quotaPeriodMs: 2_592_000_000n, // 30 days
-   *   reducedFee: 0n, // Free
+   *   periodMs: 2_592_000_000n, // 30 days
+   *   feelessProposalAmount: 10n, // 10 free proposals per period
+   *   sponsorAmount: 5n, // 5 sponsorships per period
+   *   clock: '0x6',
+   * });
+   *
+   * // Set feeless only (no sponsor quota)
+   * ProposalQuotaRegistry.setQuotas(tx, {
+   *   futarchyCorePackageId,
+   *   registry,
+   *   daoId,
+   *   users: ['0xUSER'],
+   *   periodMs: 2_592_000_000n,
+   *   feelessProposalAmount: 5n,
+   *   sponsorAmount: 0n, // no sponsor quota
+   *   clock: '0x6',
+   * });
+   *
+   * // Remove quotas entirely
+   * ProposalQuotaRegistry.setQuotas(tx, {
+   *   futarchyCorePackageId,
+   *   registry,
+   *   daoId,
+   *   users: ['0xUSER'],
+   *   periodMs: 0n, // ignored for removal
+   *   feelessProposalAmount: 0n,
+   *   sponsorAmount: 0n,
    *   clock: '0x6',
    * });
    * ```
@@ -83,9 +108,9 @@ export class ProposalQuotaRegistry {
       registry: ReturnType<Transaction['moveCall']>;
       daoId: string;
       users: string[];
-      quotaAmount: bigint;
-      quotaPeriodMs: bigint;
-      reducedFee: bigint;
+      periodMs: bigint;
+      feelessProposalAmount: bigint;
+      sponsorAmount: bigint;
       clock?: string;
     }
   ): void {
@@ -99,40 +124,40 @@ export class ProposalQuotaRegistry {
         config.registry,
         tx.pure.id(config.daoId),
         tx.pure.vector('address', config.users),
-        tx.pure.u64(config.quotaAmount),
-        tx.pure.u64(config.quotaPeriodMs),
-        tx.pure.u64(config.reducedFee),
+        tx.pure.u64(config.periodMs),
+        tx.pure.u64(config.feelessProposalAmount),
+        tx.pure.u64(config.sponsorAmount),
         tx.object(config.clock || '0x6'),
       ],
     });
   }
 
+  // === Feeless Proposal Quota Functions ===
+
   /**
-   * Check quota availability (read-only, no state mutation)
+   * Check feeless proposal quota availability (read-only, no state mutation)
    *
-   * Returns (has_quota, reduced_fee).
+   * Returns true if user has remaining feeless proposal quota.
    *
    * @param tx - Transaction
    * @param config - Configuration
-   * @returns Tuple of (bool, u64) for quota availability and reduced fee
+   * @returns Boolean indicating if user has available feeless quota
    *
    * @example
    * ```typescript
-   * const [hasQuota, reducedFee] = ProposalQuotaRegistry.checkQuotaAvailable(tx, {
+   * const hasFeelessQuota = ProposalQuotaRegistry.checkFeelessQuotaAvailable(tx, {
    *   futarchyCorePackageId,
    *   registry,
-   *   daoId,
    *   user: '0xUSER',
    *   clock: '0x6',
    * });
    * ```
    */
-  static checkQuotaAvailable(
+  static checkFeelessQuotaAvailable(
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
       registry: ReturnType<Transaction['moveCall']>;
-      daoId: string;
       user: string;
       clock?: string;
     }
@@ -141,11 +166,10 @@ export class ProposalQuotaRegistry {
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'proposal_quota_registry',
-        'check_quota_available'
+        'check_feeless_quota_available'
       ),
       arguments: [
         config.registry,
-        tx.pure.id(config.daoId),
         tx.pure.address(config.user),
         tx.object(config.clock || '0x6'),
       ],
@@ -153,7 +177,7 @@ export class ProposalQuotaRegistry {
   }
 
   /**
-   * Use one quota slot (called AFTER proposal succeeds)
+   * Use one feeless proposal quota slot (called AFTER proposal succeeds)
    *
    * This prevents quota loss if proposal creation fails.
    *
@@ -162,7 +186,7 @@ export class ProposalQuotaRegistry {
    *
    * @example
    * ```typescript
-   * ProposalQuotaRegistry.useQuota(tx, {
+   * ProposalQuotaRegistry.useFeelessQuota(tx, {
    *   futarchyCorePackageId,
    *   registry,
    *   daoId,
@@ -171,7 +195,7 @@ export class ProposalQuotaRegistry {
    * });
    * ```
    */
-  static useQuota(
+  static useFeelessQuota(
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
@@ -185,7 +209,7 @@ export class ProposalQuotaRegistry {
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'proposal_quota_registry',
-        'use_quota'
+        'use_feeless_quota'
       ),
       arguments: [
         config.registry,
@@ -197,96 +221,54 @@ export class ProposalQuotaRegistry {
   }
 
   /**
-   * Refund one quota slot when proposal is evicted
+   * Get feeless quota status for a user
+   *
+   * Returns (has_feeless_quota, remaining_feeless).
    *
    * @param tx - Transaction
    * @param config - Configuration
+   * @returns Tuple of (bool, u64) for quota availability and remaining count
    *
    * @example
    * ```typescript
-   * ProposalQuotaRegistry.refundQuota(tx, {
+   * const [hasFeelessQuota, remaining] = ProposalQuotaRegistry.getFeelessQuotaStatus(tx, {
    *   futarchyCorePackageId,
    *   registry,
-   *   daoId,
    *   user: '0xUSER',
    *   clock: '0x6',
    * });
    * ```
    */
-  static refundQuota(
+  static getFeelessQuotaStatus(
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
       registry: ReturnType<Transaction['moveCall']>;
-      daoId: string;
       user: string;
       clock?: string;
     }
-  ): void {
-    tx.moveCall({
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'proposal_quota_registry',
-        'refund_quota'
+        'get_feeless_quota_status'
       ),
       arguments: [
         config.registry,
-        tx.pure.id(config.daoId),
         tx.pure.address(config.user),
         tx.object(config.clock || '0x6'),
       ],
     });
   }
 
-  /**
-   * Set sponsorship quotas for multiple users
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   *
-   * @example
-   * ```typescript
-   * ProposalQuotaRegistry.setSponsorQuotas(tx, {
-   *   futarchyCorePackageId,
-   *   registry,
-   *   daoId,
-   *   users: ['0xSPONSOR1', '0xSPONSOR2'],
-   *   sponsorQuotaAmount: 5n, // 5 sponsorships per period
-   *   clock: '0x6',
-   * });
-   * ```
-   */
-  static setSponsorQuotas(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      registry: ReturnType<Transaction['moveCall']>;
-      daoId: string;
-      users: string[];
-      sponsorQuotaAmount: bigint;
-      clock?: string;
-    }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'proposal_quota_registry',
-        'set_sponsor_quotas'
-      ),
-      arguments: [
-        config.registry,
-        tx.pure.id(config.daoId),
-        tx.pure.vector('address', config.users),
-        tx.pure.u64(config.sponsorQuotaAmount),
-        tx.object(config.clock || '0x6'),
-      ],
-    });
-  }
+  // === Sponsor Quota Functions ===
 
   /**
-   * Check sponsorship quota availability
+   * Check sponsorship quota availability (read-only, no state mutation)
    *
    * Returns (has_quota, remaining).
+   * Sponsor quota can be used on ANY proposal before trading starts.
    *
    * @param tx - Transaction
    * @param config - Configuration
@@ -297,7 +279,6 @@ export class ProposalQuotaRegistry {
    * const [hasQuota, remaining] = ProposalQuotaRegistry.checkSponsorQuotaAvailable(tx, {
    *   futarchyCorePackageId,
    *   registry,
-   *   daoId,
    *   sponsor: '0xSPONSOR',
    *   clock: '0x6',
    * });
@@ -308,7 +289,6 @@ export class ProposalQuotaRegistry {
     config: {
       futarchyCorePackageId: string;
       registry: ReturnType<Transaction['moveCall']>;
-      daoId: string;
       sponsor: string;
       clock?: string;
     }
@@ -321,7 +301,6 @@ export class ProposalQuotaRegistry {
       ),
       arguments: [
         config.registry,
-        tx.pure.id(config.daoId),
         tx.pure.address(config.sponsor),
         tx.object(config.clock || '0x6'),
       ],
@@ -329,7 +308,9 @@ export class ProposalQuotaRegistry {
   }
 
   /**
-   * Use one sponsorship quota slot
+   * Use one sponsorship quota slot (called AFTER sponsorship succeeds)
+   *
+   * Can sponsor ANY proposal before trading starts (not just your own).
    *
    * @param tx - Transaction
    * @param config - Configuration
@@ -374,7 +355,9 @@ export class ProposalQuotaRegistry {
   }
 
   /**
-   * Refund one sponsorship quota slot
+   * Refund one sponsorship quota slot (called when sponsored proposal is evicted/cancelled)
+   *
+   * Only decrements if sponsor has used quota in current period.
    *
    * @param tx - Transaction
    * @param config - Configuration
@@ -418,78 +401,14 @@ export class ProposalQuotaRegistry {
     });
   }
 
-  /**
-   * Get quota status with remaining count
-   *
-   * Returns (has_quota, quota_amount, remaining).
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Tuple of (bool, u64, u64) for quota status
-   *
-   * @example
-   * ```typescript
-   * const [hasQuota, quotaAmount, remaining] = ProposalQuotaRegistry.getQuotaStatus(tx, {
-   *   futarchyCorePackageId,
-   *   registry,
-   *   user: '0xUSER',
-   *   clock: '0x6',
-   * });
-   * ```
-   */
-  static getQuotaStatus(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      registry: ReturnType<Transaction['moveCall']>;
-      user: string;
-      clock?: string;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'proposal_quota_registry',
-        'get_quota_status'
-      ),
-      arguments: [
-        config.registry,
-        tx.pure.address(config.user),
-        tx.object(config.clock || '0x6'),
-      ],
-    });
-  }
+  // === View Functions ===
 
   /**
-   * Get DAO ID
+   * Check if user has any quota entry (feeless or sponsor)
    *
    * @param tx - Transaction
    * @param config - Configuration
-   * @returns DAO ID
-   */
-  static daoId(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      registry: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'proposal_quota_registry',
-        'dao_id'
-      ),
-      arguments: [config.registry],
-    });
-  }
-
-  /**
-   * Check if user has any quota
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Boolean indicating if user has quota
+   * @returns Boolean indicating if user has any quota entry
    */
   static hasQuota(
     tx: Transaction,
@@ -512,16 +431,16 @@ export class ProposalQuotaRegistry {
     });
   }
 
-  // QuotaInfo Getters
+  // === QuotaInfo Getters ===
 
   /**
-   * Get quota amount from QuotaInfo
+   * Get period duration in milliseconds (shared by both quota types)
    *
    * @param tx - Transaction
    * @param config - Configuration
-   * @returns Quota amount (u64)
+   * @returns Period duration in milliseconds (u64)
    */
-  static quotaAmount(
+  static periodMs(
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
@@ -532,20 +451,20 @@ export class ProposalQuotaRegistry {
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'proposal_quota_registry',
-        'quota_amount'
+        'period_ms'
       ),
       arguments: [config.quotaInfo],
     });
   }
 
   /**
-   * Get quota period in milliseconds
+   * Get feeless proposal amount (N free proposals per period)
    *
    * @param tx - Transaction
    * @param config - Configuration
-   * @returns Quota period in milliseconds (u64)
+   * @returns Feeless proposal amount (u64)
    */
-  static quotaPeriodMs(
+  static feelessProposalAmount(
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
@@ -556,20 +475,20 @@ export class ProposalQuotaRegistry {
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'proposal_quota_registry',
-        'quota_period_ms'
+        'feeless_proposal_amount'
       ),
       arguments: [config.quotaInfo],
     });
   }
 
   /**
-   * Get reduced fee
+   * Get feeless proposals used in current period
    *
    * @param tx - Transaction
    * @param config - Configuration
-   * @returns Reduced fee (u64)
+   * @returns Feeless proposals used (u64)
    */
-  static reducedFee(
+  static feelessProposalUsed(
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
@@ -580,20 +499,20 @@ export class ProposalQuotaRegistry {
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'proposal_quota_registry',
-        'reduced_fee'
+        'feeless_proposal_used'
       ),
       arguments: [config.quotaInfo],
     });
   }
 
   /**
-   * Get period start timestamp
+   * Get feeless proposal period start timestamp
    *
    * @param tx - Transaction
    * @param config - Configuration
-   * @returns Period start timestamp in milliseconds (u64)
+   * @returns Feeless proposal period start timestamp in milliseconds (u64)
    */
-  static periodStartMs(
+  static feelessProposalPeriodStartMs(
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
@@ -604,20 +523,20 @@ export class ProposalQuotaRegistry {
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'proposal_quota_registry',
-        'period_start_ms'
+        'feeless_proposal_period_start_ms'
       ),
       arguments: [config.quotaInfo],
     });
   }
 
   /**
-   * Get usage in current period
+   * Get sponsor amount (M TWAP sponsorships per period)
    *
    * @param tx - Transaction
    * @param config - Configuration
-   * @returns Usage count (u64)
+   * @returns Sponsor amount (u64)
    */
-  static usedInPeriod(
+  static sponsorAmount(
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
@@ -628,20 +547,20 @@ export class ProposalQuotaRegistry {
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'proposal_quota_registry',
-        'used_in_period'
+        'sponsor_amount'
       ),
       arguments: [config.quotaInfo],
     });
   }
 
   /**
-   * Get sponsor quota amount
+   * Get sponsorships used in current period
    *
    * @param tx - Transaction
    * @param config - Configuration
-   * @returns Sponsor quota amount (u64)
+   * @returns Sponsorships used (u64)
    */
-  static sponsorQuotaAmount(
+  static sponsorUsed(
     tx: Transaction,
     config: {
       futarchyCorePackageId: string;
@@ -652,31 +571,7 @@ export class ProposalQuotaRegistry {
       target: TransactionUtils.buildTarget(
         config.futarchyCorePackageId,
         'proposal_quota_registry',
-        'sponsor_quota_amount'
-      ),
-      arguments: [config.quotaInfo],
-    });
-  }
-
-  /**
-   * Get sponsor quota used
-   *
-   * @param tx - Transaction
-   * @param config - Configuration
-   * @returns Sponsor quota used (u64)
-   */
-  static sponsorQuotaUsed(
-    tx: Transaction,
-    config: {
-      futarchyCorePackageId: string;
-      quotaInfo: ReturnType<Transaction['moveCall']>;
-    }
-  ): ReturnType<Transaction['moveCall']> {
-    return tx.moveCall({
-      target: TransactionUtils.buildTarget(
-        config.futarchyCorePackageId,
-        'proposal_quota_registry',
-        'sponsor_quota_used'
+        'sponsor_used'
       ),
       arguments: [config.quotaInfo],
     });

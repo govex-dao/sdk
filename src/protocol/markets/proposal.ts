@@ -1008,6 +1008,22 @@ export class Proposal {
     });
   }
 
+  static getSponsoredThreshold(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+      assetType: string;
+      stableType: string;
+      proposal: ReturnType<Transaction['moveCall']>;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'get_sponsored_threshold'),
+      typeArguments: [config.assetType, config.stableType],
+      arguments: [config.proposal],
+    });
+  }
+
   static getTwapStartDelay(
     tx: Transaction,
     config: {
@@ -1511,6 +1527,9 @@ export class Proposal {
     });
   }
 
+  /**
+   * Check if any outcome in the proposal is sponsored
+   */
   static isSponsored(
     tx: Transaction,
     config: {
@@ -1527,45 +1546,52 @@ export class Proposal {
     });
   }
 
-  static setSponsorship(
+  /**
+   * Check if a specific outcome is sponsored (any type)
+   */
+  static isOutcomeSponsored(
     tx: Transaction,
     config: {
       marketsCorePackageId: string;
       assetType: string;
       stableType: string;
       proposal: ReturnType<Transaction['moveCall']>;
-      sponsor: string;
-      thresholdReduction: bigint;
+      outcomeIndex: number;
     }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'set_sponsorship'),
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'is_outcome_sponsored'),
       typeArguments: [config.assetType, config.stableType],
-      arguments: [
-        config.proposal,
-        tx.pure.address(config.sponsor),
-        tx.pure.u64(config.thresholdReduction),
-      ],
+      arguments: [config.proposal, tx.pure.u64(config.outcomeIndex)],
     });
   }
 
-  static clearSponsorship(
+  /**
+   * Get the sponsorship type for a specific outcome
+   * Returns: 0 = NONE, 1 = ZERO_THRESHOLD, 2 = NEGATIVE_DISCOUNT
+   */
+  static getOutcomeSponsorshipType(
     tx: Transaction,
     config: {
       marketsCorePackageId: string;
       assetType: string;
       stableType: string;
       proposal: ReturnType<Transaction['moveCall']>;
+      outcomeIndex: number;
     }
-  ): void {
-    tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'clear_sponsorship'),
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'get_outcome_sponsorship_type'),
       typeArguments: [config.assetType, config.stableType],
-      arguments: [config.proposal],
+      arguments: [config.proposal, tx.pure.u64(config.outcomeIndex)],
     });
   }
 
-  static getEffectiveTwapThreshold(
+  /**
+   * Get the full sponsorship types vector for all outcomes
+   * Returns vector where index = outcome, value = sponsorship type (0=none, 1=zero, 2=negative)
+   */
+  static getOutcomeSponsorshipTypes(
     tx: Transaction,
     config: {
       marketsCorePackageId: string;
@@ -1575,9 +1601,54 @@ export class Proposal {
     }
   ): ReturnType<Transaction['moveCall']> {
     return tx.moveCall({
-      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'get_effective_twap_threshold'),
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'get_outcome_sponsorship_types'),
       typeArguments: [config.assetType, config.stableType],
       arguments: [config.proposal],
+    });
+  }
+
+  /**
+   * Get sponsorship type constant: NONE (0)
+   */
+  static sponsorshipNone(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'sponsorship_none'),
+      arguments: [],
+    });
+  }
+
+  /**
+   * Get sponsorship type constant: ZERO_THRESHOLD (1)
+   */
+  static sponsorshipZeroThreshold(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'sponsorship_zero_threshold'),
+      arguments: [],
+    });
+  }
+
+  /**
+   * Get sponsorship type constant: NEGATIVE_DISCOUNT (2)
+   */
+  static sponsorshipNegativeDiscount(
+    tx: Transaction,
+    config: {
+      marketsCorePackageId: string;
+    }
+  ): ReturnType<Transaction['moveCall']> {
+    return tx.moveCall({
+      target: TransactionUtils.buildTarget(config.marketsCorePackageId, 'proposal', 'sponsorship_negative_discount'),
+      arguments: [],
     });
   }
 

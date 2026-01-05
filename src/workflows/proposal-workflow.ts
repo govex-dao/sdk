@@ -739,15 +739,72 @@ export class ProposalWorkflow {
   /**
    * Advance proposal from REVIEW to TRADING state
    *
-   * This triggers 100% quantum split from spot pool to conditional AMMs
+   * This triggers 100% quantum split from spot pool to conditional AMMs.
+   *
+   * Gap Fee: A fee may be charged based on time since last proposal ended.
+   * - Starts at 10000x proposal_creation_fee at t=0
+   * - Decays exponentially to 0 at t=12hr (30-minute half-life)
+   * - Any excess fee is returned to senderAddress
    */
   advanceToTrading(config: AdvanceToTradingConfig): WorkflowTransaction {
     const tx = new Transaction();
     const clockId = config.clockId || '0x6';
 
-    const { futarchyGovernancePackageId } = this.packages;
+    const { futarchyGovernancePackageId, futarchyFactoryPackageId } = this.packages;
 
-    tx.moveCall({
+    // Prepare gap fee coins
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let gapFeeAsset: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let gapFeeStable: any;
+
+    if (config.gapFeeCoins && config.gapFeeCoins.length > 0) {
+      // Merge gap fee coins if multiple
+      const coinObjects = config.gapFeeCoins.map((id) => tx.object(id));
+      const [firstCoin, ...restCoins] = coinObjects;
+
+      if (restCoins.length > 0) {
+        tx.mergeCoins(firstCoin, restCoins);
+      }
+
+      // Split the max fee amount if specified
+      const feeCoin = config.maxGapFee
+        ? tx.splitCoins(firstCoin, [tx.pure.u64(config.maxGapFee)])[0]
+        : firstCoin;
+
+      if (config.feeInAsset) {
+        // Gap fee in AssetType - create zero stable coin
+        gapFeeAsset = feeCoin;
+        gapFeeStable = tx.moveCall({
+          target: `${futarchyFactoryPackageId}::factory::zero_coin`,
+          typeArguments: [config.stableType],
+          arguments: [],
+        });
+      } else {
+        // Gap fee in StableType (default) - create zero asset coin
+        gapFeeStable = feeCoin;
+        gapFeeAsset = tx.moveCall({
+          target: `${futarchyFactoryPackageId}::factory::zero_coin`,
+          typeArguments: [config.assetType],
+          arguments: [],
+        });
+      }
+    } else {
+      // No gap fee coins - create zero coins for both types
+      gapFeeAsset = tx.moveCall({
+        target: `${futarchyFactoryPackageId}::factory::zero_coin`,
+        typeArguments: [config.assetType],
+        arguments: [],
+      });
+      gapFeeStable = tx.moveCall({
+        target: `${futarchyFactoryPackageId}::factory::zero_coin`,
+        typeArguments: [config.stableType],
+        arguments: [],
+      });
+    }
+
+    // Call advance_proposal_state which returns (bool, Coin<Asset>, Coin<Stable>)
+    const result = tx.moveCall({
       target: `${futarchyGovernancePackageId}::proposal_lifecycle::advance_proposal_state`,
       typeArguments: [config.assetType, config.stableType, config.lpType],
       arguments: [
@@ -755,6 +812,8 @@ export class ProposalWorkflow {
         txObject(tx, config.proposalId),
         txObject(tx, config.escrowId),
         txObject(tx, config.spotPoolId),
+        gapFeeAsset,
+        gapFeeStable,
         tx.sharedObjectRef({
           objectId: clockId,
           initialSharedVersion: 1,
@@ -762,6 +821,21 @@ export class ProposalWorkflow {
         }),
       ],
     });
+
+    // result[0] is bool (state_changed) - we don't need to use it
+    // result[1] is excess asset coin - transfer back to sender
+    // result[2] is excess stable coin - transfer back to sender
+    const excessAsset = result[1];
+    const excessStable = result[2];
+
+    tx.transferObjects([excessAsset, excessStable], tx.pure.address(config.senderAddress));
+
+    // If we had gap fee coins and split from them, return the remainder too
+    if (config.gapFeeCoins && config.gapFeeCoins.length > 0 && config.maxGapFee) {
+      const coinObjects = config.gapFeeCoins.map((id) => tx.object(id));
+      const [firstCoin] = coinObjects;
+      tx.transferObjects([firstCoin], tx.pure.address(config.senderAddress));
+    }
 
     return {
       transaction: tx,
