@@ -246,7 +246,11 @@ export class ProposalWorkflow {
       const registryId = config.conditionalCoinsRegistry.registryId;
       let feeCoin: ReturnType<typeof tx.splitCoins>[0] = tx.splitCoins(tx.gas, [tx.pure.u64(0)])[0];
 
-      for (const coinSet of config.conditionalCoinsRegistry.coinSets) {
+      // Only use coin sets matching the number of outcomes defined in the proposal
+      const outcomeCount = config.outcomeMessages.length;
+      const coinSetsToUse = config.conditionalCoinsRegistry.coinSets.slice(0, outcomeCount);
+
+      for (const coinSet of coinSetsToUse) {
         // Take asset conditional coin from registry
         // Returns 4-tuple: (TreasuryCap<T>, MetadataCap<T>, currency_id: ID, Coin<SUI>)
         const assetResults = tx.moveCall({
