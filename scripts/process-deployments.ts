@@ -145,7 +145,7 @@ function main() {
   // Ensure directories exist
   if (!fs.existsSync(deploymentsDir)) {
     console.error(`✗ Deployments directory not found: ${deploymentsDir}`);
-    console.error(`  Run: ./deploy_verified.sh --network ${network}`);
+    console.error(`  Run: ./packages/scripts/deploy_verified.sh --network ${network}`);
     process.exit(1);
   }
   if (!fs.existsSync(processedDir)) {

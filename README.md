@@ -1017,7 +1017,7 @@ The launchpad has **built-in behavior** that happens automatically during DAO cr
 
 ### Supported Action Types
 
-The `IntentExecutor` supports **60+ action types**. See `src/config/action-definitions.ts` for the complete registry and `../packages/ACTION_REGISTRY.md` for documentation.
+The `IntentExecutor` supports **60+ action types**. See `src/config/action-definitions.ts` for the complete registry and `../packages/docs/ACTION_REGISTRY.md` for documentation.
 
 ---
 
@@ -1601,14 +1601,14 @@ struct GovernanceWitness has drop {}
 
 ### Deployment
 
-Packages are deployed via `packages/deploy_verified.sh`:
+Packages are deployed via `packages/scripts/deploy_verified.sh`:
 
 ```bash
 cd packages
-./deploy_verified.sh --network localnet   # Deploy to localnet
-./deploy_verified.sh --network devnet     # Deploy to devnet
-./deploy_verified.sh --network testnet    # Deploy to testnet
-./deploy_verified.sh --network mainnet    # Deploy to mainnet
+./scripts/deploy_verified.sh --network localnet   # Deploy to localnet
+./scripts/deploy_verified.sh --network devnet     # Deploy to devnet
+./scripts/deploy_verified.sh --network testnet    # Deploy to testnet
+./scripts/deploy_verified.sh --network mainnet    # Deploy to mainnet
 ```
 
 #### Network-Specific Directory Structure
@@ -1658,7 +1658,7 @@ The SDK uses `require()` to load `_all-packages-{network}.json` files. Missing n
 
 #### Deployment Process
 
-When you run `./deploy_verified.sh --network testnet`:
+When you run `./scripts/deploy_verified.sh --network testnet`:
 
 1. **Deploy packages** → Raw JSONs saved to `packages/deployments/testnet/`
 2. **Process deployments** → Runs `sdk/scripts/process-deployments.ts --network testnet`

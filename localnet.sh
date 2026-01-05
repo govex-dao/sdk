@@ -638,13 +638,13 @@ deploy_packages() {
 
   cd "$PACKAGES_DIR"
 
-  if [[ ! -f "deploy_verified.sh" ]]; then
-    log_error "deploy_verified.sh not found in $PACKAGES_DIR"
+  if [[ ! -f "scripts/deploy_verified.sh" ]]; then
+    log_error "deploy_verified.sh not found in $PACKAGES_DIR/scripts"
     return 1
   fi
 
   log_info "Deploying packages to localnet..."
-  ./deploy_verified.sh --network localnet
+  ./scripts/deploy_verified.sh --network localnet
 
   log_success "Packages deployed"
 

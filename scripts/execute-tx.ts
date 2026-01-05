@@ -58,7 +58,7 @@ export function getActiveEnv(): Network {
 export function loadDeployments(network: Network = 'localnet'): any {
     const deploymentsPath = path.join(__dirname, `../deployments-processed/_all-packages-${network}.json`);
     if (!fs.existsSync(deploymentsPath)) {
-        throw new Error(`Deployments not found for ${network} at: ${deploymentsPath}\nRun: ./deploy_verified.sh --network ${network}`);
+        throw new Error(`Deployments not found for ${network} at: ${deploymentsPath}\nRun: ./packages/scripts/deploy_verified.sh --network ${network}`);
     }
     const data = fs.readFileSync(deploymentsPath, 'utf8');
     return JSON.parse(data);

@@ -59,7 +59,7 @@ async function main() {
 
   if (results.length === 0) {
     logError("No deployment JSONs found!");
-    logInfo("Run: ./packages/deploy_verified.sh first");
+    logInfo("Run: ./packages/scripts/deploy_verified.sh first");
     process.exit(1);
   }
 
@@ -98,7 +98,7 @@ async function main() {
     console.log();
     console.log("Recommended actions:");
     if (totalInvalid > 0) {
-      console.log("  1. Re-run deployment: ./packages/deploy_verified.sh");
+      console.log("  1. Re-run deployment: ./packages/scripts/deploy_verified.sh");
     }
     if (!allPkgValidation.valid) {
       console.log("  2. Process deployments: npx tsx scripts/process-deployments.ts");
