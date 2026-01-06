@@ -116,10 +116,11 @@ export class FutarchySDK {
 
   constructor(config: {
     network: NetworkType | string;
+    rpcUrl?: string;
     deployments?: DeploymentConfig;
   }) {
     // Setup network and client
-    const networkConfig = createNetworkConfig(config.network);
+    const networkConfig = createNetworkConfig(config.network, config.rpcUrl);
 
     // Resolve deployments: use provided or fall back to bundled
     const deploymentsConfig = config.deployments ?? getBundledDeployments(config.network);
@@ -144,10 +145,14 @@ export class FutarchySDK {
     const feeManager = marketsCoreDeployment?.sharedObjects.find(
       (obj) => obj.name === 'FeeManager'
     );
+    const futarchyCoreDeployment = deploymentManager.getPackage('futarchy_core');
+    const sponsorshipRegistry = futarchyCoreDeployment?.sharedObjects.find(
+      (obj) => obj.name === 'SponsorshipRegistry'
+    );
 
-    if (!factoryObject || !packageRegistry || !feeManager) {
+    if (!factoryObject || !packageRegistry || !feeManager || !sponsorshipRegistry) {
       throw new Error(
-        'Missing required deployment objects. Ensure Factory, PackageRegistry, and FeeManager are deployed.'
+        'Missing required deployment objects. Ensure Factory, PackageRegistry, FeeManager, and SponsorshipRegistry are deployed.'
       );
     }
 
@@ -181,6 +186,10 @@ export class FutarchySDK {
       packageRegistry: {
         id: packageRegistry.objectId,
         version: packageRegistry.initialSharedVersion,
+      },
+      sponsorshipRegistry: {
+        id: sponsorshipRegistry.objectId,
+        version: sponsorshipRegistry.initialSharedVersion,
       },
     };
 

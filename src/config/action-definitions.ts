@@ -973,7 +973,7 @@ export const CONFIG_ACTIONS: ActionDefinition[] = [
       { name: 'enabled', type: 'option<bool>', description: 'Sponsorship enabled', optional: true },
     ],
     description: 'Update sponsorship configuration',
-    launchpadSupported: false,
+    launchpadSupported: true,
     proposalSupported: true,
   },
   {
@@ -1016,7 +1016,7 @@ export const QUOTA_ACTIONS: ActionDefinition[] = [
       { name: 'sponsorAmount', type: 'u64', description: 'TWAP sponsorships per period (0 = no sponsor quota)' },
     ],
     description: 'Set proposal quotas for users (feeless proposals and/or TWAP sponsorships)',
-    launchpadSupported: false,
+    launchpadSupported: true,
     proposalSupported: true,
   },
 ];

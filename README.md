@@ -13,18 +13,29 @@ npm install @govex/futarchy-sdk
 ```typescript
 import { FutarchySDK } from '@govex/futarchy-sdk';
 
+// Using default public fullnode
 const sdk = new FutarchySDK({ network: 'mainnet' });
 
-// Query DAOs
-const daos = await sdk.getDaos();
-
-// Query proposals
-const proposals = await sdk.getProposals();
+// Using custom RPC (recommended for production)
+const sdk = new FutarchySDK({
+  network: 'mainnet',
+  rpcUrl: 'https://your-endpoint.sui-mainnet.quiknode.pro',
+});
 
 // Access services
 const daoInfo = await sdk.dao.getInfo(daoId);
 const raiseInfo = await sdk.launchpad.getRaise(raiseId);
 ```
+
+## Configuration
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `network` | Network name: `mainnet`, `testnet`, `devnet`, `localnet` | Yes |
+| `rpcUrl` | Custom RPC URL (overrides default fullnode) | Recommended for production |
+| `deployments` | Custom deployment config | No (uses bundled) |
+
+> **Note:** For production use, set `rpcUrl` to avoid rate limits on public fullnodes.
 
 ## Core Concepts
 

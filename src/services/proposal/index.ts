@@ -23,6 +23,12 @@ import type {
 
 // Re-export sub-services
 export { SponsorshipService } from './sponsorship';
+export {
+  SPONSORSHIP_NONE,
+  SPONSORSHIP_ZERO_THRESHOLD,
+  SPONSORSHIP_NEGATIVE_DISCOUNT,
+} from './sponsorship';
+export type { SponsorshipType, SponsorProposalConfig, CanSponsorResult } from './sponsorship';
 export { TradeService } from './trade';
 export type { QuoteResult, TradeConfig } from './trade';
 export { TwapService } from './twap';

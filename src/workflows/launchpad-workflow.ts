@@ -628,6 +628,29 @@ export class LaunchpadWorkflow {
         });
         break;
 
+      case 'update_sponsorship_config':
+        tx.moveCall({
+          target: `${futarchyActionsPackageId}::futarchy_config_init_actions::add_update_sponsorship_config_spec`,
+          arguments: [
+            builder,
+            tx.pure.option('bool', action.enabled ?? null),
+          ],
+        });
+        break;
+
+      case 'set_quotas':
+        tx.moveCall({
+          target: `${futarchyActionsPackageId}::quota_init_actions::add_set_quotas_spec`,
+          arguments: [
+            builder,
+            tx.pure.vector('address', action.users),
+            tx.pure.u64(action.periodMs),
+            tx.pure.u64(action.feelessProposalAmount),
+            tx.pure.u64(action.sponsorAmount),
+          ],
+        });
+        break;
+
       default:
         throw new Error(`Unknown action type: ${(action as { type?: string }).type}`);
     }

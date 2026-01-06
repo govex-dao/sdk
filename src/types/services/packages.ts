@@ -41,6 +41,7 @@ export interface SharedObjects {
   factory: SharedObjectRef;
   packageRegistry: SharedObjectRef;
   feeManager: SharedObjectRef;
+  sponsorshipRegistry: SharedObjectRef;
 }
 
 /**

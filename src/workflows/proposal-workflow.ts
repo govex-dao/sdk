@@ -1124,6 +1124,131 @@ export class ProposalWorkflow {
     };
   }
 
+  /**
+   * Parse the result of finalizeProposal to determine what happened
+   *
+   * After calling finalizeProposal and executing the transaction, use this to check:
+   * - Did REJECT win immediately? (proposal is fully finalized)
+   * - Or did an ACCEPT outcome win? (proposal is in execution window, needs action execution)
+   *
+   * @param txResult - The transaction result from executing finalizeProposal
+   * @param governancePackageId - Optional override for governance package ID
+   * @returns Object with finalization status
+   */
+  parseFinalizationResult(
+    txResult: { events?: Array<{ type: string; parsedJson?: unknown }> },
+    governancePackageId?: string
+  ): {
+    /** True if proposal is fully finalized (REJECT won or execution completed) */
+    isFinalized: boolean;
+    /** True if REJECT won immediately via TWAP */
+    rejectWon: boolean;
+    /** True if an ACCEPT outcome won and execution window started */
+    inExecutionWindow: boolean;
+    /** The winning outcome index (0 = reject, 1+ = accept outcomes), only set if finalized */
+    winningOutcome?: number;
+    /** Whether the proposal was approved (accept outcome won and executed) */
+    approved?: boolean;
+  } {
+    // governancePackageId is available but we match events by type suffix for flexibility
+    void governancePackageId;
+
+    // Look for ProposalMarketFinalized event - emitted when proposal is fully finalized
+    const finalizedEvent = txResult.events?.find(
+      (e) =>
+        e.type.includes('::proposal_lifecycle::ProposalMarketFinalized') ||
+        e.type.includes('::ptb_executor::ProposalMarketFinalized')
+    );
+
+    if (finalizedEvent && finalizedEvent.parsedJson) {
+      const data = finalizedEvent.parsedJson as {
+        winning_outcome: string | number;
+        approved: boolean;
+      };
+      const winningOutcome =
+        typeof data.winning_outcome === 'string'
+          ? parseInt(data.winning_outcome, 10)
+          : data.winning_outcome;
+
+      return {
+        isFinalized: true,
+        rejectWon: winningOutcome === 0,
+        inExecutionWindow: false,
+        winningOutcome,
+        approved: data.approved,
+      };
+    }
+
+    // No finalization event = ACCEPT outcome won, execution window started
+    return {
+      isFinalized: false,
+      rejectWon: false,
+      inExecutionWindow: true,
+    };
+  }
+
+  /**
+   * Get the current state and market winner for a proposal in execution window
+   *
+   * Use this after parseFinalizationResult returns inExecutionWindow: true
+   * to determine which outcome won according to TWAP.
+   *
+   * @param client - SuiClient instance
+   * @param proposalId - The proposal object ID
+   * @returns Proposal state info including market winner
+   */
+  async getProposalExecutionState(
+    client: SuiClient,
+    proposalId: string
+  ): Promise<{
+    state: number;
+    stateName: 'premarket' | 'review' | 'trading' | 'awaiting_execution' | 'finalized';
+    /** The market winner according to TWAP (0 = reject, 1+ = accept outcomes) */
+    marketWinner?: number;
+    /** TWAP prices for each outcome */
+    twapPrices?: string[];
+  }> {
+    const obj = await client.getObject({
+      id: proposalId,
+      options: { showContent: true },
+    });
+
+    if (!obj.data?.content || obj.data.content.dataType !== 'moveObject') {
+      throw new Error(`Proposal ${proposalId} not found`);
+    }
+
+    const fields = (obj.data.content as { fields: Record<string, unknown> }).fields as {
+      state: number | string;
+      twap_prices?: string[];
+      outcome_data?: { fields: { winning_outcome?: string | number } };
+    };
+
+    const state = typeof fields.state === 'string' ? parseInt(fields.state, 10) : fields.state;
+    const stateNames = ['premarket', 'review', 'trading', 'awaiting_execution', 'finalized'] as const;
+
+    // If in awaiting_execution, the TWAP prices indicate which outcome won
+    // The outcome with highest TWAP price wins (comparing accept outcomes, reject is index 0)
+    let marketWinner: number | undefined;
+    if (state === 3 && fields.twap_prices && fields.twap_prices.length > 0) {
+      // Find the outcome with highest TWAP (skip index 0 which is reject's price)
+      // Actually, for 2-outcome, just check if any accept outcome has higher price than reject
+      const prices = fields.twap_prices.map((p) => BigInt(p));
+      if (prices.length >= 2) {
+        // Compare accept (index 1) vs reject (index 0)
+        // Higher price = more likely to win
+        // But the actual logic is: if any accept outcome's price > reject's price, accept wins
+        marketWinner = prices[1] > prices[0] ? 1 : 0;
+      }
+    }
+
+    return {
+      state,
+      stateName: stateNames[state] || 'premarket',
+      marketWinner,
+      twapPrices: fields.twap_prices,
+    };
+  }
+
   // ============================================================================
   // STEP 7: REDEEM CONDITIONAL TOKENS
   // ============================================================================
