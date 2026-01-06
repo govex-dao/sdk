@@ -1307,8 +1307,8 @@ The Futarchy platform consists of **13 core Move packages** deployed to Sui. The
 
 | Package | Location | Purpose |
 |---------|----------|---------|
-| **AccountProtocol** | `move-framework/packages/protocol` | Core account, intents, executables |
-| **AccountActions** | `move-framework/packages/actions` | Vault, stream, currency, transfer |
+| **AccountProtocol** | `smart_account/packages/protocol` | Core account, intents, executables |
+| **AccountActions** | `smart_account/packages/actions` | Vault, stream, currency, transfer |
 | **futarchy_types** | `futarchy_types/` | USDC witness type |
 | **futarchy_one_shot_utils** | `futarchy_one_shot_utils/` | Constants, math, utilities |
 | **futarchy_core** | `futarchy_core/` | DaoConfig, FutarchyConfig |
@@ -1326,7 +1326,7 @@ The Futarchy platform consists of **13 core Move packages** deployed to Sui. The
 ### Framework Layer (2 packages)
 
 #### AccountProtocol
-**Location:** `packages/move-framework/packages/protocol`
+**Location:** `packages/smart_account/packages/protocol`
 
 Core framework for on-chain accounts with intent-based governance.
 
@@ -1344,7 +1344,7 @@ struct Executable { /* hot potato - must be consumed */ }
 ```
 
 #### AccountActions
-**Location:** `packages/move-framework/packages/actions`
+**Location:** `packages/smart_account/packages/actions`
 
 Standard actions for accounts (vault, streaming, currency).
 
@@ -1360,12 +1360,12 @@ Standard actions for accounts (vault, streaming, currency).
 ### Core Layer (3 packages)
 
 #### futarchy_types
-**Location:** `packages/futarchy_types`
+**Location:** `packages/futarchy/futarchy_types`
 
 Type definitions (mainly USDC witness).
 
 #### futarchy_one_shot_utils
-**Location:** `packages/futarchy_one_shot_utils`
+**Location:** `packages/futarchy/futarchy_one_shot_utils`
 
 Protocol constants and math utilities.
 
@@ -1381,7 +1381,7 @@ const MAX_ACTIONS: u64 = 50;
 ```
 
 #### futarchy_core
-**Location:** `packages/futarchy_core`
+**Location:** `packages/futarchy/futarchy_core`
 
 DAO configuration and state management.
 
@@ -1411,7 +1411,7 @@ struct FutarchyConfig {
 ### Markets Layer (3 packages)
 
 #### futarchy_markets_primitives
-**Location:** `packages/futarchy_markets_primitives`
+**Location:** `packages/futarchy/futarchy_markets_primitives`
 
 Low-level market primitives.
 
@@ -1440,7 +1440,7 @@ struct LiquidityPool {
 ```
 
 #### futarchy_markets_core
-**Location:** `packages/futarchy_markets_core`
+**Location:** `packages/futarchy/futarchy_markets_core`
 
 Core proposal and market logic.
 
@@ -1466,7 +1466,7 @@ struct UnifiedSpotPool<AssetType, StableType, LpType> has key {
 ```
 
 #### futarchy_markets_operations
-**Location:** `packages/futarchy_markets_operations`
+**Location:** `packages/futarchy/futarchy_markets_operations`
 
 User-facing swap and liquidity operations.
 
@@ -1483,7 +1483,7 @@ public entry fun remove_liquidity<A, S, L>(...)
 ### Application Layer (5 packages)
 
 #### futarchy_actions
-**Location:** `packages/futarchy_actions`
+**Location:** `packages/futarchy/futarchy_actions`
 
 Governance actions for configuration and liquidity.
 
@@ -1495,7 +1495,7 @@ Governance actions for configuration and liquidity.
 - `TerminateDao` - Irreversible DAO termination
 
 #### futarchy_factory
-**Location:** `packages/futarchy_factory`
+**Location:** `packages/futarchy/futarchy_factory`
 
 Factory for creating DAOs and launchpad.
 
@@ -1511,7 +1511,7 @@ Create Raise → Contribute → Settle → Create DAO → Execute Init Actions
 ```
 
 #### futarchy_oracle_actions
-**Location:** `packages/futarchy_oracle_actions`
+**Location:** `packages/futarchy/futarchy_oracle_actions`
 
 Price-based token grants.
 
@@ -1523,7 +1523,7 @@ public fun cancel_grant<A, S>(...)         // Cancel grant
 ```
 
 #### futarchy_governance_actions
-**Location:** `packages/futarchy_governance_actions`
+**Location:** `packages/futarchy/futarchy_governance_actions`
 
 Intent execution and registry management.
 
@@ -1535,7 +1535,7 @@ public fun update_package_registry(...)     // Manage packages
 ```
 
 #### futarchy_governance
-**Location:** `packages/futarchy_governance`
+**Location:** `packages/futarchy/futarchy_governance`
 
 Complete proposal lifecycle orchestration.
 
