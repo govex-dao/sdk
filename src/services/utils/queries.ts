@@ -4,6 +4,20 @@
 
 import { SuiClient, SuiObjectResponse } from '@mysten/sui/client';
 import { extractFields } from '../../types';
+import {
+  getBalanceWrappers as getBalanceWrappersStandalone,
+  type BalanceWrapperData,
+} from './balance-wrappers';
+
+// Re-export balance wrapper utilities for convenience
+export {
+  buildBalanceWrapperType,
+  getBalanceWrappers as getBalanceWrappersStandalone,
+  getConditionalCoinObjects,
+  getConditionalCoinBalance,
+  sumBalanceWrapperAmount,
+} from './balance-wrappers';
+export type { BalanceWrapperData, BalanceWrapperOutcome, OwnedCoinObject } from './balance-wrappers';
 
 /**
  * Helper class for common Sui queries
@@ -127,46 +141,6 @@ export class QueryHelper {
     return result;
   }
 
-  /**
-   * Get spot balances for a DAO's coin pair
-   *
-   * @param address - Wallet address
-   * @param assetType - DAO's asset coin type
-   * @param stableType - DAO's stable coin type
-   * @param decimals - Coin decimals (default 9)
-   * @returns Formatted balances { asset, stable, assetRaw, stableRaw }
-   */
-  async getSpotBalances(
-    address: string,
-    assetType: string,
-    stableType: string,
-    decimals = 9
-  ): Promise<{
-    asset: string;
-    stable: string;
-    assetRaw: bigint;
-    stableRaw: bigint;
-  }> {
-    const [assetRaw, stableRaw] = await Promise.all([
-      this.getBalance(address, assetType),
-      this.getBalance(address, stableType),
-    ]);
-
-    const formatBalance = (raw: bigint): string => {
-      const divisor = BigInt(10 ** decimals);
-      const whole = raw / divisor;
-      const fraction = raw % divisor;
-      const fractionStr = fraction.toString().padStart(decimals, '0').slice(0, 4);
-      return `${whole}.${fractionStr}`;
-    };
-
-    return {
-      asset: formatBalance(assetRaw),
-      stable: formatBalance(stableRaw),
-      assetRaw,
-      stableRaw,
-    };
-  }
 
   /**
    * Find treasury cap for a coin type
@@ -186,15 +160,20 @@ export class QueryHelper {
   }
 
   /**
-   * Get all balances for a proposal (spot + conditional per outcome)
+   * Get all balances for a proposal (spot + conditional per outcome + balance wrappers)
    *
    * @param address - Wallet address
    * @param assetType - DAO's asset coin type
    * @param stableType - DAO's stable coin type
    * @param conditionalAssetTypes - Conditional asset coin types per outcome
    * @param conditionalStableTypes - Conditional stable coin types per outcome
+   * @param assetSymbol - DAO's asset symbol (e.g., "SUI")
+   * @param stableSymbol - DAO's stable symbol (e.g., "USDC")
+   * @param outcomeMessages - Outcome messages for naming (e.g., ["Yes", "No"])
    * @param decimals - Coin decimals (default 9)
-   * @returns Complete balance info for trading
+   * @param marketStateId - Optional market state ID to filter balance wrappers
+   * @param balanceWrapperType - Optional full type for ConditionalMarketBalance (e.g., "0x...::conditional_balance::ConditionalMarketBalance<AssetType, StableType>")
+   * @returns Complete balance info for trading with display names
    */
   async getProposalBalances(
     address: string,
@@ -202,7 +181,12 @@ export class QueryHelper {
     stableType: string,
     conditionalAssetTypes: string[],
     conditionalStableTypes: string[],
-    decimals = 9
+    assetSymbol: string,
+    stableSymbol: string,
+    outcomeMessages: string[],
+    decimals = 9,
+    marketStateId?: string,
+    balanceWrapperType?: string
   ): Promise<ProposalBalances> {
     const formatBalance = (raw: bigint): string => {
       const divisor = BigInt(10 ** decimals);
@@ -226,7 +210,16 @@ export class QueryHelper {
       balancePromises.push(this.getBalance(address, coinType));
     }
 
-    const rawBalances = await Promise.all(balancePromises);
+    // Fetch balance wrappers in parallel if type provided
+    const balanceWrappersPromise =
+      balanceWrapperType && marketStateId
+        ? this.getBalanceWrappers(address, balanceWrapperType, marketStateId, decimals)
+        : Promise.resolve([]);
+
+    const [rawBalances, balanceWrappers] = await Promise.all([
+      Promise.all(balancePromises),
+      balanceWrappersPromise,
+    ]);
 
     // Parse results
     const spotAssetRaw = rawBalances[0];
@@ -238,18 +231,22 @@ export class QueryHelper {
     for (let i = 0; i < outcomeCount; i++) {
       const condAssetRaw = rawBalances[2 + i];
       const condStableRaw = rawBalances[2 + outcomeCount + i];
+      const outcomeLabel = outcomeMessages[i] || `Outcome ${i}`;
 
       outcomes.push({
         outcomeIndex: i,
+        outcomeMessage: outcomeLabel,
         conditionalAsset: {
           coinType: conditionalAssetTypes[i],
           raw: condAssetRaw,
           formatted: formatBalance(condAssetRaw),
+          name: `${outcomeLabel} ${assetSymbol}`,
         },
         conditionalStable: {
           coinType: conditionalStableTypes[i],
           raw: condStableRaw,
           formatted: formatBalance(condStableRaw),
+          name: `${outcomeLabel} ${stableSymbol}`,
         },
       });
     }
@@ -260,15 +257,40 @@ export class QueryHelper {
           coinType: assetType,
           raw: spotAssetRaw,
           formatted: formatBalance(spotAssetRaw),
+          name: assetSymbol,
         },
         stable: {
           coinType: stableType,
           raw: spotStableRaw,
           formatted: formatBalance(spotStableRaw),
+          name: stableSymbol,
         },
       },
       outcomes,
+      balanceWrappers,
     };
+  }
+
+  /**
+   * Get balance wrapper (ConditionalMarketBalance) NFTs owned by an address
+   *
+   * Balance wrappers hold "incomplete sets" from spot swaps during active proposals.
+   * They store per-outcome balances in a dense vector format.
+   *
+   * @param address - Wallet address
+   * @param balanceWrapperType - Full type string for ConditionalMarketBalance (e.g., "0x...::conditional_balance::ConditionalMarketBalance<0x2::sui::SUI, 0x...::usdc::USDC>")
+   * @param marketStateId - Market state ID to filter by (only return wrappers for this market)
+   * @param decimals - Coin decimals for formatting (default 9)
+   * @returns Array of balance wrapper data
+   */
+  async getBalanceWrappers(
+    address: string,
+    balanceWrapperType: string,
+    marketStateId: string,
+    decimals = 9
+  ): Promise<BalanceWrapperData[]> {
+    // Delegate to standalone function
+    return getBalanceWrappersStandalone(this.client, address, balanceWrapperType, marketStateId, decimals);
   }
 }
 
@@ -277,10 +299,12 @@ export interface CoinBalance {
   coinType: string;
   raw: bigint;
   formatted: string;
+  name: string;
 }
 
 export interface OutcomeBalances {
   outcomeIndex: number;
+  outcomeMessage: string;
   conditionalAsset: CoinBalance;
   conditionalStable: CoinBalance;
 }
@@ -291,4 +315,6 @@ export interface ProposalBalances {
     stable: CoinBalance;
   };
   outcomes: OutcomeBalances[];
+  /** Balance wrapper NFTs owned by the user for this proposal */
+  balanceWrappers: BalanceWrapperData[];
 }

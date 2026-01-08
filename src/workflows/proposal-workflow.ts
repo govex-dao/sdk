@@ -22,15 +22,20 @@ import {
   AdvanceToReviewConfig,
   AdvanceToTradingConfig,
   FinalizeProposalConfig,
+  ExecuteWinningOutcomeConfig,
+  ForceRejectOnTimeoutConfig,
   SpotSwapConfig,
   ConditionalSwapConfig,
+  SmartConditionalSwapConfig,
   ActionConfig,
   WorkflowTransaction,
   ObjectIdOrRef,
   isOwnedObjectRef,
   isTxSharedObjectRef,
 } from './types';
+import { ConditionalBalance } from '../protocol/markets/conditional-balance';
 import type { IntentExecutorPackages } from './intent-executor';
+import { IntentExecutor } from './intent-executor';
 
 /**
  * Helper to convert ObjectIdOrRef to tx.object() input
@@ -127,14 +132,16 @@ export interface ProposalWorkflowSharedObjects {
  * ```
  */
 export class ProposalWorkflow {
+  private client: SuiClient;
   private packages: ProposalWorkflowPackages;
   private sharedObjects: ProposalWorkflowSharedObjects;
 
   constructor(
-    _client: SuiClient,
+    client: SuiClient,
     packages: ProposalWorkflowPackages,
     sharedObjects: ProposalWorkflowSharedObjects
   ) {
+    this.client = client;
     this.packages = packages;
     this.sharedObjects = sharedObjects;
   }
@@ -1088,6 +1095,424 @@ export class ProposalWorkflow {
     };
   }
 
+  /**
+   * Execute a smart conditional swap that automatically sources coins from multiple places
+   *
+   * Priority order:
+   * 1. Existing conditional coins in user's wallet
+   * 2. Balance wrapper NFTs (ConditionalMarketBalance objects)
+   * 3. Spot coins (split across all outcomes)
+   *
+   * This provides the best UX by automatically finding and using available coins.
+   */
+  smartConditionalSwap(config: SmartConditionalSwapConfig): WorkflowTransaction {
+    const tx = new Transaction();
+    const clockId = config.clockId || '0x6';
+
+    const {
+      futarchyMarketsOperationsPackageId,
+      futarchyMarketsCorePackageId,
+      futarchyMarketsPrimitivesPackageId,
+    } = this.packages;
+
+    const { availableCoins, direction, outcomeIndex, amountIn } = config;
+    const isAsset = direction === 'asset_to_stable';
+
+    // Find the target outcome coin types
+    const targetOutcome = config.allOutcomeCoins.find((o) => o.outcomeIndex === outcomeIndex);
+    if (!targetOutcome) {
+      throw new Error(`No conditional coin types found for outcome ${outcomeIndex}`);
+    }
+
+    // Determine which conditional type we need based on direction
+    const targetConditionalType = isAsset
+      ? targetOutcome.assetCoinType
+      : targetOutcome.stableCoinType;
+
+    // =========================================================================
+    // VALIDATE: Check total available >= amountIn upfront
+    // =========================================================================
+    const totalConditional = availableCoins.conditionalCoins.reduce((sum, c) => sum + c.balance, 0n);
+    const totalInWrappers = availableCoins.balanceWrappers.reduce((sum, w) => {
+      const outcomeData = w.outcomes.find((o) => o.outcomeIndex === outcomeIndex);
+      if (!outcomeData) return sum;
+      return sum + (isAsset ? outcomeData.asset : outcomeData.stable);
+    }, 0n);
+    const totalSpot = availableCoins.spotCoins.reduce((sum, c) => sum + c.balance, 0n);
+    const totalAvailable = totalConditional + totalInWrappers + totalSpot;
+
+    if (totalAvailable < amountIn) {
+      throw new Error(
+        `Insufficient balance: need ${amountIn}, have ${totalAvailable} ` +
+          `(conditional: ${totalConditional}, wrappers: ${totalInWrappers}, spot: ${totalSpot})`
+      );
+    }
+
+    // Type alias for transaction objects and results
+    // TxObject is the result of tx.object() - an Input reference
+    // TxResult is the result of tx.moveCall() - a TransactionResult
+    // TxNestedResult is result[n] from a moveCall returning tuple - a NestedResult
+    type TxObject = ReturnType<Transaction['object']>;
+    type TxResult = ReturnType<Transaction['moveCall']>;
+    type TxNestedResult = TxResult[number]; // Accessing result[n] gives NestedResult
+    type TxCoinArg = TxObject | TxResult | TxNestedResult;
+
+    // Track how much we've sourced and coins to merge
+    let totalSourced = 0n;
+    const conditionalCoinsToMerge: TxCoinArg[] = [];
+
+    // Sort outcomes for consistent processing
+    const sortedOutcomes = [...config.allOutcomeCoins].sort((a, b) => a.outcomeIndex - b.outcomeIndex);
+
+    // =========================================================================
+    // STEP 1: Use existing conditional coins first
+    // =========================================================================
+    for (const coin of availableCoins.conditionalCoins) {
+      if (totalSourced >= amountIn) break;
+      conditionalCoinsToMerge.push(tx.object(coin.objectId));
+      totalSourced += coin.balance;
+    }
+
+    // =========================================================================
+    // STEP 2: Unwrap from balance wrappers if needed
+    // =========================================================================
+    if (totalSourced < amountIn && availableCoins.balanceWrappers.length > 0) {
+      // Calculate total available in all wrappers for target outcome
+      let totalInWrappers = 0n;
+      const wrappersWithBalance: Array<{ objectId: string; available: bigint }> = [];
+
+      for (const wrapper of availableCoins.balanceWrappers) {
+        const outcomeData = wrapper.outcomes.find((o) => o.outcomeIndex === outcomeIndex);
+        if (!outcomeData) continue;
+
+        const available = isAsset ? outcomeData.asset : outcomeData.stable;
+        if (available > 0n) {
+          wrappersWithBalance.push({ objectId: wrapper.objectId, available });
+          totalInWrappers += available;
+        }
+      }
+
+      if (wrappersWithBalance.length > 0) {
+        const stillNeeded = amountIn - totalSourced;
+        const amountToUnwrap = stillNeeded < totalInWrappers ? stillNeeded : totalInWrappers;
+
+        // Get or create the wrapper to unwrap from
+        let wrapperToUnwrap: TxObject;
+
+        // If multiple wrappers, merge them first for efficiency
+        if (wrappersWithBalance.length > 1) {
+          const [first, ...rest] = wrappersWithBalance;
+          wrapperToUnwrap = tx.object(first.objectId);
+
+          for (const w of rest) {
+            // Merge balance wrappers
+            ConditionalBalance.merge(
+              tx,
+              futarchyMarketsPrimitivesPackageId,
+              config.assetType,
+              config.stableType,
+              wrapperToUnwrap,
+              tx.object(w.objectId)
+            );
+          }
+        } else {
+          wrapperToUnwrap = tx.object(wrappersWithBalance[0].objectId);
+        }
+
+        // Unwrap from wrapper
+        const unwrappedCoin = ConditionalBalance.unwrapToCoin(tx, {
+          marketsPackageId: futarchyMarketsPrimitivesPackageId,
+          assetType: config.assetType,
+          stableType: config.stableType,
+          conditionalType: targetConditionalType,
+          balanceObj: wrapperToUnwrap,
+          escrowId: typeof config.escrowId === 'string' ? config.escrowId : config.escrowId.objectId,
+          outcomeIdx: outcomeIndex,
+          isAsset,
+          amount: amountToUnwrap,
+        });
+
+        conditionalCoinsToMerge.push(unwrappedCoin);
+
+        // Transfer the wrapper back to recipient (it may have remaining balance)
+        // The wrapper still exists after unwrap - it just has reduced balance
+        tx.transferObjects([wrapperToUnwrap], tx.pure.address(config.recipient));
+
+        totalSourced += amountToUnwrap;
+      }
+    }
+
+    // =========================================================================
+    // STEP 3: Split spot coins if still need more
+    // =========================================================================
+    // Track split coins by outcome index (these are NestedResults from moveCall tuples)
+    let spotCoinsByOutcome: Record<number, TxNestedResult> = {};
+    // Track remaining spot coin after splitting (this is an Input from tx.object)
+    let remainingSpotCoin: TxObject | null = null;
+
+    if (totalSourced < amountIn && availableCoins.spotCoins.length > 0) {
+      const stillNeeded = amountIn - totalSourced;
+
+      // Merge spot coins
+      const spotCoinObjects = availableCoins.spotCoins.map((c) => tx.object(c.objectId));
+      const [firstSpot, ...restSpot] = spotCoinObjects;
+      if (restSpot.length > 0) {
+        tx.mergeCoins(firstSpot, restSpot);
+      }
+
+      // Split the amount we need
+      const [splitSpotCoin] = tx.splitCoins(firstSpot, [tx.pure.u64(stillNeeded)]);
+      remainingSpotCoin = firstSpot;
+
+      // Split spot across all outcomes using progress pattern
+      if (isAsset) {
+        // Split asset to get conditional asset coins
+        let splitProgress = tx.moveCall({
+          target: `${futarchyMarketsPrimitivesPackageId}::coin_escrow::start_split_asset_progress`,
+          typeArguments: [config.assetType, config.stableType],
+          arguments: [txObject(tx, config.escrowId), splitSpotCoin],
+        });
+
+        for (const outcome of sortedOutcomes) {
+          const result = tx.moveCall({
+            target: `${futarchyMarketsPrimitivesPackageId}::coin_escrow::split_asset_progress_step`,
+            typeArguments: [config.assetType, config.stableType, outcome.assetCoinType],
+            arguments: [splitProgress, txObject(tx, config.escrowId), tx.pure.u8(outcome.outcomeIndex)],
+          });
+          splitProgress = result[0] as unknown as typeof splitProgress;
+          spotCoinsByOutcome[outcome.outcomeIndex] = result[1];
+        }
+
+        tx.moveCall({
+          target: `${futarchyMarketsPrimitivesPackageId}::coin_escrow::finish_split_asset_progress`,
+          typeArguments: [config.assetType, config.stableType],
+          arguments: [splitProgress, txObject(tx, config.escrowId)],
+        });
+      } else {
+        // Split stable to get conditional stable coins
+        let splitProgress = tx.moveCall({
+          target: `${futarchyMarketsPrimitivesPackageId}::coin_escrow::start_split_stable_progress`,
+          typeArguments: [config.assetType, config.stableType],
+          arguments: [txObject(tx, config.escrowId), splitSpotCoin],
+        });
+
+        for (const outcome of sortedOutcomes) {
+          const result = tx.moveCall({
+            target: `${futarchyMarketsPrimitivesPackageId}::coin_escrow::split_stable_progress_step`,
+            typeArguments: [config.assetType, config.stableType, outcome.stableCoinType],
+            arguments: [splitProgress, txObject(tx, config.escrowId), tx.pure.u8(outcome.outcomeIndex)],
+          });
+          splitProgress = result[0] as unknown as typeof splitProgress;
+          spotCoinsByOutcome[outcome.outcomeIndex] = result[1];
+        }
+
+        tx.moveCall({
+          target: `${futarchyMarketsPrimitivesPackageId}::coin_escrow::finish_split_stable_progress`,
+          typeArguments: [config.assetType, config.stableType],
+          arguments: [splitProgress, txObject(tx, config.escrowId)],
+        });
+      }
+
+      // Add the target outcome's split coin to our merge list
+      const targetSplitCoin = spotCoinsByOutcome[outcomeIndex];
+      if (targetSplitCoin) {
+        conditionalCoinsToMerge.push(targetSplitCoin);
+        totalSourced += stillNeeded;
+      }
+    }
+
+    // =========================================================================
+    // STEP 4: Merge all conditional coins
+    // =========================================================================
+    if (conditionalCoinsToMerge.length === 0) {
+      throw new Error('No coins available to swap');
+    }
+
+    const [firstCond, ...restCond] = conditionalCoinsToMerge;
+    if (restCond.length > 0) {
+      tx.mergeCoins(firstCond, restCond);
+    }
+
+    // Split exact amount for swap (in case we sourced more than needed)
+    const [swapInputCoin] = tx.splitCoins(firstCond, [tx.pure.u64(amountIn)]);
+
+    // =========================================================================
+    // STEP 5: Execute the swap
+    // =========================================================================
+    // Begin swap session
+    const session = tx.moveCall({
+      target: `${futarchyMarketsCorePackageId}::swap_core::begin_swap_session`,
+      typeArguments: [config.assetType, config.stableType],
+      arguments: [txObject(tx, config.escrowId)],
+    });
+
+    // Begin conditional swaps batch
+    const batch = tx.moveCall({
+      target: `${futarchyMarketsOperationsPackageId}::swap_entry::begin_conditional_swaps`,
+      typeArguments: [config.assetType, config.stableType],
+      arguments: [txObject(tx, config.escrowId)],
+    });
+
+    // Swap in the target outcome market
+    const swapResult = tx.moveCall({
+      target: `${futarchyMarketsOperationsPackageId}::swap_entry::swap_in_batch`,
+      typeArguments: [
+        config.assetType,
+        config.stableType,
+        isAsset ? targetOutcome.assetCoinType : targetOutcome.stableCoinType,
+        isAsset ? targetOutcome.stableCoinType : targetOutcome.assetCoinType,
+      ],
+      arguments: [
+        batch,
+        session,
+        txObject(tx, config.escrowId),
+        tx.pure.u8(outcomeIndex),
+        swapInputCoin,
+        tx.pure.bool(isAsset),
+        tx.pure.u64(config.minAmountOut),
+        tx.sharedObjectRef({
+          objectId: clockId,
+          initialSharedVersion: 1,
+          mutable: false,
+        }),
+      ],
+    });
+    const updatedBatch = swapResult[0];
+    const condOutputCoin = swapResult[1];
+
+    // Finalize conditional swaps
+    tx.moveCall({
+      target: `${futarchyMarketsOperationsPackageId}::swap_entry::finalize_conditional_swaps`,
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [
+        updatedBatch,
+        txObject(tx, config.spotPoolId),
+        txObject(tx, config.proposalId),
+        txObject(tx, config.escrowId),
+        session,
+        tx.pure.address(config.recipient),
+        tx.sharedObjectRef({
+          objectId: clockId,
+          initialSharedVersion: 1,
+          mutable: false,
+        }),
+      ],
+    });
+
+    // =========================================================================
+    // STEP 6: Transfer outputs
+    // =========================================================================
+    // Transfer swapped output to recipient
+    tx.transferObjects([condOutputCoin], tx.pure.address(config.recipient));
+
+    // Transfer any remaining conditional coin (if we sourced more than needed)
+    tx.transferObjects([firstCond], tx.pure.address(config.recipient));
+
+    // Transfer unused conditional coins from OTHER outcomes (from spot split)
+    for (const outcome of sortedOutcomes) {
+      if (outcome.outcomeIndex !== outcomeIndex) {
+        const otherCoin = spotCoinsByOutcome[outcome.outcomeIndex];
+        if (otherCoin) {
+          tx.transferObjects([otherCoin], tx.pure.address(config.recipient));
+        }
+      }
+    }
+
+    // Transfer remaining spot coins
+    if (remainingSpotCoin) {
+      tx.transferObjects([remainingSpotCoin], tx.pure.address(config.recipient));
+    }
+
+    return {
+      transaction: tx,
+      description: `Smart conditional swap in outcome ${outcomeIndex} (${direction})`,
+    };
+  }
+
+  /**
+   * Query available coins for a smart conditional swap
+   *
+   * Use this to populate the `availableCoins` field of `SmartConditionalSwapConfig`.
+   *
+   * @param address - Wallet address to query
+   * @param outcomeIndex - The outcome index for the swap
+   * @param direction - Swap direction (determines which coin type to query)
+   * @param assetType - DAO asset type
+   * @param stableType - DAO stable type
+   * @param marketStateId - Market state ID for filtering balance wrappers
+   * @param allOutcomeCoins - Conditional coin types for each outcome
+   * @returns SmartSwapAvailableCoins ready for use in config
+   */
+  async querySmartSwapAvailableCoins(params: {
+    address: string;
+    outcomeIndex: number;
+    direction: 'stable_to_asset' | 'asset_to_stable';
+    assetType: string;
+    stableType: string;
+    marketStateId: string;
+    allOutcomeCoins: Array<{
+      outcomeIndex: number;
+      assetCoinType: string;
+      stableCoinType: string;
+    }>;
+  }): Promise<import('./types').SmartSwapAvailableCoins> {
+    const { address, outcomeIndex, direction, assetType, stableType, marketStateId, allOutcomeCoins } = params;
+    const isAsset = direction === 'asset_to_stable';
+
+    // Find target outcome coin type
+    const targetOutcome = allOutcomeCoins.find((o) => o.outcomeIndex === outcomeIndex);
+    if (!targetOutcome) {
+      throw new Error(`No conditional coin types found for outcome ${outcomeIndex}`);
+    }
+
+    const targetConditionalType = isAsset
+      ? targetOutcome.assetCoinType
+      : targetOutcome.stableCoinType;
+
+    const spotCoinType = isAsset ? assetType : stableType;
+
+    // Import balance wrapper utilities
+    const { getBalanceWrappers, buildBalanceWrapperType, getConditionalCoinObjects } = await import('../services/utils/balance-wrappers');
+
+    // Query all in parallel
+    const [conditionalCoins, balanceWrappers, spotCoins] = await Promise.all([
+      // 1. Query existing conditional coins
+      getConditionalCoinObjects(this.client, address, targetConditionalType),
+
+      // 2. Query balance wrappers
+      getBalanceWrappers(
+        this.client,
+        address,
+        buildBalanceWrapperType(this.packages.futarchyMarketsPrimitivesPackageId, assetType, stableType),
+        marketStateId
+      ),
+
+      // 3. Query spot coins
+      this.client.getCoins({ owner: address, coinType: spotCoinType }).then((result) =>
+        result.data.map((c) => ({
+          objectId: c.coinObjectId,
+          balance: BigInt(c.balance),
+        }))
+      ),
+    ]);
+
+    return {
+      conditionalCoins: conditionalCoins.map((c) => ({
+        objectId: c.objectId,
+        balance: c.balance,
+      })),
+      balanceWrappers: balanceWrappers.map((w) => ({
+        objectId: w.objectId,
+        outcomes: w.outcomes.map((o) => ({
+          outcomeIndex: o.outcomeIndex,
+          asset: o.asset.raw,
+          stable: o.stable.raw,
+        })),
+      })),
+      spotCoins,
+    };
+  }
+
   // ============================================================================
   // STEP 6: FINALIZE PROPOSAL
   // ============================================================================
@@ -1121,6 +1546,111 @@ export class ProposalWorkflow {
     return {
       transaction: tx,
       description: 'Finalize proposal and determine winner',
+    };
+  }
+
+  // ============================================================================
+  // STEP 6b: EXECUTE WINNING OUTCOME
+  // ============================================================================
+
+  /**
+   * Execute the winning outcome's actions
+   *
+   * Use this after finalizeProposal when an ACCEPT outcome wins (enters execution window).
+   * Handles all cases:
+   * - Normal execution with actions
+   * - No-action execution (empty actions array - just finalizes the proposal)
+   * - Sponsored proposals that won via TWAP threshold bypass
+   *
+   * @example
+   * ```typescript
+   * // After finalizeProposal shows inExecutionWindow: true
+   * const executeTx = workflow.executeWinningOutcome({
+   *   proposalId,
+   *   escrowId,
+   *   spotPoolId,
+   *   daoAccountId,
+   *   assetType,
+   *   stableType,
+   *   lpType,
+   *   actions: [], // or actions from backend
+   * });
+   * ```
+   */
+  executeWinningOutcome(config: ExecuteWinningOutcomeConfig): WorkflowTransaction {
+    const intentExecutor = new IntentExecutor(this.client, {
+      accountActionsPackageId: this.packages.accountActionsPackageId,
+      accountProtocolPackageId: this.packages.accountProtocolPackageId,
+      futarchyCorePackageId: this.packages.futarchyCorePackageId,
+      futarchyActionsPackageId: this.packages.futarchyActionsPackageId,
+      futarchyFactoryPackageId: this.packages.futarchyFactoryPackageId,
+      futarchyGovernancePackageId: this.packages.futarchyGovernancePackageId,
+      futarchyGovernanceActionsPackageId: this.packages.futarchyGovernanceActionsPackageId,
+      futarchyOracleActionsPackageId: this.packages.futarchyOracleActionsPackageId || this.packages.futarchyActionsPackageId,
+      futarchyMarketsCorePackageId: this.packages.futarchyMarketsCorePackageId,
+      packageRegistryId: this.sharedObjects.packageRegistryId,
+    });
+
+    return intentExecutor.execute({
+      intentType: 'proposal',
+      accountId: config.daoAccountId,
+      assetType: config.assetType,
+      stableType: config.stableType,
+      lpType: config.lpType,
+      proposalId: config.proposalId,
+      escrowId: config.escrowId,
+      spotPoolId: config.spotPoolId,
+      actions: config.actions,
+      clockId: config.clockId,
+    });
+  }
+
+  /**
+   * Force reject after execution timeout
+   *
+   * Use when a proposal is in AWAITING_EXECUTION state but the execution deadline
+   * has passed. This forces REJECT to win regardless of what TWAP indicated.
+   *
+   * Anyone can call this - it's a public cleanup function that ensures
+   * unexecutable proposals cannot win.
+   *
+   * @example
+   * ```typescript
+   * // Keeper bot checking for timed-out proposals
+   * const rejectTx = workflow.forceRejectOnTimeout({
+   *   proposalId,
+   *   escrowId,
+   *   spotPoolId,
+   *   assetType,
+   *   stableType,
+   *   lpType,
+   * });
+   * ```
+   */
+  forceRejectOnTimeout(config: ForceRejectOnTimeoutConfig): WorkflowTransaction {
+    const tx = new Transaction();
+    const clockId = config.clockId || '0x6';
+
+    const { futarchyGovernancePackageId } = this.packages;
+
+    tx.moveCall({
+      target: `${futarchyGovernancePackageId}::proposal_lifecycle::force_reject_on_timeout`,
+      typeArguments: [config.assetType, config.stableType, config.lpType],
+      arguments: [
+        txObject(tx, config.proposalId),
+        txObject(tx, config.escrowId),
+        txObject(tx, config.spotPoolId),
+        tx.sharedObjectRef({
+          objectId: clockId,
+          initialSharedVersion: 1,
+          mutable: false,
+        }),
+      ],
+    });
+
+    return {
+      transaction: tx,
+      description: 'Force reject on execution timeout',
     };
   }
 

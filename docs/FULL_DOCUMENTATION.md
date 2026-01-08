@@ -455,6 +455,46 @@ async getQuote(config): Promise<bigint>
 PREMARKET → REVIEW → TRADING → AWAITING_EXECUTION → FINALIZED
 ```
 
+**Finalization Result Parsing:**
+
+After calling `finalizeProposal()`, use `parseFinalizationResult()` to determine what happened:
+
+```typescript
+const finalizeTx = proposalWorkflow.finalizeProposal({ proposalId, escrowId, ... });
+const result = await executeTransaction(finalizeTx.transaction);
+
+const status = proposalWorkflow.parseFinalizationResult(result);
+
+if (status.isFinalized) {
+  // REJECT won immediately - proposal is done
+  console.log(`Winner: ${status.rejectWon ? 'REJECT' : 'ACCEPT'}`);
+} else if (status.inExecutionWindow) {
+  // ACCEPT won - need to execute actions or wait for timeout
+  console.log('Execution window started, actions must be executed');
+}
+```
+
+**Return type:**
+```typescript
+{
+  isFinalized: boolean;      // True if proposal is fully finalized
+  rejectWon: boolean;        // True if REJECT won immediately via TWAP
+  inExecutionWindow: boolean; // True if ACCEPT won, execution window started
+  winningOutcome?: number;   // Outcome index (0=reject, 1+=accept), only if finalized
+  approved?: boolean;        // Whether proposal was approved
+}
+```
+
+**Getting Execution State:**
+
+For proposals in execution window, get the market winner:
+
+```typescript
+const state = await proposalWorkflow.getProposalExecutionState(client, proposalId);
+console.log(`State: ${state.stateName}`);  // 'awaiting_execution'
+console.log(`Market winner: ${state.marketWinner}`);  // 1 (accept outcome)
+```
+
 ### Intent Execution Pattern
 
 **Location:** `src/workflows/intent-executor.ts`

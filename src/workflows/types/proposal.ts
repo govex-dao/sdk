@@ -8,6 +8,7 @@
 
 import type { WorkflowBaseConfig, ObjectIdOrRef } from './common';
 import type { ActionConfig } from './actions';
+import type { IntentActionConfig } from './intent';
 
 /**
  * Configuration for creating a new proposal
@@ -217,6 +218,40 @@ export interface FinalizeProposalConfig extends WorkflowBaseConfig {
   daoAccountId?: ObjectIdOrRef;
 }
 
+/**
+ * Configuration for executing a winning proposal outcome
+ *
+ * Use after finalizeProposal when ACCEPT outcome wins (enters execution window).
+ * Handles: normal execution, no-action execution, sponsored proposals.
+ * For timeout, use forceRejectOnTimeout instead.
+ */
+export interface ExecuteWinningOutcomeConfig extends WorkflowBaseConfig {
+  proposalId: ObjectIdOrRef;
+  escrowId: ObjectIdOrRef;
+  spotPoolId: ObjectIdOrRef;
+  daoAccountId: ObjectIdOrRef;
+  assetType: string;
+  stableType: string;
+  lpType: string;
+  /** Actions to execute. Empty array = finalize with no actions. */
+  actions: IntentActionConfig[];
+}
+
+/**
+ * Configuration for forcing reject after execution timeout
+ *
+ * Use when proposal is in AWAITING_EXECUTION but deadline passed.
+ * Forces REJECT to win regardless of TWAP. Anyone can call.
+ */
+export interface ForceRejectOnTimeoutConfig extends WorkflowBaseConfig {
+  proposalId: ObjectIdOrRef;
+  escrowId: ObjectIdOrRef;
+  spotPoolId: ObjectIdOrRef;
+  assetType: string;
+  stableType: string;
+  lpType: string;
+}
+
 // ============================================================================
 // SWAP WORKFLOW TYPES
 // ============================================================================
@@ -287,5 +322,104 @@ export interface ConditionalSwapConfig extends WorkflowBaseConfig {
   }>;
   /** Input stable coins (for splitting) */
   stableCoins: string[];
+}
+
+/**
+ * Available coins for smart conditional swap
+ *
+ * This contains pre-queried information about all coins available to the user
+ * for a specific proposal, allowing the smart swap to determine optimal sourcing.
+ */
+export interface SmartSwapAvailableCoins {
+  /**
+   * Existing conditional coins for the target outcome (in swap direction)
+   * - If direction = stable_to_asset: these are conditional stable coins
+   * - If direction = asset_to_stable: these are conditional asset coins
+   */
+  conditionalCoins: Array<{
+    objectId: string;
+    balance: bigint;
+  }>;
+
+  /**
+   * Balance wrapper NFTs owned by the user for this market
+   * Contains per-outcome balances that can be unwrapped
+   */
+  balanceWrappers: Array<{
+    objectId: string;
+    /** Per-outcome balances [out0_asset, out0_stable, out1_asset, out1_stable, ...] */
+    outcomes: Array<{
+      outcomeIndex: number;
+      asset: bigint;
+      stable: bigint;
+    }>;
+  }>;
+
+  /**
+   * Spot coins available for splitting (fallback)
+   * - If direction = stable_to_asset: these are spot stable coins
+   * - If direction = asset_to_stable: these are spot asset coins
+   */
+  spotCoins: Array<{
+    objectId: string;
+    balance: bigint;
+  }>;
+}
+
+/**
+ * Configuration for a smart conditional swap
+ *
+ * Smart swap automatically sources coins from multiple places in priority order:
+ * 1. Existing conditional coins in user's wallet
+ * 2. Balance wrapper NFTs (ConditionalMarketBalance objects)
+ * 3. Spot coins (split across all outcomes)
+ *
+ * This provides the best UX by automatically finding and using available coins.
+ */
+export interface SmartConditionalSwapConfig extends WorkflowBaseConfig {
+  /** Escrow object ID or full ObjectRef */
+  escrowId: ObjectIdOrRef;
+  /** Spot pool object ID or full ObjectRef */
+  spotPoolId: ObjectIdOrRef;
+  /** Proposal object ID or full ObjectRef */
+  proposalId: ObjectIdOrRef;
+  /** Market state ID (for balance wrapper filtering) */
+  marketStateId: string;
+
+  /** Asset type */
+  assetType: string;
+  /** Stable type */
+  stableType: string;
+  /** LP coin type for the spot pool */
+  lpType: string;
+
+  /** Outcome index to swap in */
+  outcomeIndex: number;
+  /** Direction of swap */
+  direction: 'stable_to_asset' | 'asset_to_stable';
+  /** Amount to swap (in input token) */
+  amountIn: bigint;
+  /** Minimum output amount (slippage protection) */
+  minAmountOut: bigint;
+  /** Recipient address */
+  recipient: string;
+
+  /**
+   * All conditional coin types for each outcome
+   * Required for:
+   * - Unwrapping from balance wrappers (need type for target outcome)
+   * - Splitting spot coins (creates conditional coins for ALL outcomes)
+   */
+  allOutcomeCoins: Array<{
+    outcomeIndex: number;
+    assetCoinType: string;
+    stableCoinType: string;
+  }>;
+
+  /**
+   * Pre-queried available coins for smart sourcing
+   * Query this using getSmartSwapAvailableCoins() before building the transaction
+   */
+  availableCoins: SmartSwapAvailableCoins;
 }
 

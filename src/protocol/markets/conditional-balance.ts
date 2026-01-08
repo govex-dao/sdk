@@ -307,8 +307,8 @@ export class ConditionalBalance {
     marketsPackageId: string,
     assetType: string,
     stableType: string,
-    target: ReturnType<Transaction['moveCall']>,
-    source: ReturnType<Transaction['moveCall']>
+    target: ReturnType<Transaction['moveCall']> | ReturnType<Transaction['object']>,
+    source: ReturnType<Transaction['moveCall']> | ReturnType<Transaction['object']>
   ): void {
     tx.moveCall({
       target: TransactionUtils.buildTarget(
@@ -317,7 +317,10 @@ export class ConditionalBalance {
         'merge'
       ),
       typeArguments: [assetType, stableType],
-      arguments: [target, source],
+      arguments: [
+        target as ReturnType<Transaction['moveCall']>,
+        source as ReturnType<Transaction['moveCall']>,
+      ],
     });
   }
 
@@ -695,7 +698,7 @@ export class ConditionalBalance {
       assetType: string;
       stableType: string;
       conditionalType: string; // e.g., "0xPKG::conditional_0::CONDITIONAL_0"
-      balanceObj: ReturnType<Transaction['moveCall']>;
+      balanceObj: ReturnType<Transaction['moveCall']> | ReturnType<Transaction['object']>;
       escrowId: string;
       outcomeIdx: number;
       isAsset: boolean;
@@ -710,7 +713,7 @@ export class ConditionalBalance {
       ),
       typeArguments: [config.assetType, config.stableType, config.conditionalType],
       arguments: [
-        config.balanceObj,
+        config.balanceObj as ReturnType<Transaction['moveCall']>,
         tx.object(config.escrowId),
         tx.pure.u8(config.outcomeIdx),
         tx.pure.bool(config.isAsset),

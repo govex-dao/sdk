@@ -19,7 +19,26 @@ export { AdminService, FactoryAdminService, VerificationService, PackageRegistry
 export { IntentService, OracleQueryService, VaultQueryService } from './intents';
 
 // Utility services
-export { BaseTransactionBuilder, TransactionUtils, QueryHelper, CurrencyUtils } from './utils';
+export {
+  BaseTransactionBuilder,
+  TransactionUtils,
+  QueryHelper,
+  CurrencyUtils,
+  // Balance wrapper utilities
+  buildBalanceWrapperType,
+  getBalanceWrappers,
+  getConditionalCoinObjects,
+  getConditionalCoinBalance,
+  sumBalanceWrapperAmount,
+} from './utils';
+export type {
+  CoinBalance,
+  OutcomeBalances,
+  ProposalBalances,
+  BalanceWrapperData,
+  BalanceWrapperOutcome,
+  OwnedCoinObject,
+} from './utils';
 
 // Protocol services
 export * from './factory';

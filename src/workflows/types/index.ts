@@ -37,8 +37,12 @@ export type {
   ConditionalCoinsRegistryConfig,
   AdvanceToTradingConfig,
   FinalizeProposalConfig,
+  ExecuteWinningOutcomeConfig,
+  ForceRejectOnTimeoutConfig,
   SpotSwapConfig,
   ConditionalSwapConfig,
+  SmartSwapAvailableCoins,
+  SmartConditionalSwapConfig,
 } from './proposal';
 
 // Intent execution types
